@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ミーティング予約</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;min-height:100vh}
+.container{max-width:560px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px;font-weight:700;margin-bottom:4px}
+.subtitle{color:#888;font-size:14px;margin-bottom:24px}
+.card{background:#1e1e3a;border-radius:12px;padding:24px;margin-bottom:16px;border:1px solid #2a2a4a}
+.card h2{font-size:14px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px}
+.date-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px}
+.date-cell{padding:8px 4px;text-align:center;border-radius:8px;cursor:pointer;transition:all .2s;font-size:13px}
+.date-cell .dow{font-size:10px;color:#666;margin-bottom:2px}
+.date-cell .day{font-weight:600}
+.date-cell:hover{background:#2a2a4a}
+.date-cell.selected{background:#6c63ff}
+.date-cell.disabled{opacity:.3;cursor:not-allowed}
+.date-cell.disabled:hover{background:none}
+.month-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.month-nav button{background:none;border:none;color:#aaa;font-size:18px;cursor:pointer;padding:4px 8px}
+.month-nav span{font-size:15px;font-weight:600}
+.slots-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.slot-btn{padding:10px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:13px;cursor:pointer;transition:all .2s;text-align:center}
+.slot-btn:hover{border-color:#6c63ff;background:#2d2d5a}
+.slot-btn.selected{background:#6c63ff;border-color:#6c63ff}
+.empty-slots{color:#555;font-size:13px;text-align:center;padding:16px}
+input{width:100%;padding:12px 14px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:14px;margin-bottom:10px;outline:none;transition:border .2s}
+input:focus{border-color:#6c63ff}
+input::placeholder{color:#555}
+textarea{width:100%;padding:12px 14px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:14px;margin-bottom:10px;outline:none;resize:vertical;min-height:80px;font-family:inherit}
+textarea:focus{border-color:#6c63ff}
+textarea::placeholder{color:#555}
+.btn-primary{width:100%;padding:14px;background:#6c63ff;border:none;border-radius:8px;color:#fff;font-size:16px;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-primary:hover{background:#5a52e0}
+.btn-primary:disabled{background:#3a3a5a;cursor:not-allowed}
+.selected-time{background:#2a2a4a;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:14px;color:#6c63ff;font-weight:600}
+.success-box{text-align:center;padding:24px}
+.success-box .icon{font-size:56px;margin-bottom:16px}
+.success-box h2{font-size:22px;font-weight:700;margin-bottom:8px}
+.success-box p{color:#888;font-size:14px;margin-bottom:16px}
+.meet-link{display:block;background:#2a2a4a;border-radius:8px;padding:14px;color:#4ade80;text-decoration:none;font-size:14px;font-weight:600;margin-bottom:8px;text-align:center}
+.meet-link:hover{background:#3a3a5a}
+.loading{text-align:center;padding:20px;color:#555;font-size:14px}
+</style>
+</head>
+<body>
+<div class="container">
+  <div id="main-content">
+    <div class="loading">読み込み中...</div>
+  </div>
+</div>
+<script>
+const slug = location.pathname.split('/').pop();
+let selectedDate = null;
+let selectedSlot = null;
+let hostName = '';
+let viewYear, viewMonth;
+
+async function init() {
+  const now = new Date();
+  viewYear = now.getFullYear();
+  viewMonth = now.getMonth();
+  render();
+}
+
+function render() {
+  const el = document.getElementById('main-content');
+  el.innerHTML = `
+    <h1 id="host-title">予約ページ</h1>
+    <p class="subtitle" id="host-subtitle">読み込み中...</p>
+    <div class="card">
+      <div class="month-nav">
+        <button onclick="changeMonth(-1)">&#8249;</button>
+        <span id="month-label"></span>
+        <button onclick="changeMonth(1)">&#8250;</button>
+      </div>
+      <div class="date-grid" id="date-grid"></div>
+    </div>
+    <div class="card" id="slots-card" style="display:none">
+      <h2>時間を選択</h2>
+      <div id="slots-container"></div>
+    </div>
+    <div class="card" id="form-card" style="display:none">
+      <h2>情報を入力</h2>
+      <div class="selected-time" id="selected-time-display"></div>
+      <input id="input-name" placeholder="お名前" required>
+      <input id="input-email" type="email" placeholder="メールアドレス">
+      <textarea id="input-purpose" placeholder="用件（任意）"></textarea>
+      <button class="btn-primary" id="submit-btn" onclick="submitBooking()">予約する</button>
+    </div>
+  `;
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const label = new Date(viewYear, viewMonth, 1).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long' });
+  document.getElementById('month-label').textContent = label;
+
+  const grid = document.getElementById('date-grid');
+  grid.innerHTML = '';
+  const DOWS = ['日','月','火','水','木','金','土'];
+  DOWS.forEach(d => {
+    const h = document.createElement('div');
+    h.style.cssText = 'text-align:center;font-size:11px;color:#555;padding-bottom:4px';
+    h.textContent = d;
+    grid.appendChild(h);
+  });
+
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  for (let i = 0; i < firstDay; i++) {
+    grid.appendChild(document.createElement('div'));
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(viewYear, viewMonth, d);
+    const dateStr = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isPast = date < today;
+    const isSelected = dateStr === selectedDate;
+
+    const cell = document.createElement('div');
+    cell.className = 'date-cell' + (isPast ? ' disabled' : '') + (isSelected ? ' selected' : '');
+    cell.innerHTML = `<div class="day">${d}</div>`;
+    if (!isPast) cell.onclick = () => selectDate(dateStr);
+    grid.appendChild(cell);
+  }
+}
+
+async function selectDate(date) {
+  selectedDate = date;
+  selectedSlot = null;
+  renderCalendar();
+
+  const slotsCard = document.getElementById('slots-card');
+  const formCard = document.getElementById('form-card');
+  slotsCard.style.display = 'block';
+  formCard.style.display = 'none';
+  document.getElementById('slots-container').innerHTML = '<div class="loading">空き時間を確認中...</div>';
+
+  const res = await fetch(`/api/b/${slug}/slots?date=${date}`);
+  const data = await res.json();
+  hostName = data.hostName || slug;
+  document.getElementById('host-title').textContent = hostName + 'さんへの予約';
+  document.getElementById('host-subtitle').textContent = '空いている時間を選んでください';
+
+  const container = document.getElementById('slots-container');
+  if (!data.slots || data.slots.length === 0) {
+    container.innerHTML = '<div class="empty-slots">この日は空きがありません</div>';
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'slots-grid';
+  data.slots.forEach(slot => {
+    const btn = document.createElement('div');
+    btn.className = 'slot-btn' + (selectedSlot && selectedSlot.start === slot.start ? ' selected' : '');
+    btn.textContent = slot.label;
+    btn.onclick = () => selectSlot(slot, btn);
+    grid.appendChild(btn);
+  });
+  container.innerHTML = '';
+  container.appendChild(grid);
+}
+
+function selectSlot(slot, btn) {
+  document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  selectedSlot = slot;
+
+  const formCard = document.getElementById('form-card');
+  formCard.style.display = 'block';
+
+  const d = new Date(slot.start);
+  const fmt = d.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
+  document.getElementById('selected-time-display').textContent = `${fmt} ${slot.label}`;
+  formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function submitBooking() {
+  const name = document.getElementById('input-name').value.trim();
+  const email = document.getElementById('input-email').value.trim();
+  const purpose = document.getElementById('input-purpose').value.trim();
+
+  if (!name) { alert('お名前を入力してください'); return; }
+  if (!selectedSlot) { alert('時間を選択してください'); return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = '予約中...';
+
+  const res = await fetch(`/api/b/${slug}/book`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ booker_name: name, booker_email: email, start_time: selectedSlot.start, end_time: selectedSlot.end, purpose })
+  });
+  const data = await res.json();
+
+  if (data.ok) {
+    const d = new Date(selectedSlot.start);
+    const fmt = d.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+    document.getElementById('main-content').innerHTML = `
+      <div class="card">
+        <div class="success-box">
+          <div class="icon">✅</div>
+          <h2>予約が完了しました</h2>
+          <p>${fmt}<br>${selectedSlot.label}</p>
+          <p style="margin-top:8px">${hostName}さんとGoogleカレンダーに招待が届きます</p>
+          <br>
+          <a class="meet-link" href="${data.meet_url}" target="_blank">ビデオ通話URLを開く</a>
+          <p style="font-size:12px;color:#555">このURLは当日まで保存しておいてください</p>
+        </div>
+      </div>
+    `;
+  } else {
+    alert(data.error || '予約に失敗しました');
+    btn.disabled = false;
+    btn.textContent = '予約する';
+  }
+}
+
+function changeMonth(delta) {
+  viewMonth += delta;
+  if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+  if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+  renderCalendar();
+}
+
+init();
+</script>
+</body>
+</html>

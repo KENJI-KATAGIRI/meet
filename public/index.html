@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meet</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100vh;overflow:hidden}
+#lobby{display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg,#0f0f1a,#1a1a3e)}
+.lobby-box{background:#1e1e3a;padding:40px;border-radius:16px;width:420px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.lobby-box h1{font-size:28px;margin-bottom:8px;text-align:center}
+.lobby-box p{color:#888;text-align:center;margin-bottom:32px;font-size:14px}
+.lobby-box input{width:100%;padding:12px 16px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:15px;margin-bottom:12px;outline:none;transition:border .2s}
+.lobby-box input:focus{border-color:#6c63ff}
+.lobby-box input::placeholder{color:#555}
+.btn-primary{width:100%;padding:14px;background:#6c63ff;border:none;border-radius:8px;color:#fff;font-size:16px;font-weight:600;cursor:pointer;transition:background .2s;margin-top:8px}
+.btn-primary:hover{background:#5a52e0}
+.error-msg{color:#ff6b6b;font-size:13px;text-align:center;margin-top:8px;min-height:20px}
+.optional-label{font-size:12px;color:#666;margin-bottom:4px;display:block}
+#meeting{display:none;flex-direction:column;height:100vh}
+#videos{flex:1;display:grid;gap:4px;padding:4px;background:#0a0a12;overflow:hidden;align-content:center}
+.video-tile{position:relative;background:#1a1a2e;border-radius:8px;overflow:hidden;aspect-ratio:16/9}
+.video-tile video{width:100%;height:100%;object-fit:cover}
+.video-tile .name-tag{position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.6);padding:3px 10px;border-radius:20px;font-size:13px;font-weight:500}
+.video-tile .muted-icon{position:absolute;top:8px;right:8px;background:rgba(220,50,50,.8);width:28px;height:28px;border-radius:50%;display:none;align-items:center;justify-content:center;font-size:13px}
+.video-tile.muted .muted-icon{display:flex}
+.avatar-placeholder{width:100%;height:100%;display:none;align-items:center;justify-content:center;background:#1e1e3e;font-size:48px}
+.video-tile.no-video .avatar-placeholder{display:flex}
+.video-tile.no-video video{display:none}
+#controls{background:#16162a;padding:12px;display:flex;align-items:center;justify-content:center;gap:8px;border-top:1px solid #2a2a4a;flex-wrap:wrap}
+.ctrl-btn{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;border:none;background:none;color:#ccc;padding:6px 10px;border-radius:8px;transition:all .2s;font-size:10px;min-width:54px}
+.ctrl-btn .icon{width:42px;height:42px;border-radius:50%;background:#2a2a4a;display:flex;align-items:center;justify-content:center;font-size:18px;transition:background .2s}
+.ctrl-btn:hover .icon{background:#3a3a5a}
+.ctrl-btn.active .icon{background:#e94560}
+.ctrl-btn.leave .icon{background:#e94560}
+.ctrl-btn.leave:hover .icon{background:#c73652}
+.room-info{color:#666;font-size:12px;margin-right:auto;padding-left:12px}
+#participant-count{color:#aaa;font-size:13px;margin-left:auto;padding-right:12px}
+
+/* チャット */
+#chat-panel{position:fixed;right:-320px;top:0;width:320px;height:100vh;background:#1e1e3a;border-left:1px solid #2a2a4a;display:flex;flex-direction:column;transition:right .3s;z-index:100}
+#chat-panel.open{right:0}
+#chat-header{padding:16px;border-bottom:1px solid #2a2a4a;display:flex;align-items:center;justify-content:space-between;font-weight:600}
+#chat-messages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.chat-msg{background:#2a2a4a;padding:10px 12px;border-radius:8px;font-size:13px}
+.chat-msg .sender{font-weight:600;color:#6c63ff;margin-bottom:3px;font-size:12px}
+.chat-msg .time{color:#555;font-size:11px;float:right;margin-top:-16px}
+.chat-msg.self{background:#2d2d5a}
+#chat-input-row{padding:12px;border-top:1px solid #2a2a4a;display:flex;gap:8px}
+#chat-input{flex:1;padding:10px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:14px;outline:none}
+#chat-input:focus{border-color:#6c63ff}
+#chat-send{padding:10px 16px;background:#6c63ff;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:16px}
+#close-chat{background:none;border:none;color:#888;font-size:20px;cursor:pointer}
+
+/* エフェクトパネル */
+#effects-panel{position:fixed;left:-300px;top:0;width:300px;height:100vh;background:#1e1e3a;border-right:1px solid #2a2a4a;display:flex;flex-direction:column;transition:left .3s;z-index:100;overflow-y:auto}
+#effects-panel.open{left:0}
+#effects-header{padding:16px;border-bottom:1px solid #2a2a4a;display:flex;align-items:center;justify-content:space-between;font-weight:600}
+.effects-section{padding:16px;border-bottom:1px solid #2a2a4a}
+.effects-section h3{font-size:13px;color:#aaa;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+.effect-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.effect-opt{background:#2a2a4a;border:2px solid transparent;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;font-size:12px;transition:all .2s;color:#ccc}
+.effect-opt:hover{border-color:#3a3a5a;background:#2d2d5a}
+.effect-opt.selected{border-color:#6c63ff;background:#2d2d5a;color:#fff}
+.effect-opt .eff-icon{font-size:24px;margin-bottom:4px}
+.beauty-slider{display:flex;flex-direction:column;gap:8px}
+.beauty-level-btns{display:flex;gap:8px}
+.beauty-btn{flex:1;padding:8px;background:#2a2a4a;border:2px solid transparent;border-radius:8px;color:#ccc;font-size:12px;cursor:pointer;text-align:center;transition:all .2s}
+.beauty-btn:hover{border-color:#3a3a5a}
+.beauty-btn.selected{border-color:#6c63ff;color:#fff;background:#2d2d5a}
+.color-picker-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.color-swatch{width:32px;height:32px;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:border .2s}
+.color-swatch:hover,.color-swatch.selected{border-color:#fff}
+.upload-btn{width:100%;padding:10px;background:#2a2a4a;border:1px dashed #3a3a5a;border-radius:8px;color:#888;font-size:13px;cursor:pointer;text-align:center;margin-top:8px;transition:all .2s}
+.upload-btn:hover{border-color:#6c63ff;color:#6c63ff}
+.loading-model{font-size:12px;color:#6c63ff;text-align:center;padding:8px;display:none}
+#close-effects{background:none;border:none;color:#888;font-size:20px;cursor:pointer}
+.zoom-row{display:flex;align-items:center;gap:10px;margin-top:4px}
+.zoom-row input[type=range]{flex:1;accent-color:#6c63ff;height:4px}
+.zoom-row span{font-size:12px;color:#6c63ff;min-width:32px;text-align:right}
+
+/* 通知 */
+#notification{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#2a2a4a;padding:10px 20px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:200}
+#notification.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div id="lobby">
+  <div class="lobby-box">
+    <h1>Meet</h1>
+    <p>無料のビデオ通話システム</p>
+    <input id="input-name" placeholder="お名前" maxlength="20">
+    <input id="input-room" placeholder="ルームID（例: office）" maxlength="30">
+    <span class="optional-label">パスワード（省略可）</span>
+    <input id="input-pass" type="password" placeholder="パスワード">
+    <button class="btn-primary" onclick="joinRoom()">参加する</button>
+    <div class="error-msg" id="error-msg"></div>
+  </div>
+</div>
+
+<div id="meeting">
+  <div id="videos"></div>
+  <div id="controls">
+    <span class="room-info" id="room-info"></span>
+    <button class="ctrl-btn" id="btn-mic" onclick="toggleMic()">
+      <div class="icon">🎤</div><span>マイク</span>
+    </button>
+    <button class="ctrl-btn" id="btn-cam" onclick="toggleCam()">
+      <div class="icon">📷</div><span>カメラ</span>
+    </button>
+    <button class="ctrl-btn" id="btn-effects" onclick="toggleEffects()">
+      <div class="icon">✨</div><span>エフェクト</span>
+    </button>
+    <button class="ctrl-btn" id="btn-screen" onclick="toggleScreen()">
+      <div class="icon">🖥️</div><span>画面共有</span>
+    </button>
+    <button class="ctrl-btn" id="btn-chat" onclick="toggleChat()">
+      <div class="icon">💬</div><span>チャット</span>
+    </button>
+    <button class="ctrl-btn" id="btn-record" onclick="toggleRecording()">
+      <div class="icon">⏺️</div><span>録画</span>
+    </button>
+    <button class="ctrl-btn leave" onclick="leaveRoom()">
+      <div class="icon">📴</div><span>退出</span>
+    </button>
+    <span id="participant-count"></span>
+  </div>
+</div>
+
+<!-- エフェクトパネル -->
+<div id="effects-panel">
+  <div id="effects-header">
+    ✨ エフェクト
+    <button id="close-effects" onclick="toggleEffects()">✕</button>
+  </div>
+
+  <!-- 美肌フィルター -->
+  <div class="effects-section">
+    <h3>美肌フィルター <span style="font-size:10px;color:#666;text-transform:none">（シミ・テカり軽減）</span></h3>
+    <div class="beauty-level-btns">
+      <div class="beauty-btn selected" id="beauty-off" onclick="setBeauty(0)">OFF</div>
+      <div class="beauty-btn" id="beauty-light" onclick="setBeauty(1)">ナチュラル</div>
+      <div class="beauty-btn" id="beauty-strong" onclick="setBeauty(2)">しっかり</div>
+    </div>
+  </div>
+
+  <!-- 仮想背景 -->
+  <div class="effects-section">
+    <h3>仮想背景</h3>
+    <div class="loading-model" id="loading-model">モデル読み込み中...</div>
+    <div class="effect-options">
+      <div class="effect-opt selected" id="bg-none" onclick="setBg('none')">
+        <div class="eff-icon">🚫</div>なし
+      </div>
+      <div class="effect-opt" id="bg-blur" onclick="setBg('blur')">
+        <div class="eff-icon">🌫️</div>ぼかし
+      </div>
+      <div class="effect-opt" id="bg-color" onclick="setBg('color')">
+        <div class="eff-icon">🎨</div>カラー
+      </div>
+      <div class="effect-opt" id="bg-image" onclick="document.getElementById('bg-upload').click()">
+        <div class="eff-icon">🖼️</div>画像
+      </div>
+    </div>
+    <div class="color-picker-row" id="color-picker-row" style="display:none">
+      <div class="color-swatch selected" style="background:#1a1a3e" onclick="setBgColor('#1a1a3e',this)"></div>
+      <div class="color-swatch" style="background:#0f2922" onclick="setBgColor('#0f2922',this)"></div>
+      <div class="color-swatch" style="background:#1a0a0a" onclick="setBgColor('#1a0a0a',this)"></div>
+      <div class="color-swatch" style="background:#0a1a2e" onclick="setBgColor('#0a1a2e',this)"></div>
+      <div class="color-swatch" style="background:#2a1a3e" onclick="setBgColor('#2a1a3e',this)"></div>
+      <div class="color-swatch" style="background:#111111" onclick="setBgColor('#111111',this)"></div>
+      <input type="color" id="custom-color" style="width:32px;height:32px;border-radius:6px;border:2px solid #3a3a5a;cursor:pointer;padding:0" onchange="setBgColor(this.value,null)">
+    </div>
+    <input type="file" id="bg-upload" accept="image/*" style="display:none" onchange="loadBgImage(this)">
+  </div>
+
+  <!-- カメラズーム -->
+  <div class="effects-section">
+    <h3>カメラズーム（画角調整）</h3>
+    <div class="zoom-row">
+      <span style="font-size:12px;color:#aaa">広角</span>
+      <input type="range" id="zoom-slider" min="100" max="300" value="100" step="5" oninput="setZoom(this.value)">
+      <span style="font-size:12px;color:#aaa">望遠</span>
+      <span id="zoom-label">1.0x</span>
+    </div>
+  </div>
+
+  <!-- 音声設定 -->
+  <div class="effects-section">
+    <h3>音声設定</h3>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <div style="font-size:12px;color:#aaa;margin-bottom:6px">マイク音量</div>
+        <div class="zoom-row">
+          <span style="font-size:11px;color:#666">小</span>
+          <input type="range" id="volume-slider" min="0" max="300" value="100" step="5" oninput="setVolume(this.value)">
+          <span style="font-size:11px;color:#666">大</span>
+          <span id="volume-label" style="font-size:12px;color:#6c63ff;min-width:36px;text-align:right">100%</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;cursor:pointer">
+          <span>コンプレッサー <span style="font-size:11px;color:#666">（音量を均一化）</span></span>
+          <input type="checkbox" id="toggle-compressor" onchange="toggleCompressor(this.checked)" style="width:16px;height:16px;accent-color:#6c63ff;cursor:pointer">
+        </label>
+        <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;cursor:pointer">
+          <span>ローカット <span style="font-size:11px;color:#666">（空調音を除去）</span></span>
+          <input type="checkbox" id="toggle-lowcut" onchange="toggleLowcut(this.checked)" style="width:16px;height:16px;accent-color:#6c63ff;cursor:pointer">
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- チャットパネル -->
+<div id="chat-panel">
+  <div id="chat-header">チャット<button id="close-chat" onclick="toggleChat()">✕</button></div>
+  <div id="chat-messages"></div>
+  <div id="chat-input-row">
+    <input id="chat-input" placeholder="メッセージ" onkeydown="if(event.key==='Enter')sendChat()">
+    <button id="chat-send" onclick="sendChat()">➤</button>
+  </div>
+</div>
+
+<div id="notification"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const ICE_CONFIG = {
+  iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]
+};
+
+let socket, rawStream, localStream, screenStream;
+let myName = '', myRoomId = '';
+const peers = {}, peerNames = {};
+
+// === エフェクト状態 ===
+let effectsInited = false;
+let segModel = null;
+let segModelLoading = false;
+let bgMode = 'none';
+let bgColorVal = '#1a1a3e';
+let bgImg = null;
+let beautyLevel = 0;
+let zoomLevel = 1.0;
+let effectsCanvas, effectsCtx, effectsStream, effectsVideo;
+// セグメンテーション用低解像度キャンバス
+let segCanvas, segCtx;
+let rafId = null;
+
+// 美肌: beautyCanvas に screen blend で描画してシミ・テカりを軽減
+let beautyCanvas = null, beautyCtx = null;
+
+const urlParams = new URLSearchParams(location.search);
+if (urlParams.get('room')) document.getElementById('input-room').value = urlParams.get('room');
+
+async function joinRoom() {
+  const name = document.getElementById('input-name').value.trim();
+  const room = document.getElementById('input-room').value.trim();
+  const pass = document.getElementById('input-pass').value;
+  const errEl = document.getElementById('error-msg');
+  if (!name) { errEl.textContent = '名前を入力してください'; return; }
+  if (!room) { errEl.textContent = 'ルームIDを入力してください'; return; }
+  errEl.textContent = '';
+  try {
+    rawStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: 16/9 },
+      audio: true
+    });
+  } catch(e) {
+    errEl.textContent = 'カメラ・マイクへのアクセスを許可してください'; return;
+  }
+  localStream = rawStream;
+  myName = name; myRoomId = room;
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('meeting').style.display = 'flex';
+  document.getElementById('room-info').textContent = 'ルーム: ' + room;
+  addVideoTile('local', myName, localStream, true);
+  socket = io();
+  socket.on('join-error', msg => { alert(msg); location.reload(); });
+  socket.on('room-joined', ({ existingUsers }) => {
+    existingUsers.forEach(({ id, name }) => { peerNames[id] = name; createPeer(id, name, true); });
+    updateCount();
+  });
+  socket.on('user-joined', ({ id, name }) => {
+    peerNames[id] = name; createPeer(id, name, false);
+    notify(name + ' が参加しました'); updateCount();
+  });
+  socket.on('offer', async ({ from, fromName, offer }) => {
+    if (!peers[from]) createPeer(from, fromName || peerNames[from] || from, false);
+    const pc = peers[from];
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit('answer', { to: from, answer });
+  });
+  socket.on('answer', async ({ from, answer }) => {
+    const pc = peers[from];
+    if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+  });
+  socket.on('ice-candidate', async ({ from, candidate }) => {
+    const pc = peers[from];
+    if (pc && candidate) try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
+  });
+  socket.on('user-left', ({ id, name }) => {
+    if (peers[id]) { peers[id].close(); delete peers[id]; }
+    const tile = document.getElementById('tile-' + id);
+    if (tile) tile.remove();
+    delete peerNames[id];
+    notify((name || id) + ' が退出しました'); updateCount(); updateGrid();
+  });
+  socket.on('chat-message', ({ from, message, time }) => addChatMessage(from, message, time, from === myName));
+
+  socket.on('recording-ready', ({ url, filename, uploader }) => {
+    const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const linkMsg = `🎬 録画完了<br><a href="${url}" download="${filename}" target="_blank" style="color:#4ade80;font-weight:600">⬇️ ${filename}</a>`;
+    addChatMessage(uploader + 'が録画を共有', linkMsg, time, false);
+    document.getElementById('chat-panel').classList.add('open');
+    document.getElementById('btn-chat').classList.add('active');
+    notify('録画の準備ができました。チャットからダウンロードできます。');
+  });
+  socket.emit('join-room', { roomId: room, password: pass, userName: name });
+  history.replaceState(null, '', '?room=' + encodeURIComponent(room));
+}
+
+function createPeer(peerId, peerName, isInitiator) {
+  const pc = new RTCPeerConnection(ICE_CONFIG);
+  peers[peerId] = pc; peerNames[peerId] = peerName;
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+  pc.ontrack = event => {
+    const stream = event.streams[0];
+    const existing = document.getElementById('tile-' + peerId);
+    if (existing) existing.querySelector('video').srcObject = stream;
+    else { addVideoTile(peerId, peerName, stream, false); updateGrid(); }
+  };
+  pc.onicecandidate = event => {
+    if (event.candidate) socket.emit('ice-candidate', { to: peerId, candidate: event.candidate });
+  };
+  pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') pc.restartIce(); };
+  if (isInitiator) {
+    pc.onnegotiationneeded = async () => {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { to: peerId, offer });
+      } catch(e) {}
+    };
+  }
+  updateGrid(); return pc;
+}
+
+function addVideoTile(id, name, stream, isLocal) {
+  if (document.getElementById('tile-' + id)) return;
+  const grid = document.getElementById('videos');
+  const tile = document.createElement('div');
+  tile.className = 'video-tile'; tile.id = 'tile-' + id;
+  tile.innerHTML = '<video autoplay playsinline' + (isLocal ? ' muted' : '') + '></video>' +
+    '<div class="avatar-placeholder">&#128100;</div>' +
+    '<div class="name-tag">' + name + (isLocal ? ' (あなた)' : '') + '</div>' +
+    '<div class="muted-icon">&#128263;</div>';
+  tile.querySelector('video').srcObject = stream;
+  grid.appendChild(tile); updateGrid();
+}
+
+function updateGrid() {
+  const n = document.querySelectorAll('.video-tile').length;
+  const grid = document.getElementById('videos');
+  grid.style.gridTemplateColumns = n <= 1 ? '1fr' : n <= 2 ? '1fr 1fr' : n <= 4 ? '1fr 1fr' : '1fr 1fr 1fr';
+}
+
+function updateCount() {
+  document.getElementById('participant-count').textContent = '参加者 ' + (Object.keys(peers).length + 1) + '人';
+}
+
+let micOn = true, camOn = true;
+
+function toggleMic() {
+  micOn = !micOn;
+  if (gainNode) {
+    // Web Audio経由：gainを0にしてミュート
+    gainNode.gain.value = micOn ? currentVolume : 0;
+  } else {
+    // 通常：トラックを無効化
+    rawStream.getAudioTracks().forEach(t => t.enabled = micOn);
+  }
+  const btn = document.getElementById('btn-mic');
+  btn.classList.toggle('active', !micOn);
+  btn.querySelector('.icon').textContent = micOn ? '🎤' : '🔇';
+  btn.querySelector('span').textContent = micOn ? 'マイク' : 'ミュート中';
+  document.getElementById('tile-local').classList.toggle('muted', !micOn);
+}
+
+function toggleCam() {
+  camOn = !camOn;
+  rawStream.getVideoTracks().forEach(t => t.enabled = camOn);
+  const btn = document.getElementById('btn-cam');
+  btn.classList.toggle('active', !camOn);
+  btn.querySelector('.icon').textContent = camOn ? '📷' : '🚫';
+  btn.querySelector('span').textContent = camOn ? 'カメラ' : 'カメラOFF';
+  document.getElementById('tile-local').classList.toggle('no-video', !camOn);
+}
+
+async function toggleScreen() {
+  const btn = document.getElementById('btn-screen');
+  if (!screenStream) {
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      btn.classList.add('active'); btn.querySelector('span').textContent = '共有中';
+      const track = screenStream.getVideoTracks()[0];
+      Object.values(peers).forEach(pc => {
+        const s = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (s) s.replaceTrack(track);
+      });
+      track.onended = () => stopScreen();
+    } catch(e) {}
+  } else stopScreen();
+}
+
+function stopScreen() {
+  if (!screenStream) return;
+  screenStream.getTracks().forEach(t => t.stop());
+  screenStream = null;
+  const btn = document.getElementById('btn-screen');
+  btn.classList.remove('active'); btn.querySelector('span').textContent = '画面共有';
+  const camTrack = localStream.getVideoTracks()[0];
+  Object.values(peers).forEach(pc => {
+    const s = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+    if (s && camTrack) s.replaceTrack(camTrack);
+  });
+}
+
+function toggleEffects() {
+  const panel = document.getElementById('effects-panel');
+  panel.classList.toggle('open');
+  document.getElementById('btn-effects').classList.toggle('active', panel.classList.contains('open'));
+}
+
+function toggleChat() {
+  const panel = document.getElementById('chat-panel');
+  panel.classList.toggle('open');
+  document.getElementById('btn-chat').classList.toggle('active', panel.classList.contains('open'));
+}
+
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg || !socket) return;
+  socket.emit('chat-message', { message: msg }); input.value = '';
+}
+
+function addChatMessage(from, message, time, isSelf) {
+  const el = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg' + (isSelf ? ' self' : '');
+  div.innerHTML = '<div class="sender">' + from + '</div>' + message + '<span class="time">' + time + '</span>';
+  el.appendChild(div); el.scrollTop = el.scrollHeight;
+}
+
+function leaveRoom() {
+  if (rawStream) rawStream.getTracks().forEach(t => t.stop());
+  if (screenStream) screenStream.getTracks().forEach(t => t.stop());
+  if (effectsStream) effectsStream.getTracks().forEach(t => t.stop());
+  if (rafId) cancelAnimationFrame(rafId);
+  if (socket) socket.disconnect();
+  location.href = '/';
+}
+
+function notify(msg) {
+  const el = document.getElementById('notification');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ============ 録画 ============
+let mediaRecorder = null, recordedChunks = [], recordingRaf = null, recordingCanvas = null;
+
+async function toggleRecording() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    cancelAnimationFrame(recordingRaf); recordingRaf = null;
+    const btn = document.getElementById('btn-record');
+    btn.classList.remove('active');
+    btn.querySelector('.icon').textContent = '⏺️';
+    btn.querySelector('span').textContent = '録画';
+    notify('録画停止 — ダウンロードを確認してください');
+    return;
+  }
+
+  recordedChunks = [];
+  const grid = document.getElementById('videos');
+  const rect = grid.getBoundingClientRect();
+
+  recordingCanvas = document.createElement('canvas');
+  recordingCanvas.width  = Math.round(rect.width);
+  recordingCanvas.height = Math.round(rect.height);
+  const ctx = recordingCanvas.getContext('2d');
+
+  function drawFrame() {
+    ctx.fillStyle = '#0a0a12';
+    ctx.fillRect(0, 0, recordingCanvas.width, recordingCanvas.height);
+    document.querySelectorAll('.video-tile').forEach(tile => {
+      const tr = tile.getBoundingClientRect();
+      const video = tile.querySelector('video');
+      if (video && video.readyState >= 2) {
+        ctx.drawImage(video, tr.left - rect.left, tr.top - rect.top, tr.width, tr.height);
+      }
+    });
+    recordingRaf = requestAnimationFrame(drawFrame);
+  }
+  drawFrame();
+
+  const videoStream = recordingCanvas.captureStream(30);
+
+  // 全参加者の音声をミックス
+  const recAudioCtx = new AudioContext();
+  const recDest = recAudioCtx.createMediaStreamDestination();
+  recAudioCtx.createMediaStreamSource(rawStream).connect(recDest);
+  Object.values(peers).forEach(pc =>
+    pc.getReceivers().forEach(r => {
+      if (r.track?.kind === 'audio') {
+        recAudioCtx.createMediaStreamSource(new MediaStream([r.track])).connect(recDest);
+      }
+    })
+  );
+
+  const combined = new MediaStream([
+    ...videoStream.getVideoTracks(),
+    ...recDest.stream.getAudioTracks()
+  ]);
+
+  const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+    .find(m => MediaRecorder.isTypeSupported(m)) || '';
+
+  mediaRecorder = new MediaRecorder(combined, mimeType ? { mimeType } : {});
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = async () => {
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const filename = 'meeting-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.webm';
+
+    // まず自分にダウンロード
+    const localUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = localUrl; a.download = filename; a.click();
+
+    // サーバーにアップロードして全員に共有
+    notify('サーバーにアップロード中...');
+    try {
+      const form = new FormData();
+      form.append('file', blob, filename);
+      form.append('roomId', myRoomId);
+      form.append('uploaderName', myName);
+      await fetch('/api/upload-recording', { method: 'POST', body: form });
+    } catch(e) { notify('アップロードに失敗しました'); }
+  };
+  mediaRecorder.start(1000);
+
+  const btn = document.getElementById('btn-record');
+  btn.classList.add('active');
+  btn.querySelector('.icon').textContent = '⏹️';
+  btn.querySelector('span').textContent = '録画中';
+  notify('録画を開始しました');
+}
+
+// ============ 音声処理 ============
+let audioCtx = null, audioSource = null, gainNode = null;
+let compressorNode = null, lowcutNode = null, audioDestNode = null;
+let compressorEnabled = false, lowcutEnabled = false;
+let currentVolume = 1.0;
+
+async function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new AudioContext();
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+  audioSource   = audioCtx.createMediaStreamSource(rawStream);
+  lowcutNode    = audioCtx.createBiquadFilter();
+  lowcutNode.type = 'highpass';
+  lowcutNode.frequency.value = 80;
+  compressorNode = audioCtx.createDynamicsCompressor();
+  compressorNode.threshold.value = -24;
+  compressorNode.knee.value = 30;
+  compressorNode.ratio.value = 12;
+  compressorNode.attack.value = 0.003;
+  compressorNode.release.value = 0.25;
+  gainNode      = audioCtx.createGain();
+  gainNode.gain.value = currentVolume;
+  audioDestNode = audioCtx.createMediaStreamDestination();
+
+  rebuildAudioChain();
+
+  // 既存のピア接続の音声トラックを差し替え
+  const track = audioDestNode.stream.getAudioTracks()[0];
+  if (track) {
+    Object.values(peers).forEach(pc =>
+      pc.getSenders().forEach(s => { if (s.track?.kind === 'audio') s.replaceTrack(track); })
+    );
+  }
+}
+
+function rebuildAudioChain() {
+  try { audioSource.disconnect(); } catch(e) {}
+  try { lowcutNode.disconnect(); } catch(e) {}
+  try { compressorNode.disconnect(); } catch(e) {}
+  try { gainNode.disconnect(); } catch(e) {}
+
+  let node = audioSource;
+  if (lowcutEnabled)    { node.connect(lowcutNode);     node = lowcutNode; }
+  if (compressorEnabled){ node.connect(compressorNode); node = compressorNode; }
+  node.connect(gainNode);
+  gainNode.connect(audioDestNode);
+}
+
+function setVolume(val) {
+  currentVolume = val / 100;
+  document.getElementById('volume-label').textContent = val + '%';
+  if (gainNode) gainNode.gain.value = micOn ? currentVolume : 0;
+}
+
+async function toggleCompressor(on) {
+  compressorEnabled = on;
+  if (!audioCtx) await initAudio(); else rebuildAudioChain();
+}
+
+async function toggleLowcut(on) {
+  lowcutEnabled = on;
+  if (!audioCtx) await initAudio(); else rebuildAudioChain();
+}
+
+// ============ エフェクト処理 ============
+
+async function initEffectsStream() {
+  if (effectsInited) return;
+  effectsInited = true;
+
+  effectsCanvas = document.createElement('canvas');
+  effectsCtx = effectsCanvas.getContext('2d');
+  beautyCanvas = document.createElement('canvas');
+  beautyCtx = beautyCanvas.getContext('2d');
+
+  effectsVideo = document.createElement('video');
+  effectsVideo.autoplay = true; effectsVideo.playsInline = true; effectsVideo.muted = true;
+  effectsVideo.srcObject = rawStream;
+  await new Promise(r => { effectsVideo.onloadedmetadata = r; });
+  effectsVideo.play();
+
+  effectsCanvas.width  = effectsVideo.videoWidth  || 640;
+  effectsCanvas.height = effectsVideo.videoHeight || 480;
+  beautyCanvas.width   = effectsCanvas.width;
+  beautyCanvas.height  = effectsCanvas.height;
+
+  // セグメンテーション用キャンバス（元解像度）
+  segCanvas = document.createElement('canvas');
+  segCanvas.width = effectsCanvas.width;
+  segCanvas.height = effectsCanvas.height;
+  segCtx = segCanvas.getContext('2d');
+
+  effectsStream = effectsCanvas.captureStream(30);
+  rawStream.getAudioTracks().forEach(t => effectsStream.addTrack(t));
+
+  localStream = effectsStream;
+  document.getElementById('tile-local').querySelector('video').srcObject = effectsStream;
+  replaceTracksInPeers();
+
+  startEffectsLoop();
+}
+
+function startEffectsLoop() {
+  const loop = async () => {
+    await renderFrame();
+    rafId = requestAnimationFrame(loop);
+  };
+  rafId = requestAnimationFrame(loop);
+}
+
+function getZoomRect() {
+  const w = effectsCanvas.width, h = effectsCanvas.height;
+  if (zoomLevel <= 1) return { sx: 0, sy: 0, sw: w, sh: h };
+  const sw = Math.round(w / zoomLevel);
+  const sh = Math.round(h / zoomLevel);
+  const sx = Math.round((w - sw) / 2);
+  const sy = Math.round((h - sh) / 3); // 少し上寄り（顔が中心）
+  return { sx, sy, sw, sh };
+}
+
+async function renderFrame() {
+  if (!effectsVideo || effectsVideo.readyState < 2) return;
+  const w = effectsCanvas.width, h = effectsCanvas.height;
+
+  if (bgMode !== 'none' && segModel) {
+    // ズーム適用済みのフレームをMediaPipeに送る
+    const { sx, sy, sw, sh } = getZoomRect();
+    segCtx.clearRect(0, 0, segCanvas.width, segCanvas.height);
+    segCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, segCanvas.width, segCanvas.height);
+    await segModel.send({ image: segCanvas });
+  } else {
+    effectsCtx.clearRect(0, 0, w, h);
+    const { sx, sy, sw, sh } = getZoomRect();
+    effectsCtx.filter = 'none';
+    effectsCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
+    applyBeautyOverlay(effectsCtx, effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
+  }
+}
+
+function onSegResults(results) {
+  const w = effectsCanvas.width, h = effectsCanvas.height;
+  effectsCtx.save();
+  effectsCtx.clearRect(0, 0, w, h);
+
+  // results.image = MediaPipeに送ったそのフレーム（ズーム済み）を使う
+  effectsCtx.filter = 'blur(5px)';
+  effectsCtx.drawImage(results.segmentationMask, 0, 0, w, h);
+  effectsCtx.filter = 'none';
+
+  effectsCtx.globalCompositeOperation = 'source-in';
+  effectsCtx.filter = 'none';
+  if (beautyLevel > 0) {
+    // beautyCanvas に美肌適用してから source-in で合成（透過エリアを汚さない）
+    applyBeautyToCanvas(results.image, w, h);
+    effectsCtx.drawImage(beautyCanvas, 0, 0, w, h);
+  } else {
+    effectsCtx.drawImage(results.image, 0, 0, w, h);
+  }
+
+  effectsCtx.globalCompositeOperation = 'destination-over';
+  if (bgMode === 'blur') {
+    effectsCtx.filter = 'blur(20px) brightness(0.75)';
+    effectsCtx.drawImage(results.image, 0, 0, w, h);
+    effectsCtx.filter = 'none';
+  } else if (bgMode === 'color') {
+    effectsCtx.fillStyle = bgColorVal;
+    effectsCtx.fillRect(0, 0, w, h);
+  } else if (bgMode === 'image' && bgImg) {
+    effectsCtx.drawImage(bgImg, 0, 0, w, h);
+  }
+  effectsCtx.restore();
+}
+
+async function loadSegModel() {
+  if (segModel || segModelLoading) return;
+  segModelLoading = true;
+  document.getElementById('loading-model').style.display = 'block';
+  try {
+    segModel = new SelfieSegmentation({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}` });
+    // modelSelection: 0 = 軽量モデル（古いPCに最適）
+    segModel.setOptions({ modelSelection: 0, selfieMode: true });
+    segModel.onResults(onSegResults);
+    await segModel.initialize();
+    notify('背景分離 準備完了');
+  } catch(e) {
+    notify('モデルの読み込みに失敗しました');
+    segModel = null;
+  }
+  segModelLoading = false;
+  document.getElementById('loading-model').style.display = 'none';
+}
+
+// --- 美肌フィルター（screen blend でシミ・テカり軽減） ---
+// src から beautyCanvas に美肌済み画像を書き込む
+function applyBeautyToCanvas(src, w, h) {
+  beautyCtx.clearRect(0, 0, w, h);
+  beautyCtx.filter = 'none';
+  beautyCtx.globalCompositeOperation = 'source-over';
+  beautyCtx.globalAlpha = 1.0;
+  beautyCtx.drawImage(src, 0, 0, w, h);
+  // blurした版を screen blend で重ねる → 暗い斑点(シミ)だけ持ち上がる
+  const blurPx = beautyLevel === 1 ? '2px' : '5px';
+  const opac   = beautyLevel === 1 ? 0.26 : 0.48;
+  beautyCtx.globalAlpha = opac;
+  beautyCtx.filter = `blur(${blurPx}) brightness(1.06) saturate(0.92)`;
+  beautyCtx.globalCompositeOperation = 'screen';
+  beautyCtx.drawImage(src, 0, 0, w, h);
+  beautyCtx.globalAlpha = 1.0;
+  beautyCtx.filter = 'none';
+  beautyCtx.globalCompositeOperation = 'source-over';
+}
+
+// bgMode=none のとき effectsCtx に直接美肌オーバーレイを追加
+function applyBeautyOverlay(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh) {
+  if (beautyLevel === 0) return;
+  const blurPx = beautyLevel === 1 ? '2px' : '5px';
+  const opac   = beautyLevel === 1 ? 0.26 : 0.48;
+  const saved  = ctx.globalAlpha;
+  ctx.globalAlpha = opac;
+  ctx.filter = `blur(${blurPx}) brightness(1.06) saturate(0.92)`;
+  ctx.globalCompositeOperation = 'screen';
+  ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = saved;
+  ctx.filter = 'none';
+}
+
+function replaceTracksInPeers() {
+  const vTrack = localStream.getVideoTracks()[0];
+  const aTrack = localStream.getAudioTracks()[0];
+  Object.values(peers).forEach(pc => {
+    pc.getSenders().forEach(s => {
+      if (s.track?.kind === 'video' && vTrack) s.replaceTrack(vTrack);
+      if (s.track?.kind === 'audio' && aTrack) s.replaceTrack(aTrack);
+    });
+  });
+}
+
+// ---- 外見補正 ----
+async function setBeauty(level) {
+  beautyLevel = level;
+  ['off','light','strong'].forEach((n,i) => {
+    document.getElementById('beauty-' + n).classList.toggle('selected', i === level);
+  });
+  if (level > 0) await initEffectsStream();
+  else if (bgMode === 'none' && effectsInited) {
+    // 全エフェクトOFF → rawStreamに戻す
+    cancelAnimationFrame(rafId); rafId = null;
+    effectsInited = false;
+    localStream = rawStream;
+    document.getElementById('tile-local').querySelector('video').srcObject = rawStream;
+    replaceTracksInPeers();
+  }
+}
+
+// ---- 仮想背景 ----
+async function setBg(mode) {
+  bgMode = mode;
+  ['none','blur','color','image'].forEach(m => {
+    document.getElementById('bg-' + m)?.classList.toggle('selected', m === mode);
+  });
+  document.getElementById('color-picker-row').style.display = mode === 'color' ? 'flex' : 'none';
+
+  if (mode === 'none') {
+    if (beautyLevel === 0 && effectsInited) {
+      cancelAnimationFrame(rafId); rafId = null;
+      effectsInited = false;
+      localStream = rawStream;
+      document.getElementById('tile-local').querySelector('video').srcObject = rawStream;
+      replaceTracksInPeers();
+    }
+    return;
+  }
+  await loadSegModel();
+  await initEffectsStream();
+}
+
+function setBgColor(color, el) {
+  bgColorVal = color;
+  document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+  if (el) el.classList.add('selected');
+  if (bgMode !== 'color') setBg('color');
+}
+
+async function setZoom(val) {
+  zoomLevel = val / 100;
+  document.getElementById('zoom-label').textContent = zoomLevel.toFixed(1) + 'x';
+  if (zoomLevel > 1) await initEffectsStream();
+}
+
+function loadBgImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = async () => {
+    bgImg = img;
+    document.getElementById('bg-image').classList.add('selected');
+    ['none','blur','color'].forEach(m => document.getElementById('bg-' + m).classList.remove('selected'));
+    bgMode = 'image';
+    document.getElementById('color-picker-row').style.display = 'none';
+    await loadSegModel();
+    await initEffectsStream();
+    notify('背景画像を設定しました');
+  };
+  img.src = URL.createObjectURL(file);
+}
+</script>
+</body>
+</html>

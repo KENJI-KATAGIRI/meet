@@ -1,0 +1,431 @@
+require('dotenv').config();
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
+const session = require('express-session');
+const { google } = require('googleapis');
+const Database = require('better-sqlite3');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
+const multer = require('multer');
+const fs = require('fs');
+
+const mailer = nodemailer.createTransport({
+  service: 'gmail',
+  auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS }
+});
+
+async function sendMail(to, subject, text) {
+  try {
+    await mailer.sendMail({ from: `"Meet予約システム" <${process.env.GMAIL_USER}>`, to, subject, text });
+  } catch(e) { console.error('mail error:', e.message); }
+}
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+// DB setup
+const db = new Database(path.join(__dirname, 'data', 'booking.db'));
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    google_id TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    access_token TEXT,
+    refresh_token TEXT,
+    slug TEXT UNIQUE NOT NULL,
+    slot_duration INTEGER DEFAULT 30
+  );
+  CREATE TABLE IF NOT EXISTS availability (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    day_of_week INTEGER NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    UNIQUE(user_id, day_of_week)
+  );
+  CREATE TABLE IF NOT EXISTS bookings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    booker_name TEXT NOT NULL,
+    booker_email TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    purpose TEXT,
+    meet_room TEXT NOT NULL,
+    google_event_id TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+app.set('trust proxy', 1);
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: 'auto', httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }
+}));
+
+const REDIRECT_URI = 'https://meet.gaiaarts.org/auth/google/callback';
+
+function getOAuthClient(tokens) {
+  const client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    REDIRECT_URI
+  );
+  if (tokens) client.setCredentials(tokens);
+  return client;
+}
+
+// ---- Auth ----
+app.get('/auth/google', (req, res) => {
+  const url = getOAuthClient().generateAuthUrl({
+    access_type: 'offline',
+    scope: [
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/userinfo.email'
+    ],
+    prompt: 'consent'
+  });
+  res.redirect(url);
+});
+
+app.get('/auth/google/callback', async (req, res) => {
+  try {
+    const client = getOAuthClient();
+    const { tokens } = await client.getToken(req.query.code);
+    client.setCredentials(tokens);
+    const { data } = await google.oauth2({ version: 'v2', auth: client }).userinfo.get();
+
+    const existing = db.prepare('SELECT id, slug, refresh_token FROM users WHERE google_id = ?').get(data.id);
+    if (existing) {
+      const rt = tokens.refresh_token || existing.refresh_token;
+      db.prepare('UPDATE users SET name=?, email=?, access_token=?, refresh_token=? WHERE google_id=?')
+        .run(data.name, data.email, tokens.access_token, rt, data.id);
+      req.session.userId = existing.id;
+      req.session.slug = existing.slug;
+    } else {
+      let slug = data.name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+      let base = slug, i = 1;
+      while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
+      const r = db.prepare('INSERT INTO users (google_id, name, email, access_token, refresh_token, slug) VALUES (?,?,?,?,?,?)')
+        .run(data.id, data.name, data.email, tokens.access_token, tokens.refresh_token, slug);
+      req.session.userId = r.lastInsertRowid;
+      req.session.slug = slug;
+    }
+    res.redirect('/booking/dashboard');
+  } catch (e) {
+    console.error(e);
+    res.redirect('/booking?error=1');
+  }
+});
+
+app.get('/auth/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
+
+function requireAuth(req, res, next) {
+  if (!req.session.userId) return res.status(401).json({ error: 'unauthorized' });
+  next();
+}
+
+function getAuthedClient(user) {
+  return getOAuthClient({ access_token: user.access_token, refresh_token: user.refresh_token });
+}
+
+// ---- API: me ----
+app.get('/api/me', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT id, name, email, slug, slot_duration FROM users WHERE id=?').get(req.session.userId);
+  res.json(u);
+});
+
+// ---- API: availability ----
+app.get('/api/availability', requireAuth, (req, res) => {
+  const rows = db.prepare('SELECT day_of_week, start_time, end_time FROM availability WHERE user_id=?').all(req.session.userId);
+  res.json(rows);
+});
+
+app.post('/api/availability', requireAuth, (req, res) => {
+  const { availability, slot_duration } = req.body;
+  const uid = req.session.userId;
+  db.prepare('DELETE FROM availability WHERE user_id=?').run(uid);
+  const stmt = db.prepare('INSERT INTO availability (user_id, day_of_week, start_time, end_time) VALUES (?,?,?,?)');
+  for (const a of (availability || [])) stmt.run(uid, a.day_of_week, a.start_time, a.end_time);
+  if (slot_duration) db.prepare('UPDATE users SET slot_duration=? WHERE id=?').run(slot_duration, uid);
+  res.json({ ok: true });
+});
+
+// ---- API: bookings ----
+app.get('/api/bookings', requireAuth, (req, res) => {
+  const rows = db.prepare('SELECT * FROM bookings WHERE user_id=? ORDER BY start_time ASC').all(req.session.userId);
+  res.json(rows);
+});
+
+app.delete('/api/bookings/:id', requireAuth, async (req, res) => {
+  const booking = db.prepare('SELECT * FROM bookings WHERE id=? AND user_id=?').get(req.params.id, req.session.userId);
+  if (!booking) return res.status(404).json({ error: 'not found' });
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.session.userId);
+  if (booking.google_event_id) {
+    const client = getAuthedClient(user);
+    google.calendar({ version: 'v3', auth: client }).events.delete({
+      calendarId: 'primary', eventId: booking.google_event_id, sendUpdates: 'all'
+    }).catch(() => {});
+  }
+  db.prepare('DELETE FROM bookings WHERE id=?').run(req.params.id);
+
+  // キャンセルメール
+  const startDt = new Date(booking.start_time);
+  const fmtDate = startDt.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+  const fmtTime = startDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  if (booking.booker_email) {
+    await sendMail(booking.booker_email, `【キャンセル】${user.name}さんとのミーティング`,
+`${booking.booker_name} 様
+
+誠に申し訳ありませんが、以下のミーティングをキャンセルさせていただきます。
+
+日時：${fmtDate} ${fmtTime}
+相手：${user.name}
+
+再度のご予約はこちらから：
+https://meet.gaiaarts.org/b/${user.slug}
+
+よろしくお願いします。
+`);
+  }
+  res.json({ ok: true });
+});
+
+// ---- Public: slots ----
+function generateSlots(date, startTime, endTime, duration) {
+  const slots = [];
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  let cur = sh * 60 + sm;
+  const end = eh * 60 + em;
+  while (cur + duration <= end) {
+    const h1 = Math.floor(cur / 60), m1 = cur % 60;
+    const h2 = Math.floor((cur + duration) / 60), m2 = (cur + duration) % 60;
+    const pad = n => String(n).padStart(2, '0');
+    slots.push({
+      start: `${date}T${pad(h1)}:${pad(m1)}:00+09:00`,
+      end: `${date}T${pad(h2)}:${pad(m2)}:00+09:00`,
+      label: `${pad(h1)}:${pad(m1)} 〜 ${pad(h2)}:${pad(m2)}`
+    });
+    cur += duration;
+  }
+  return slots;
+}
+
+app.get('/api/b/:slug/slots', async (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE slug=?').get(req.params.slug);
+  if (!user) return res.status(404).json({ error: 'not found' });
+
+  const date = req.query.date;
+  const dow = new Date(date + 'T12:00:00+09:00').getDay();
+  const avail = db.prepare('SELECT * FROM availability WHERE user_id=? AND day_of_week=?').get(user.id, dow);
+  if (!avail) return res.json({ slots: [], hostName: user.name });
+
+  const allSlots = generateSlots(date, avail.start_time, avail.end_time, user.slot_duration || 30);
+
+  // Filter already booked
+  const booked = db.prepare("SELECT start_time FROM bookings WHERE user_id=? AND start_time LIKE ?").all(user.id, date + '%');
+  const bookedTimes = new Set(booked.map(b => b.start_time));
+
+  // Filter past times
+  const now = new Date();
+  let filtered = allSlots.filter(s => new Date(s.start) > now && !bookedTimes.has(s.start));
+
+  // Check Google Calendar busy times
+  try {
+    const client = getAuthedClient(user);
+    const cal = google.calendar({ version: 'v3', auth: client });
+    const tMin = `${date}T00:00:00+09:00`;
+    const tMax = `${date}T23:59:59+09:00`;
+    const fb = await cal.freebusy.query({
+      requestBody: { timeMin: tMin, timeMax: tMax, timeZone: 'Asia/Tokyo', items: [{ id: 'primary' }] }
+    });
+    const busy = fb.data.calendars.primary.busy || [];
+    filtered = filtered.filter(s => {
+      const ss = new Date(s.start).getTime(), se = new Date(s.end).getTime();
+      return !busy.some(b => ss < new Date(b.end).getTime() && se > new Date(b.start).getTime());
+    });
+  } catch (e) { console.error('freebusy error:', e.message); }
+
+  res.json({ slots: filtered, hostName: user.name });
+});
+
+// ---- Public: book ----
+app.post('/api/b/:slug/book', async (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE slug=?').get(req.params.slug);
+  if (!user) return res.status(404).json({ error: 'not found' });
+
+  const { booker_name, booker_email, start_time, end_time, purpose } = req.body;
+  if (db.prepare('SELECT id FROM bookings WHERE user_id=? AND start_time=?').get(user.id, start_time))
+    return res.status(409).json({ error: 'この時間はすでに予約されています' });
+
+  const meetRoom = crypto.randomBytes(4).toString('hex');
+  const meetUrl = `https://meet.gaiaarts.org/?room=${meetRoom}`;
+
+  let googleEventId = null;
+  try {
+    const client = getAuthedClient(user);
+    const event = await google.calendar({ version: 'v3', auth: client }).events.insert({
+      calendarId: 'primary',
+      sendUpdates: 'all',
+      requestBody: {
+        summary: `${booker_name}さんとのミーティング`,
+        description: `用件: ${purpose || 'なし'}\n\nビデオ通話URL: ${meetUrl}`,
+        start: { dateTime: start_time, timeZone: 'Asia/Tokyo' },
+        end: { dateTime: end_time, timeZone: 'Asia/Tokyo' },
+        attendees: [{ email: user.email }, { email: booker_email }]
+      }
+    });
+    googleEventId = event.data.id;
+  } catch (e) { console.error('calendar insert error:', e.message); }
+
+  db.prepare('INSERT INTO bookings (user_id, booker_name, booker_email, start_time, end_time, purpose, meet_room, google_event_id) VALUES (?,?,?,?,?,?,?,?)')
+    .run(user.id, booker_name, booker_email, start_time, end_time, purpose || '', meetRoom, googleEventId);
+
+  // メール送信
+  const startDt = new Date(start_time);
+  const endDt = new Date(end_time);
+  const fmtDate = startDt.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+  const fmtTime = `${startDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} 〜 ${endDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+
+  // 予約者へ
+  if (booker_email) {
+    await sendMail(booker_email, `【予約確認】${user.name}さんとのミーティング`,
+`${booker_name} 様
+
+ミーティングのご予約が完了しました。
+
+━━━━━━━━━━━━━━━━━━
+日時：${fmtDate} ${fmtTime}
+相手：${user.name}
+用件：${purpose || 'なし'}
+━━━━━━━━━━━━━━━━━━
+
+■ ビデオ通話URL
+${meetUrl}
+
+当日は上記URLをクリックするだけで参加できます。
+（ブラウザのみ対応・アプリ不要）
+
+よろしくお願いします。
+`);
+  }
+
+  // ホストへ
+  await sendMail(user.email, `【新規予約】${booker_name}さんから予約が入りました`,
+`新しいミーティングの予約が入りました。
+
+━━━━━━━━━━━━━━━━━━
+日時：${fmtDate} ${fmtTime}
+予約者：${booker_name}${booker_email ? ` (${booker_email})` : ''}
+用件：${purpose || 'なし'}
+━━━━━━━━━━━━━━━━━━
+
+■ ビデオ通話URL
+${meetUrl}
+
+■ 予約管理
+https://meet.gaiaarts.org/booking/dashboard
+`);
+
+  res.json({ ok: true, meet_url: meetUrl });
+});
+
+// ---- 録画アップロード ----
+const recDir = path.join(__dirname, 'recordings');
+if (!fs.existsSync(recDir)) fs.mkdirSync(recDir);
+app.use('/recordings', express.static(recDir));
+
+const storage = multer.diskStorage({
+  destination: recDir,
+  filename: (req, file, cb) => cb(null, file.originalname)
+});
+const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 * 1024 } }); // 2GB
+
+app.post('/api/upload-recording', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no file' });
+  const url = `https://meet.gaiaarts.org/recordings/${req.file.filename}`;
+  const roomId = req.body.roomId;
+  if (roomId) {
+    io.to(roomId).emit('recording-ready', {
+      url,
+      filename: req.file.filename,
+      uploader: req.body.uploaderName || '参加者'
+    });
+  }
+  res.json({ ok: true, url });
+});
+
+// 録画ファイルを24時間後に自動削除（1時間ごとにチェック）
+const REC_TTL = 24 * 60 * 60 * 1000;
+setInterval(() => {
+  fs.readdir(recDir, (err, files) => {
+    if (err) return;
+    const now = Date.now();
+    files.forEach(file => {
+      const fp = path.join(recDir, file);
+      fs.stat(fp, (err, stat) => {
+        if (!err && now - stat.mtimeMs > REC_TTL) {
+          fs.unlink(fp, () => console.log('録画自動削除:', file));
+        }
+      });
+    });
+  });
+}, 60 * 60 * 1000);
+
+// ---- Pages ----
+app.get('/b/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'book.html')));
+app.get('/booking/dashboard', (req, res) => {
+  if (!req.session.userId) return res.redirect('/auth/google');
+  res.sendFile(path.join(__dirname, 'public', 'booking', 'dashboard.html'));
+});
+app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'index.html')));
+
+// ---- Socket.io (video chat) ----
+const rooms = new Map();
+io.on('connection', (socket) => {
+  socket.on('join-room', ({ roomId, password, userName }) => {
+    const room = rooms.get(roomId);
+    if (room && room.password && room.password !== password) {
+      socket.emit('join-error', 'パスワードが違います'); return;
+    }
+    if (!room) rooms.set(roomId, { password: password || '', users: new Map() });
+    const cur = rooms.get(roomId);
+    // 切断済みのソケットを先に掃除
+    for (const [id] of cur.users) {
+      if (!io.sockets.sockets.get(id)) cur.users.delete(id);
+    }
+    cur.users.set(socket.id, { name: userName });
+    socket.join(roomId);
+    socket.roomId = roomId;
+    socket.userName = userName;
+    const existing = [...cur.users.entries()].filter(([id]) => id !== socket.id).map(([id, d]) => ({ id, name: d.name }));
+    socket.emit('room-joined', { existingUsers: existing });
+    socket.to(roomId).emit('user-joined', { id: socket.id, name: userName });
+  });
+  socket.on('offer', ({ to, offer }) => io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }));
+  socket.on('answer', ({ to, answer }) => io.to(to).emit('answer', { from: socket.id, answer }));
+  socket.on('ice-candidate', ({ to, candidate }) => io.to(to).emit('ice-candidate', { from: socket.id, candidate }));
+  socket.on('chat-message', ({ message }) => {
+    if (!socket.roomId) return;
+    io.to(socket.roomId).emit('chat-message', { from: socket.userName, message, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) });
+  });
+  socket.on('disconnect', () => {
+    if (!socket.roomId) return;
+    const room = rooms.get(socket.roomId);
+    if (room) { room.users.delete(socket.id); if (room.users.size === 0) rooms.delete(socket.roomId); }
+    socket.to(socket.roomId).emit('user-left', { id: socket.id, name: socket.userName });
+  });
+});
+
+server.listen(3100, () => console.log('Meet+Booking server on port 3100'));

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>予約システム</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100vh;display:flex;align-items:center;justify-content:center}
+.box{background:#1e1e3a;padding:40px;border-radius:16px;width:420px;text-align:center;border:1px solid #2a2a4a}
+h1{font-size:26px;margin-bottom:8px}
+p{color:#888;font-size:14px;margin-bottom:32px}
+.btn{display:block;width:100%;padding:14px;background:#6c63ff;border:none;border-radius:8px;color:#fff;font-size:16px;font-weight:600;cursor:pointer;text-decoration:none;transition:background .2s}
+.btn:hover{background:#5a52e0}
+.error{color:#ff6b6b;font-size:13px;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>予約システム</h1>
+  <p>Googleアカウントでログインして<br>予約ページを設定しましょう</p>
+  <a href="/auth/google" class="btn">Googleでログイン</a>
+  <div class="error" id="err"></div>
+</div>
+<script>
+if (new URLSearchParams(location.search).get('error')) {
+  document.getElementById('err').textContent = 'ログインに失敗しました。もう一度お試しください。';
+}
+</script>
+</body>
+</html>
