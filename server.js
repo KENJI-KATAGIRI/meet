@@ -10,6 +10,8 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const multer = require('multer');
 const fs = require('fs');
+const OpenAI = require('openai');
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 const mailer = nodemailer.createTransport({
   service: 'gmail',
@@ -352,6 +354,44 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 * 1024 } }); // 2GB
 
+async function transcribeAndSummarize(filepath, filename, roomId) {
+  try {
+    if (roomId) io.to(roomId).emit('transcription-status', { status: 'transcribing' });
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(filepath),
+      model: 'whisper-1',
+      language: 'ja',
+    });
+    const transcript = transcription.text;
+    const transcriptFilename = filename.replace(/\.[^.]+$/, '-transcript.txt');
+    fs.writeFileSync(path.join(recDir, transcriptFilename), transcript, 'utf8');
+
+    if (roomId) io.to(roomId).emit('transcription-status', { status: 'summarizing' });
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: '以下の会議の文字起こしを日本語で要約してください。箇条書きで主要な議題、決定事項、アクションアイテムをまとめてください。文字起こしが空または短すぎる場合はその旨を記載してください。' },
+        { role: 'user', content: transcript }
+      ]
+    });
+    const summary = completion.choices[0].message.content;
+    const summaryFilename = filename.replace(/\.[^.]+$/, '-summary.txt');
+    fs.writeFileSync(path.join(recDir, summaryFilename), summary, 'utf8');
+
+    if (roomId) {
+      io.to(roomId).emit('transcription-ready', {
+        transcriptUrl: `https://meet.gaiaarts.org/recordings/${transcriptFilename}`,
+        summaryUrl: `https://meet.gaiaarts.org/recordings/${summaryFilename}`,
+        transcriptFilename,
+        summaryFilename,
+      });
+    }
+  } catch (e) {
+    console.error('transcription error:', e.message);
+    if (roomId) io.to(roomId).emit('transcription-status', { status: 'error' });
+  }
+}
+
 app.post('/api/upload-recording', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const url = `https://meet.gaiaarts.org/recordings/${req.file.filename}`;
@@ -364,6 +404,7 @@ app.post('/api/upload-recording', upload.single('file'), (req, res) => {
     });
   }
   res.json({ ok: true, url });
+  if (openai) transcribeAndSummarize(req.file.path, req.file.filename, roomId);
 });
 
 // 録画ファイルを24時間後に自動削除（1時間ごとにチェック）

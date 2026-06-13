@@ -403,6 +403,18 @@ async function joinRoom() {
     document.getElementById('btn-chat').classList.add('active');
     notify('録画の準備ができました。チャットからダウンロードできます。');
   });
+  socket.on('transcription-status', ({ status }) => {
+    const msgs = { transcribing: '🎙️ 文字起こし処理中...', summarizing: '🤖 AI要約生成中...', error: '❌ 文字起こしに失敗しました' };
+    if (msgs[status]) notify(msgs[status]);
+  });
+  socket.on('transcription-ready', ({ transcriptUrl, summaryUrl, transcriptFilename, summaryFilename }) => {
+    const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const msg = `📝 文字起こし・要約が完成しました<br><a href="${transcriptUrl}" download="${transcriptFilename}" target="_blank" style="color:#60a5fa;font-weight:600">⬇️ 文字起こし (TXT)</a><br><a href="${summaryUrl}" download="${summaryFilename}" target="_blank" style="color:#f472b6;font-weight:600">⬇️ AI要約 (TXT)</a>`;
+    addChatMessage('システム', msg, time, false, true);
+    document.getElementById('chat-panel').classList.add('open');
+    document.getElementById('btn-chat').classList.add('active');
+    notify('文字起こしと要約の準備ができました！');
+  });
   socket.on('screen-share-stop', ({ id }) => {
     const st = document.getElementById('tile-screen-' + id);
     if (st) { st.remove(); updateGrid(); }
