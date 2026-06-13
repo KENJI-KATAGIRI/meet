@@ -361,7 +361,7 @@ let mpSelfie = null, mpReady = false, mpSending = false, mpModelLoading = false;
 let maskCanvas2 = null, maskCtx2 = null, maskBuf = null;
 let maskReadCtx = null;
 let prevMaskData = null;
-const EMA_ALPHA = 0.8;
+const EMA_ALPHA = 0.4;
 let bgMode = 'none';
 let bgColorVal = '#1a1a3e';
 let bgImg = null;
@@ -1229,9 +1229,10 @@ function onMpResults(results) {
     prevMaskData = new Float32Array(w * h);
   }
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
-    const v = d[j] / 255;
-    prevMaskData[i] = EMA_ALPHA * prevMaskData[i] + (1 - EMA_ALPHA) * v;
-    const out = Math.round(prevMaskData[i] * 255);
+    const raw = Math.max(d[j], d[j+3]) / 255;
+    prevMaskData[i] = EMA_ALPHA * prevMaskData[i] + (1 - EMA_ALPHA) * raw;
+    const sharpened = 1 / (1 + Math.exp(-14 * (prevMaskData[i] - 0.38)));
+    const out = Math.round(sharpened * 255);
     maskBuf[j] = maskBuf[j+1] = maskBuf[j+2] = maskBuf[j+3] = out;
   }
   maskCtx2.putImageData(new ImageData(maskBuf, w, h), 0, 0);
@@ -1250,9 +1251,7 @@ function drawWithMask(w, h) {
     personCtx.drawImage(segCanvas, 0, 0, w, h);
   }
   personCtx.globalCompositeOperation = 'destination-in';
-  personCtx.filter = 'blur(2px)';
   personCtx.drawImage(maskCanvas2, 0, 0, w, h);
-  personCtx.filter = 'none';
   personCtx.globalCompositeOperation = 'source-over';
 
   effectsCtx.clearRect(0, 0, w, h);
