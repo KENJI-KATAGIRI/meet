@@ -6,9 +6,9 @@
 <title>Meet</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100vh;overflow:hidden}
-#lobby{display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg,#0f0f1a,#1a1a3e)}
-.lobby-box{background:#1e1e3a;padding:40px;border-radius:16px;width:420px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100vh;height:100dvh;overflow:hidden}
+#lobby{display:flex;align-items:center;justify-content:center;height:100vh;height:100dvh;background:linear-gradient(135deg,#0f0f1a,#1a1a3e)}
+.lobby-box{background:#1e1e3a;padding:40px;border-radius:16px;width:min(420px,calc(100vw - 32px));box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .lobby-box h1{font-size:28px;margin-bottom:8px;text-align:center}
 .lobby-box p{color:#888;text-align:center;margin-bottom:32px;font-size:14px}
 .lobby-box input{width:100%;padding:12px 16px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:15px;margin-bottom:12px;outline:none;transition:border .2s}
@@ -109,6 +109,25 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 /* 通知 */
 #notification{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#2a2a4a;padding:10px 20px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:200}
 #notification.show{opacity:1}
+
+/* スマホ用 */
+#btn-flip{display:none}
+#btn-more{display:none}
+#more-menu{display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e1e3a;border:1px solid #3a3a5a;border-radius:12px;padding:8px;z-index:150;box-shadow:0 8px 32px rgba(0,0,0,.7);gap:4px}
+#more-menu.open{display:flex}
+@media(max-width:640px){
+  body,#lobby{height:100dvh}
+  .lobby-box{padding:24px 20px}
+  #controls{padding:8px 2px;gap:2px}
+  .ctrl-btn{min-width:44px;padding:4px 2px;font-size:9px}
+  .ctrl-btn .icon{width:44px;height:44px;font-size:20px}
+  .ctrl-btn-secondary{display:none}
+  #btn-flip,#btn-more{display:flex}
+  #chat-panel.open{position:fixed!important;width:100%!important;height:100dvh;top:0;left:0;z-index:200}
+  #chat-panel>*{min-width:0!important}
+  #effects-panel{width:100%;left:-100%}
+  #effects-panel.open{left:0}
+}
 </style>
 </head>
 <body>
@@ -151,17 +170,23 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
     <button class="ctrl-btn" id="btn-cam" onclick="toggleCam()">
       <div class="icon">📷</div><span>カメラ</span>
     </button>
-    <button class="ctrl-btn" id="btn-effects" onclick="toggleEffects()">
+    <button class="ctrl-btn" id="btn-flip" onclick="flipCamera()">
+      <div class="icon">🔄</div><span>切替</span>
+    </button>
+    <button class="ctrl-btn ctrl-btn-secondary" id="btn-effects" onclick="toggleEffects()">
       <div class="icon">✨</div><span>エフェクト</span>
     </button>
-    <button class="ctrl-btn" id="btn-screen" onclick="toggleScreen()">
+    <button class="ctrl-btn ctrl-btn-secondary" id="btn-screen" onclick="toggleScreen()">
       <div class="icon">🖥️</div><span>画面共有</span>
     </button>
     <button class="ctrl-btn" id="btn-chat" onclick="toggleChat()">
       <div class="icon">💬</div><span>チャット</span>
     </button>
-    <button class="ctrl-btn" id="btn-record" onclick="toggleRecording()">
+    <button class="ctrl-btn ctrl-btn-secondary" id="btn-record" onclick="toggleRecording()">
       <div class="icon">⏺️</div><span>録画</span>
+    </button>
+    <button class="ctrl-btn" id="btn-more" onclick="toggleMore()">
+      <div class="icon">⋯</div><span>もっと</span>
     </button>
     <button class="ctrl-btn leave" onclick="leaveRoom()">
       <div class="icon">📴</div><span>退出</span>
@@ -270,6 +295,19 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 </div>
 
 
+<!-- スマホ用もっとメニュー -->
+<div id="more-menu">
+  <button class="ctrl-btn" id="btn-effects-m" onclick="toggleEffects();closeMore()">
+    <div class="icon">✨</div><span>エフェクト</span>
+  </button>
+  <button class="ctrl-btn" id="btn-screen-m" onclick="toggleScreen();closeMore()">
+    <div class="icon">🖥️</div><span>画面共有</span>
+  </button>
+  <button class="ctrl-btn" id="btn-record-m" onclick="toggleRecording();closeMore()">
+    <div class="icon">⏺️</div><span>録画</span>
+  </button>
+</div>
+
 <div id="notification"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
@@ -330,9 +368,12 @@ async function joinRoom() {
   if (!name) { errEl.textContent = '名前を入力してください'; return; }
   if (!room) { errEl.textContent = 'ルームIDを入力してください'; return; }
   errEl.textContent = '';
+  const isMobile = window.innerWidth <= 640 || /Mobi|Android/i.test(navigator.userAgent);
   try {
     rawStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: 16/9 },
+      video: isMobile
+        ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+        : { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: 16/9 },
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
@@ -344,6 +385,13 @@ async function joinRoom() {
     });
   } catch(e) {
     errEl.textContent = 'カメラ・マイクへのアクセスを許可してください'; return;
+  }
+  if (isMobile) {
+    const track = rawStream.getVideoTracks()[0];
+    const caps = track?.getCapabilities?.();
+    if (caps?.zoom) {
+      try { await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }); } catch(e) {}
+    }
   }
   localStream = rawStream;
   myName = name; myRoomId = room;
@@ -776,6 +824,47 @@ function notify(msg) {
   el.textContent = msg; el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3000);
 }
+
+// ===== スマホ: カメラ前面/背面切り替え =====
+let facingMode = 'user';
+async function flipCamera() {
+  facingMode = facingMode === 'user' ? 'environment' : 'user';
+  try {
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false
+    });
+    const newTrack = newStream.getVideoTracks()[0];
+    const caps = newTrack?.getCapabilities?.();
+    if (caps?.zoom) {
+      try { await newTrack.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }); } catch(e) {}
+    }
+    rawStream.getVideoTracks().forEach(t => { t.stop(); rawStream.removeTrack(t); });
+    rawStream.addTrack(newTrack);
+    if (effectsInited && effectsVideo) {
+      effectsVideo.srcObject = rawStream;
+    } else {
+      document.getElementById('tile-local').querySelector('video').srcObject = rawStream;
+    }
+    Object.values(peers).forEach(pc =>
+      pc.getSenders().forEach(s => { if (s.track?.kind === 'video') s.replaceTrack(newTrack); })
+    );
+    document.getElementById('btn-flip').querySelector('.icon').textContent = facingMode === 'user' ? '🔄' : '📸';
+  } catch(e) { notify('カメラ切り替えに失敗しました'); facingMode = facingMode === 'user' ? 'environment' : 'user'; }
+}
+
+// ===== もっとメニュー =====
+function toggleMore() {
+  document.getElementById('more-menu').classList.toggle('open');
+}
+function closeMore() {
+  document.getElementById('more-menu').classList.remove('open');
+}
+document.addEventListener('click', e => {
+  const menu = document.getElementById('more-menu');
+  if (!menu.classList.contains('open')) return;
+  if (!menu.contains(e.target) && !document.getElementById('btn-more').contains(e.target)) closeMore();
+});
 
 // ============ 録画 ============
 let mediaRecorder = null, recordedChunks = [], recordingRaf = null, recordingCanvas = null;

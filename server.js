@@ -424,6 +424,48 @@ setInterval(() => {
   });
 }, 60 * 60 * 1000);
 
+
+// ---- ファイルアップロード (チャット) ----
+const uploadDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+app.use('/uploads', express.static(uploadDir));
+
+const uploadStorage = multer.diskStorage({
+  destination: uploadDir,
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const base = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, Date.now() + '-' + base + ext);
+  }
+});
+const uploadFileMiddleware = multer({ storage: uploadStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+
+app.post('/api/upload-file', uploadFileMiddleware.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no file' });
+  const url = '/uploads/' + req.file.filename;
+  const origName = req.file.originalname;
+  const isImage = req.file.mimetype.startsWith('image/');
+  const roomId = req.body.roomId;
+  const senderName = req.body.senderName || '参加者';
+  const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  const msgHtml = isImage
+    ? `<img src="${url}" alt="${origName}" class="chat-img" onclick="window.open('${url}','_blank')">`
+    : `<a href="${url}" download="${origName}" target="_blank" class="chat-file-link">📎 ${origName}</a>`;
+  if (roomId) io.to(roomId).emit('chat-file', { from: senderName, message: msgHtml, time });
+  res.json({ ok: true, url, origName, isImage });
+});
+
+setInterval(() => {
+  fs.readdir(uploadDir, (err, files) => {
+    if (err) return;
+    const now = Date.now();
+    files.forEach(file => {
+      const fp = path.join(uploadDir, file);
+      fs.stat(fp, (err, stat) => { if (!err && now - stat.mtimeMs > 24*60*60*1000) fs.unlink(fp, ()=>{}); });
+    });
+  });
+}, 60 * 60 * 1000);
+
 // ---- Pages ----
 app.get('/b/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'book.html')));
 app.get('/booking/dashboard', (req, res) => {
@@ -457,6 +499,7 @@ io.on('connection', (socket) => {
   socket.on('offer', ({ to, offer }) => io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }));
   socket.on('answer', ({ to, answer }) => io.to(to).emit('answer', { from: socket.id, answer }));
   socket.on('ice-candidate', ({ to, candidate }) => io.to(to).emit('ice-candidate', { from: socket.id, candidate }));
+  socket.on('screen-share-stop', () => { socket.to(socket.roomId).emit('screen-share-stop', { id: socket.id }); });
   socket.on('chat-message', ({ message }) => {
     if (!socket.roomId) return;
     io.to(socket.roomId).emit('chat-message', { from: socket.userName, message, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) });
