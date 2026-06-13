@@ -466,6 +466,79 @@ setInterval(() => {
   });
 }, 60 * 60 * 1000);
 
+// ---- 音声チャンクアップロード ----
+const audioChunkUpload = multer({
+  storage: multer.diskStorage({
+    destination: recDir,
+    filename: (req, file, cb) => cb(null, 'tmpaudio-' + Date.now() + '-' + Math.random().toString(36).slice(2,8) + '.webm')
+  }),
+  limits: { fileSize: 200 * 1024 * 1024 }
+});
+
+app.post('/api/audio-chunk', audioChunkUpload.single('chunk'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no file' });
+  const { sessionId, chunkIndex } = req.body;
+  if (!sessionId) { fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'no sessionId' }); }
+  const finalName = `audio-${sessionId}-${String(chunkIndex).padStart(4,'0')}.webm`;
+  fs.rename(req.file.path, path.join(recDir, finalName), () => {});
+  res.json({ ok: true });
+});
+
+const formParser = multer().none();
+app.post('/api/audio-finalize', formParser, async (req, res) => {
+  res.json({ ok: true });
+  const { sessionId, email } = req.body;
+  if (!email || !sessionId || !openai) return;
+  try {
+    const chunkFiles = fs.readdirSync(recDir)
+      .filter(f => f.startsWith(`audio-${sessionId}-`) && f.endsWith('.webm'))
+      .sort();
+    if (chunkFiles.length === 0) return;
+    const combined = Buffer.concat(chunkFiles.map(f => fs.readFileSync(path.join(recDir, f))));
+    const finalPath = path.join(recDir, `audio-${sessionId}-final.webm`);
+    fs.writeFileSync(finalPath, combined);
+
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(finalPath),
+      model: 'whisper-1',
+      language: 'ja',
+    });
+    const transcript = transcription.text?.trim();
+
+    chunkFiles.forEach(f => fs.unlink(path.join(recDir, f), () => {}));
+    fs.unlink(finalPath, () => {});
+
+    if (!transcript) {
+      await sendMail(email, '【Meet】会議の文字起こし', '音声が検出されませんでした。');
+      return;
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: '以下の会議の文字起こしを日本語で要約してください。箇条書きで主要な議題、決定事項、アクションアイテムをまとめてください。' },
+        { role: 'user', content: transcript }
+      ]
+    });
+    const summary = completion.choices[0].message.content;
+
+    await sendMail(email, '【Meet】会議の文字起こし・要約',
+`━━━━━━━━━━━━━━━━━━
+【AI要約】
+━━━━━━━━━━━━━━━━━━
+${summary}
+
+━━━━━━━━━━━━━━━━━━
+【文字起こし（全文）】
+━━━━━━━━━━━━━━━━━━
+${transcript}
+`);
+  } catch(e) {
+    console.error('audio finalize error:', e.message);
+    sendMail(email, '【Meet】文字起こしエラー', '処理中にエラーが発生しました。').catch(() => {});
+  }
+});
+
 // ---- Pages ----
 app.get('/b/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'book.html')));
 app.get('/booking/dashboard', (req, res) => {
@@ -477,12 +550,12 @@ app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'b
 // ---- Socket.io (video chat) ----
 const rooms = new Map();
 io.on('connection', (socket) => {
-  socket.on('join-room', ({ roomId, password, userName }) => {
+  socket.on('join-room', ({ roomId, password, userName, transcribeMode }) => {
     const room = rooms.get(roomId);
     if (room && room.password && room.password !== password) {
       socket.emit('join-error', 'パスワードが違います'); return;
     }
-    if (!room) rooms.set(roomId, { password: password || '', users: new Map() });
+    if (!room) rooms.set(roomId, { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only' });
     const cur = rooms.get(roomId);
     // 切断済みのソケットを先に掃除
     for (const [id] of cur.users) {
@@ -493,7 +566,7 @@ io.on('connection', (socket) => {
     socket.roomId = roomId;
     socket.userName = userName;
     const existing = [...cur.users.entries()].filter(([id]) => id !== socket.id).map(([id, d]) => ({ id, name: d.name }));
-    socket.emit('room-joined', { existingUsers: existing });
+    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode });
     socket.to(roomId).emit('user-joined', { id: socket.id, name: userName });
   });
   socket.on('offer', ({ to, offer }) => io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }));

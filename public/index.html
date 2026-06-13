@@ -141,6 +141,15 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
     <span class="optional-label">パスワード（省略可）</span>
     <input id="input-pass" type="password" placeholder="パスワード">
     <button class="btn-primary" onclick="joinRoom()">参加する</button>
+    <div style="border-top:1px solid #2a2a4a;margin-top:20px;padding-top:16px">
+      <div style="font-size:11px;color:#555;margin-bottom:10px;letter-spacing:.5px">📝 文字起こし設定</div>
+      <span class="optional-label">メールアドレス（省略可）<br><span style="font-size:11px;color:#4a4a6a">会議終了後に要約を送信します</span></span>
+      <input id="input-email" type="email" placeholder="example@email.com">
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#777;cursor:pointer;margin-top:-4px;margin-bottom:4px">
+        <input type="checkbox" id="input-allow-all" style="accent-color:#6c63ff;width:14px;height:14px;flex-shrink:0;cursor:pointer">
+        クライアント側にも文字起こしを許可する
+      </label>
+    </div>
     <div class="error-msg" id="error-msg"></div>
   </div>
 </div>
@@ -308,6 +317,20 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
   </button>
 </div>
 
+<!-- 文字起こしモーダル（クライアント向け） -->
+<div id="transcribe-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:300;align-items:center;justify-content:center">
+  <div style="background:#1e1e3a;border-radius:16px;padding:28px;width:min(360px,90vw);box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <div style="font-size:16px;font-weight:600;margin-bottom:8px">📝 文字起こし機能が有効です</div>
+    <div style="font-size:13px;color:#888;margin-bottom:16px">会議終了後、内容の要約をメールでお届けします。</div>
+    <input id="modal-email" type="email" placeholder="メールアドレス（省略可）"
+      style="width:100%;padding:12px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box">
+    <div style="display:flex;gap:8px">
+      <button onclick="registerTranscribeEmail()" style="flex:1;padding:10px;background:#6c63ff;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer">登録する</button>
+      <button onclick="closeTranscribeModal()" style="flex:1;padding:10px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#ccc;font-size:14px;cursor:pointer">スキップ</button>
+    </div>
+  </div>
+</div>
+
 <div id="notification"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
@@ -359,6 +382,11 @@ let beautyCanvas = null, beautyCtx = null;
 
 const urlParams = new URLSearchParams(location.search);
 if (urlParams.get('room')) document.getElementById('input-room').value = urlParams.get('room');
+document.getElementById('input-email').value = localStorage.getItem('meetEmail') || '';
+
+let myEmail = '', isHost = false, roomTranscribeMode = 'host_only';
+let audioRecorder = null, audioSessionId = null, audioChunkIndex = 0;
+const pendingUploads = new Set();
 
 async function joinRoom() {
   const name = document.getElementById('input-name').value.trim();
@@ -368,6 +396,9 @@ async function joinRoom() {
   if (!name) { errEl.textContent = '名前を入力してください'; return; }
   if (!room) { errEl.textContent = 'ルームIDを入力してください'; return; }
   errEl.textContent = '';
+  myEmail = document.getElementById('input-email').value.trim();
+  if (myEmail) localStorage.setItem('meetEmail', myEmail);
+  const transcribeMode = document.getElementById('input-allow-all').checked ? 'all' : 'host_only';
   const isMobile = window.innerWidth <= 640 || /Mobi|Android/i.test(navigator.userAgent);
   try {
     rawStream = await navigator.mediaDevices.getUserMedia({
@@ -404,9 +435,13 @@ async function joinRoom() {
   addVideoTile('local', myName, localStream, true);
   socket = io();
   socket.on('join-error', msg => { alert(msg); location.reload(); });
-  socket.on('room-joined', ({ existingUsers }) => {
+  socket.on('room-joined', ({ existingUsers, transcribeMode }) => {
+    isHost = existingUsers.length === 0;
+    roomTranscribeMode = transcribeMode || 'host_only';
     existingUsers.forEach(({ id, name }) => { peerNames[id] = name; createPeer(id, name, true); });
     updateCount();
+    if (isHost && myEmail) startAutoAudioRecording();
+    else if (!isHost && roomTranscribeMode === 'all') setTimeout(showTranscribeModal, 800);
   });
   socket.on('user-joined', ({ id, name }) => {
     peerNames[id] = name; createPeer(id, name, false);
@@ -472,7 +507,7 @@ async function joinRoom() {
       peerStreams[id] = s ? new Set([s.id]) : new Set();
     }
   });
-  socket.emit('join-room', { roomId: room, password: pass, userName: name });
+  socket.emit('join-room', { roomId: room, password: pass, userName: name, transcribeMode });
   history.replaceState(null, '', '?room=' + encodeURIComponent(room));
 }
 
@@ -808,15 +843,72 @@ function addChatMessage(from, message, time, isSelf, isHtml) {
   }
 }
 
-function leaveRoom() {
+async function leaveRoom() {
   if (timerInterval) clearInterval(timerInterval);
   if (speakerInterval) clearInterval(speakerInterval);
+  await stopAndFinalizeAudio();
   if (rawStream) rawStream.getTracks().forEach(t => t.stop());
   if (screenStream) screenStream.getTracks().forEach(t => t.stop());
   if (effectsStream) effectsStream.getTracks().forEach(t => t.stop());
   if (rafId) cancelAnimationFrame(rafId);
   if (socket) socket.disconnect();
   location.href = '/';
+}
+
+// ============ 音声自動録音・文字起こし ============
+function startAutoAudioRecording() {
+  if (!rawStream || audioRecorder) return;
+  audioSessionId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  audioChunkIndex = 0;
+  const audioStream = new MediaStream(rawStream.getAudioTracks());
+  const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+  audioRecorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : {});
+  audioRecorder.ondataavailable = (e) => {
+    if (e.data.size < 500) return;
+    const idx = audioChunkIndex++;
+    const form = new FormData();
+    form.append('chunk', e.data, `chunk-${idx}.webm`);
+    form.append('sessionId', audioSessionId);
+    form.append('chunkIndex', String(idx));
+    const p = fetch('/api/audio-chunk', { method: 'POST', body: form }).catch(() => {});
+    pendingUploads.add(p);
+    p.finally(() => pendingUploads.delete(p));
+  };
+  audioRecorder.start(2 * 60 * 1000);
+}
+
+async function stopAndFinalizeAudio() {
+  if (!audioRecorder || audioRecorder.state === 'inactive' || !myEmail) return;
+  if (audioRecorder.state === 'recording') {
+    await new Promise(resolve => { audioRecorder.onstop = resolve; audioRecorder.stop(); });
+  }
+  await Promise.race([Promise.all([...pendingUploads]), new Promise(r => setTimeout(r, 5000))]);
+  const form = new FormData();
+  form.append('sessionId', audioSessionId);
+  form.append('totalChunks', String(audioChunkIndex));
+  form.append('email', myEmail);
+  form.append('roomId', myRoomId);
+  fetch('/api/audio-finalize', { method: 'POST', body: form }).catch(() => {});
+}
+
+function showTranscribeModal() {
+  document.getElementById('modal-email').value = localStorage.getItem('meetEmail') || '';
+  document.getElementById('transcribe-modal').style.display = 'flex';
+}
+
+function registerTranscribeEmail() {
+  const email = document.getElementById('modal-email').value.trim();
+  if (email) {
+    myEmail = email;
+    localStorage.setItem('meetEmail', email);
+    startAutoAudioRecording();
+    notify('メールアドレスを登録しました。会議終了後に要約をお届けします。');
+  }
+  closeTranscribeModal();
+}
+
+function closeTranscribeModal() {
+  document.getElementById('transcribe-modal').style.display = 'none';
 }
 
 function notify(msg) {
