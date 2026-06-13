@@ -33,11 +33,12 @@ const db = new Database(path.join(__dirname, 'data', 'booking.db'));
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    google_id TEXT UNIQUE NOT NULL,
+    google_id TEXT UNIQUE,
     name TEXT NOT NULL,
-    email TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
     access_token TEXT,
     refresh_token TEXT,
+    password_hash TEXT,
     slug TEXT UNIQUE NOT NULL,
     slot_duration INTEGER DEFAULT 30
   );
@@ -62,6 +63,25 @@ db.exec(`
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
 `);
+// 既存DBへのマイグレーション
+try { db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT'); } catch(e) {}
+try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch(e) {}
+
+// パスワードハッシュ
+async function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = await new Promise((res, rej) =>
+    crypto.scrypt(password, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex')))
+  );
+  return salt + ':' + hash;
+}
+async function verifyPassword(password, stored) {
+  const [salt, hash] = stored.split(':');
+  const attempt = await new Promise((res, rej) =>
+    crypto.scrypt(password, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex')))
+  );
+  return attempt === hash;
+}
 
 app.set('trust proxy', 1);
 app.use(express.json());
@@ -137,7 +157,38 @@ app.get('/auth/google/callback', async (req, res) => {
   }
 });
 
-app.get('/auth/logout', (req, res) => { req.session.destroy(); res.redirect('/'); });
+app.get('/auth/logout', (req, res) => { req.session.destroy(); res.redirect('/booking'); });
+
+// ---- メール＋パスワード登録 ----
+app.post('/auth/register', async (req, res) => {
+  const { name, email, password } = req.body;
+  if (!name || !email || !password) return res.json({ error: '全項目を入力してください' });
+  if (password.length < 8) return res.json({ error: 'パスワードは8文字以上にしてください' });
+  if (db.prepare('SELECT id FROM users WHERE email=?').get(email))
+    return res.json({ error: 'このメールアドレスはすでに登録されています' });
+  let slug = name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+  let base = slug, i = 1;
+  while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
+  const password_hash = await hashPassword(password);
+  const r = db.prepare('INSERT INTO users (name, email, password_hash, slug) VALUES (?,?,?,?)')
+    .run(name, email, password_hash, slug);
+  req.session.userId = r.lastInsertRowid;
+  req.session.slug = slug;
+  res.json({ ok: true });
+});
+
+// ---- メール＋パスワードログイン ----
+app.post('/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.json({ error: 'メールアドレスとパスワードを入力してください' });
+  const user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
+  if (!user || !user.password_hash) return res.json({ error: 'メールアドレスまたはパスワードが違います' });
+  const ok = await verifyPassword(password, user.password_hash);
+  if (!ok) return res.json({ error: 'メールアドレスまたはパスワードが違います' });
+  req.session.userId = user.id;
+  req.session.slug = user.slug;
+  res.json({ ok: true });
+});
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'unauthorized' });
