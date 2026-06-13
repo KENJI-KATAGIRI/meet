@@ -63,9 +63,34 @@ db.exec(`
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
 `);
-// 既存DBへのマイグレーション
+// 既存DBへのマイグレーション: google_idをNULL許容に変更
+try {
+  const cols = db.prepare('PRAGMA table_info(users)').all();
+  const gCol = cols.find(c => c.name === 'google_id');
+  if (gCol && gCol.notnull === 1) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE users_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        google_id TEXT UNIQUE,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        access_token TEXT,
+        refresh_token TEXT,
+        password_hash TEXT,
+        slug TEXT UNIQUE NOT NULL,
+        slot_duration INTEGER DEFAULT 30
+      );
+      INSERT INTO users_new (id,google_id,name,email,access_token,refresh_token,slug,slot_duration)
+        SELECT id,google_id,name,email,access_token,refresh_token,slug,slot_duration FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_new RENAME TO users;
+      COMMIT;
+    `);
+    console.log('DB migration: google_id is now nullable');
+  }
+} catch(e) { console.error('migration error:', e.message); }
 try { db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT'); } catch(e) {}
-try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch(e) {}
 
 // パスワードハッシュ
 async function hashPassword(password) {
