@@ -1261,11 +1261,12 @@ function onMpResults(results) {
   }
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
     const raw = Math.max(d[j], d[j+3]) / 255;
-    const sig = 1 / (1 + Math.exp(-14 * (raw - 0.3)));
-    // 新しい検出が強ければ即追従、弱ければゆっくり減衰
-    prevMaskData[i] = sig > prevMaskData[i]
-      ? 0.6 * prevMaskData[i] + 0.4 * sig
-      : 0.85 * prevMaskData[i] + 0.15 * sig;
+    // smoothstep: 0.55未満→0、0.85超→1、間はなめらかな曲線（vpalmisano方式）
+    const t = Math.max(0, Math.min(1, (raw - 0.55) / 0.3));
+    const stepped = t * t * (3 - 2 * t);
+    // 非対称EMA: 上昇は速く追従、減衰はゆっくり保持（モデルが一瞬外れても消えない）
+    const alpha = stepped > prevMaskData[i] ? 0.35 : 0.82;
+    prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
     const out = Math.round(prevMaskData[i] * 255);
     maskBuf[j] = maskBuf[j+1] = maskBuf[j+2] = maskBuf[j+3] = out;
   }
