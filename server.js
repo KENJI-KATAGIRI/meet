@@ -247,7 +247,7 @@ app.post('/api/availability', requireAuth, (req, res) => {
 
 // ---- API: bookings ----
 app.get('/api/bookings', requireAuth, (req, res) => {
-  const rows = db.prepare('SELECT * FROM bookings WHERE user_id=? ORDER BY start_time ASC').all(req.session.userId);
+  const rows = db.prepare('SELECT * FROM bookings WHERE user_id=? AND (cancelled IS NULL OR cancelled=0) ORDER BY start_time ASC').all(req.session.userId);
   res.json(rows);
 });
 
@@ -317,7 +317,7 @@ app.get('/api/b/:slug/slots', async (req, res) => {
   const allSlots = generateSlots(date, avail.start_time, avail.end_time, user.slot_duration || 30);
 
   // Filter already booked
-  const booked = db.prepare("SELECT start_time FROM bookings WHERE user_id=? AND start_time LIKE ?").all(user.id, date + '%');
+  const booked = db.prepare("SELECT start_time FROM bookings WHERE user_id=? AND start_time LIKE ? AND (cancelled IS NULL OR cancelled=0)").all(user.id, date + '%');
   const bookedTimes = new Set(booked.map(b => b.start_time));
 
   // Filter past times
