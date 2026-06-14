@@ -1389,15 +1389,18 @@ async function loadSegModel() {
 }
 
 // --- 美肌フィルター ---
-// ぼかしで肌テクスチャを平滑化しスキンマスクで肌エリアのみ適用
-// lightenは使わない（顔の陰影・立体感が消えて白く飛ぶため）
+// 小さいblur(3-5px) + lighten でシミ・小さな凹凸だけ除去
+// ・lighten は「暗い点だけを周囲の明るい肌色に置換」するので顔はぼやけない
+// ・大きな陰影(鼻下・あご等)はblurが小さいので変化なし→立体感を保持
+// ・スキンマスクで肌エリアのみ適用（目・眉・唇・髪はシャープ）
 function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
   if (sw == null) sw = src.videoWidth || src.width || w;
   if (sh == null) sh = src.videoHeight || src.height || h;
 
   const strong = beautyLevel === 2;
-  const blurPx = strong ? 10 : 6;
-  const strength = strong ? 0.72 : 0.58;
+  // 小さい半径: シミ(数px)は消えるが輪郭・陰影(数十px)は変化しない
+  const blurPx = strong ? 5 : 3;
+  const strength = strong ? 0.88 : 0.78;
 
   if (!beautyCanvas || beautyCanvas.width !== w || beautyCanvas.height !== h) {
     beautyCanvas = document.createElement('canvas');
@@ -1410,26 +1413,31 @@ function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
     beautyBlurCtx = beautyBlurCanvas.getContext('2d');
   }
 
-  // Step A: 元映像をベースとして描画
+  // Step A: 元映像をベース
   beautyCtx.globalCompositeOperation = 'source-over';
   beautyCtx.globalAlpha = 1;
   beautyCtx.clearRect(0, 0, w, h);
   beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
 
-  // Step B: ぼかし（シミ・凹凸を周囲肌色で平均化）
+  // Step B: 小ぼかし → lighten で暗い点(シミ)だけ周囲の肌色に置換
   beautyBlurCtx.clearRect(0, 0, w, h);
   beautyBlurCtx.filter = `blur(${blurPx}px)`;
   beautyBlurCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
   beautyBlurCtx.filter = 'none';
+  // lighten = max(blurred, original): シミは blurred > original → blurred に置換
+  //          明るい部分・陰影は original ≥ blurred → 変化なし
+  beautyBlurCtx.globalCompositeOperation = 'lighten';
+  beautyBlurCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  beautyBlurCtx.globalCompositeOperation = 'source-over';
 
-  // Step C: スキンマスクで肌エリアのみに限定（目・眉・唇・髪はシャープなまま）
+  // Step C: スキンマスクで肌エリアのみに限定
   if (skinMaskCanvas) {
     beautyBlurCtx.globalCompositeOperation = 'destination-in';
     beautyBlurCtx.drawImage(skinMaskCanvas, 0, 0, w, h);
     beautyBlurCtx.globalCompositeOperation = 'source-over';
   }
 
-  // Step D: 肌スムージング層を元映像に重ねる（陰影は元映像から保持）
+  // Step D: シミ除去レイヤーを元映像に重ねる
   beautyCtx.globalAlpha = strength;
   beautyCtx.drawImage(beautyBlurCanvas, 0, 0);
   beautyCtx.globalAlpha = 1;
