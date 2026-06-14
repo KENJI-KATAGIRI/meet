@@ -362,10 +362,9 @@ app.post('/api/b/:slug/book', async (req, res) => {
       sendUpdates: 'all',
       requestBody: {
         summary: `${booker_name}さんとのミーティング`,
-        description: `用件: ${purpose || 'なし'}\n\nビデオ通話URL: ${meetUrl}`,
+        description: `用件: ${purpose || 'なし'}\n\nビデオ通話URL: ${meetUrl}\n予約者: ${booker_name}${booker_email ? ` (${booker_email})` : ''}`,
         start: { dateTime: start_time, timeZone: 'Asia/Tokyo' },
-        end: { dateTime: end_time, timeZone: 'Asia/Tokyo' },
-        attendees: [{ email: user.email }, { email: booker_email }]
+        end: { dateTime: end_time, timeZone: 'Asia/Tokyo' }
       }
     });
     googleEventId = event.data.id;
