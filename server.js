@@ -635,44 +635,66 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
     }
 
     const tmpDir = require('os').tmpdir();
+    const CHUNK_DURATION = 2 * 60; // 2分チャンク（秒）
+    const SPEAKER_CHANGE_GAP = 2.0; // 話者切替と判定する無音秒数
     console.log(`[audio-finalize] transcribing ${chunkFiles.length} chunks individually...`);
-    const transcriptParts = [];
-    for (const f of chunkFiles) {
+    const allSegments = []; // { start, end, text } 絶対時刻
+    for (let ci = 0; ci < chunkFiles.length; ci++) {
+      const f = chunkFiles[ci];
       const fpath = path.join(recDir, f);
       const fsize = fs.statSync(fpath).size;
       if (fsize < 1000) { console.log(`[audio-finalize] skip tiny chunk ${f} (${fsize}bytes)`); continue; }
       let sendPath = fpath;
       let tmpFile = null;
+      const chunkOffset = ci * CHUNK_DURATION;
       try {
         const buf = fs.readFileSync(fpath);
         const isComplete = buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3;
         if (!isComplete && webmHeader) {
-          // ヘッダーを先頭に付けた一時ファイルを作成
           tmpFile = path.join(tmpDir, 'nicemeet-' + Date.now() + '-' + f);
           fs.writeFileSync(tmpFile, Buffer.concat([webmHeader, buf]));
           sendPath = tmpFile;
-          console.log(`[audio-finalize] fixed chunk ${f}: ${buf.length} -> ${buf.length + webmHeader.length} bytes`);
         }
         const result = await openai.audio.transcriptions.create({
           file: fs.createReadStream(sendPath),
           model: 'whisper-1',
           language: 'ja',
           prompt: 'はい。',
+          response_format: 'verbose_json',
         });
-        const text = result.text?.trim();
-        if (text && !isWhisperHallucination(text)) {
-          transcriptParts.push(text);
-          console.log(`[audio-finalize] chunk ${f}: ${text.slice(0,40)}...`);
-        } else {
-          console.log(`[audio-finalize] chunk ${f}: skipped (empty or hallucination)`);
+        const segs = result.segments || [];
+        for (const seg of segs) {
+          const text = seg.text?.trim();
+          if (text && !isWhisperHallucination(text)) {
+            allSegments.push({ start: chunkOffset + seg.start, end: chunkOffset + seg.end, text });
+          }
         }
+        console.log(`[audio-finalize] chunk ${f}: ${segs.length} segments, kept ${allSegments.length} total`);
       } catch(e) {
         console.error(`[audio-finalize] chunk ${f} failed:`, e.message);
       } finally {
         if (tmpFile) fs.unlink(tmpFile, () => {});
       }
     }
-    const transcript = transcriptParts.join('\n');
+
+    // 話者分離：無音ギャップ > SPEAKER_CHANGE_GAP 秒で話者切替
+    const turns = [];
+    let currentSpeaker = 'A';
+    let lastEnd = 0;
+    let currentTexts = [];
+    for (const seg of allSegments) {
+      const gap = seg.start - lastEnd;
+      if (gap > SPEAKER_CHANGE_GAP && currentTexts.length > 0) {
+        turns.push({ speaker: currentSpeaker, text: currentTexts.join(' ') });
+        currentSpeaker = currentSpeaker === 'A' ? 'B' : 'A';
+        currentTexts = [];
+      }
+      currentTexts.push(seg.text);
+      lastEnd = seg.end;
+    }
+    if (currentTexts.length > 0) turns.push({ speaker: currentSpeaker, text: currentTexts.join(' ') });
+
+    const transcript = turns.map(t => `【話者${t.speaker}】${t.text}`).join('\n');
 
     chunkFiles.forEach(f => fs.unlink(path.join(recDir, f), () => {}));
 
@@ -684,7 +706,7 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: '以下の会議の文字起こしを日本語で要約してください。箇条書きで主要な議題、決定事項、アクションアイテムをまとめてください。' },
+        { role: 'system', content: '以下はビデオ会議の文字起こしです（話者A・話者Bは異なる参加者です）。日本語で要約してください。箇条書きで主要な議題、決定事項、アクションアイテムをまとめてください。' },
         { role: 'user', content: transcript }
       ]
     });
