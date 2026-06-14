@@ -161,6 +161,8 @@ db.exec(`
 `);
 try { db.exec('ALTER TABLE users ADD COLUMN facility_id INTEGER'); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN ui_mode TEXT DEFAULT 'simple'"); } catch(e) {}
+try { db.exec("ALTER TABLE nm_call_records ADD COLUMN status TEXT DEFAULT 'confirmed'"); } catch(e) {}
+try { db.exec("ALTER TABLE nm_call_records ADD COLUMN source TEXT DEFAULT 'video'"); } catch(e) {}
 
 // ── 施設サブスク ヘルパー ────────────────────────────────────────
 function calcMonthlyAmount(locationCount, isEarlyAdopter) {
@@ -817,6 +819,199 @@ const recDir = path.join(__dirname, 'recordings');
 if (!fs.existsSync(recDir)) fs.mkdirSync(recDir);
 app.use('/recordings', express.static(recDir));
 
+
+// ---- 対面録音モード専用：記録種別 ----
+const FACE_RECORD_TYPES = {
+  houmon: ['訪問記録（サービス提供記録）', 'モニタリング面談記録', 'サービス担当者会議記録'],
+  houdei: ['保護者面談記録', '個別支援計画モニタリング記録', '個別支援会議記録'],
+  kaigo:  ['日常生活支援記録', '家族・入居者面談記録', '月次モニタリング記録', '運営推進会議記録'],
+  shuro:  ['個別面談記録', '個別支援計画モニタリング記録', '就労移行支援面談記録', '個別支援会議記録']
+};
+
+// ---- 対面録音モード専用：GPTプロンプト ----
+const FACE_PROMPTS = {
+  houmon: {
+    '訪問記録（サービス提供記録）': `以下は訪問介護のヘルパーと利用者・家族の対面会話の文字起こしです。介護保険法指定基準第19条に基づく「サービス提供記録（実施記録）」として業務記録文体（〜が見られた／〜を実施した／〜が確認された）で作成してください。
+
+【必須記載セクション】
+■ 利用者の状態（体調・気分・訴え・バイタル関連発言）
+■ 提供したサービス内容（身体介護または生活援助の区分と具体的内容）
+■ 家族からの申し送り・連絡事項（言及があれば）
+■ 特記事項（体調変化・転倒リスク・服薬確認・気になる言動）
+■ 次回への引継ぎ事項
+
+【禁止表現】「〜と思います」「〜ではないでしょうか」等の推測表現は使用しない。観察事実のみ記録。
+【注意】利用者本人の発言は「〜と述べた」「〜と訴えた」と客観的に記録すること。`,
+
+    'モニタリング面談記録': `以下は訪問介護のサービス提供責任者と利用者・家族が行ったモニタリング面談の文字起こしです。居宅サービス計画に基づく「モニタリング記録」として業務記録文体で作成してください。月1回の義務的モニタリングとして法的証拠となる記録です。
+
+【必須記載セクション】
+■ 現在のサービス提供状況（計画通りか・変更点）
+■ 利用者本人の意向・満足度・不満・要望
+■ 家族の意向・満足度・要望（同席の場合）
+■ 心身状態の変化（前回比較）
+■ 目標達成度の評価
+■ 新たな課題・ニーズ
+■ 計画変更の要否と方向性
+
+【必須フォーマット】「〇〇について利用者より〜との申し出があった。」等のように情報源を明記すること。`,
+
+    'サービス担当者会議記録': `以下は訪問介護に関するサービス担当者会議（居宅ケアマネ主催）の文字起こしです。「サービス担当者会議の要点（第4表に相当）」として業務記録文体で作成してください。
+
+【必須記載セクション】
+■ 参加者（氏名・職種）
+■ 利用者・家族の意向
+■ 各専門職からの意見・情報提供
+■ 訪問介護サービスに関する検討内容
+■ 決定事項・今後の役割分担
+■ 次回会議の予定`
+  },
+
+  houdei: {
+    '保護者面談記録': `以下は放課後等デイサービスの職員と保護者の対面面談（送迎時・来所時等）の文字起こしです。「保護者面談記録」として業務記録文体（〜が確認された／〜との意向が示された）で作成してください。令和6年度改定で強化された保護者連携の証拠記録となります。
+
+【必須記載セクション】
+■ 保護者からの申し送り（家庭・学校での様子・体調・服薬・前夜の状況）
+■ 保護者の意向・要望・質問内容
+■ 子どもの様子・変化（5領域の観点から：健康生活/運動感覚/認知行動/言語コミュニケーション/人間関係社会性）
+■ 事業所からの説明・報告内容
+■ 合意事項・申し送り事項
+■ 次回面談または連絡の予定
+
+【注意】保護者の発言は「〜との申し出があった」「〜との意向が示された」と記録。子どもの発言・行動は具体的に記述。`,
+
+    '個別支援計画モニタリング記録': `以下は放課後等デイサービスにおける個別支援計画のモニタリング面談（保護者同席）の文字起こしです。障害者総合支援法・児童福祉法指定基準第22条に基づく「個別支援計画モニタリング記録」として業務記録文体で作成してください。6か月ごとの法定義務記録です。
+
+【必須記載セクション】
+■ 参加者（本人・保護者・サービス管理責任者・担当職員）
+■ 前回計画からの変化・経過（各目標別）
+■ 5領域別達成度評価
+  - 健康・生活（睡眠・食事・健康管理）
+  - 運動・感覚（身体活動・感覚調整）
+  - 認知・行動（学習・問題解決・自己調整）
+  - 言語・コミュニケーション（表現・理解・対人関係）
+  - 人間関係・社会性（集団参加・ルール理解・社会スキル）
+■ 保護者の意向・評価
+■ 本人の意向（言語化できる場合）
+■ 計画変更の要否・変更方向性
+■ 次回モニタリング予定
+
+【注意】日付順序（原案作成日 ≦ 会議日 ≦ 本作成日 ≦ 保護者同意日）は必ず別途確認すること。`,
+
+    '個別支援会議記録': `以下は放課後等デイサービスにおける個別支援会議（令和6年度改定で本人参加原則化）の文字起こしです。「個別支援会議議事録」として業務記録文体で作成してください。
+
+【必須記載セクション】
+■ 開催日・場所・出席者（本人・保護者・サービス管理責任者・担当職員・相談支援専門員等）
+■ 本人の意向・発言内容
+■ 保護者の意向・発言内容（本人と分けて記載）
+■ 各出席者からの意見・提言
+■ 合意した支援内容・目標
+■ 次回会議予定
+
+【注意】本人が参加できなかった場合は理由を必ず記録すること（法定義務）。`
+  },
+
+  kaigo: {
+    '日常生活支援記録': `以下は介護グループホーム（認知症対応型共同生活介護）における職員と入居者の対面会話・日常的やりとりの文字起こしです。「日常生活記録（ケア記録）」として業務記録文体（〜が見られた／〜を実施した）で作成してください。
+
+【必須記載セクション】
+■ 心身状態（体温・血圧等の言及があれば記録。口腔・皮膚状態の観察事実）
+■ 食事状況（摂取量・食欲・好み・拒否）
+■ 排泄状況（頻度・性状等の言及）
+■ 睡眠状況（夜間の様子・日中傾眠）
+■ 入居者の言動・気分・訴え（認知症症状に関連する言動を含む）
+■ 実施したケア内容
+■ 特記事項（転倒リスク・BPSD・急変・家族への連絡要否）
+
+【注意】入居者の発言は「〜と述べた」「〜と訴えた」と客観的に記録。「〜だと思う」等の推測は書かない。認知症症状由来の言動も否定せず事実として記録。`,
+
+    '家族・入居者面談記録': `以下は介護グループホームにおける職員と家族・入居者の面談（来訪時・電話相談含む）の文字起こしです。「家族連絡記録／支援経過記録」として業務記録文体で作成してください。
+
+【必須記載セクション】
+■ 面談日・参加者（家族氏名・続柄・入居者本人の参加有無）
+■ 入居者の近況報告内容（心身状態・ADL・認知症症状・日常生活の様子）
+■ 家族からの要望・質問・心配事
+■ 施設からの説明・回答内容
+■ 今後の方針・ケア内容の変更（合意内容）
+■ 次回連絡・面談の予定
+
+【注意】家族への説明内容と同意の確認は必ず記録すること。身体拘束・医療的判断に関する説明は特に詳細に記録。`,
+
+    '月次モニタリング記録': `以下は介護グループホームの計画作成担当者と入居者のモニタリング面談（月1回義務）の文字起こしです。居宅サービス計画に基づく「月次モニタリング記録」として業務記録文体で作成してください。
+
+【必須記載セクション】
+■ 実施日・計画作成担当者名
+■ 入居者の心身状態の変化（前月比）
+■ 現在の支援が計画通りか（各目標の達成度）
+■ 入居者本人の意向・訴え（認知症があっても本人の言葉を記録）
+■ 新たなニーズ・課題
+■ 計画変更の要否
+■ 家族への報告事項
+
+【注意】月1回の訪問実施が法定義務のため、この記録が実施証拠となる。日付と担当者名の記載を最優先で確認すること。`,
+
+    '運営推進会議記録': `以下は介護グループホームの運営推進会議（2か月に1回以上義務）の文字起こしです。「運営推進会議議事録」として業務記録文体で作成してください。この記録は外部への公表義務があります。
+
+【必須記載セクション】
+■ 開催日・場所・出席者（入居者・家族・地域住民代表・市町村担当者・第三者評価機関等）
+■ サービス提供状況の報告内容
+■ 外部委員からの意見・提言・質問
+■ 事業所の取り組み・改善策
+■ 次回開催予定
+
+【注意】議事録は地域への情報開示が義務付けられているため、個人情報（氏名・住所等）の取り扱いに十分注意すること。`
+  },
+
+  shuro: {
+    '個別面談記録': `以下は就労継続支援（A型・B型）におけるサービス管理責任者または支援員と利用者の個別面談の文字起こしです。「個別相談記録・面談記録」として業務記録文体（〜との訴えがあった／〜が確認された）で作成してください。
+
+【必須記載セクション】
+■ 就労・訓練状況（出勤率・作業能率・職場環境への適応状況）
+■ 利用者の困りごと・相談内容・悩み
+■ 体調・精神状態・生活状況（家庭環境含む）
+■ 就労意欲・将来の目標・希望の変化
+■ 支援員からの提案・助言内容
+■ 合意した取り組み・次のステップ
+■ 次回面談の予定・フォローアップ事項
+
+【注意】A型は雇用契約に基づくため、就労条件や賃金に関する発言は特に正確に記録すること。工賃・賃金の具体的数値はAI生成ではなく担当者が確認・補足すること。`,
+
+    '個別支援計画モニタリング記録': `以下は就労継続支援の個別支援計画モニタリング面談（6か月ごとに法定義務）の文字起こしです。障害者総合支援法指定基準第58条に基づく「個別支援計画モニタリング記録」として業務記録文体で作成してください。
+
+【必須記載セクション】
+■ 参加者（利用者本人・サービス管理責任者・担当支援員）
+■ 前回計画からの変化・経過
+■ 各目標の達成度評価（長期目標・短期目標別）
+■ 就労状況の変化（出勤率・作業能率・工賃推移の言及）
+■ 利用者の意向・希望
+■ 計画変更の要否・変更内容
+
+【注意】日付順序（原案作成日 ≦ 会議日 ≦ 本作成日 ≦ 同意日）を必ず確認すること。これは実地指導で最頻出の指摘事項です。`,
+
+    '就労移行支援面談記録': `以下は就労継続支援における就労移行・一般就労に向けた面談の文字起こしです。「就労支援記録（移行支援面談）」として業務記録文体で作成してください。
+
+【必須記載セクション】
+■ 利用者の就労への意向・希望職種・条件
+■ 現在の就労能力・課題（集中力・対人スキル・体力等）
+■ 就労先探し・職場体験等の進捗
+■ 支援機関（ハローワーク・就労支援機関）との連携状況
+■ 今後の就労移行に向けたアクションプラン
+■ 次回面談予定`,
+
+    '個別支援会議記録': `以下は就労継続支援の個別支援会議（令和6年度改定で本人参加原則化）の文字起こしです。「個別支援会議議事録（担当者会議意見聴取記録）」として業務記録文体で作成してください。
+
+【必須記載セクション】
+■ 開催日・出席者（利用者本人・サービス管理責任者・担当支援員・相談支援専門員・家族等）
+■ 利用者本人の意向・発言内容
+■ 各出席者の意見・提言
+■ アセスメント結果の共有
+■ 計画内容の合意事項
+■ 次回会議予定
+
+【注意】本人が参加できなかった場合は必ずその理由を記録すること（法定義務）。日付順序（原案 ≦ 会議 ≦ 本作成 ≦ 同意）を必ず確認すること。`
+  }
+};
+
 const storage = multer.diskStorage({
   destination: recDir,
   filename: (req, file, cb) => cb(null, file.originalname)
@@ -1228,6 +1423,7 @@ app.get('/api/room-info', (req, res) => {
 // ---- Pages ----
 app.get('/cancel', (req, res) => res.sendFile(path.join(__dirname, 'public', 'cancel.html')));
 app.get('/b/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'book.html')));
+app.get('/record', (req, res) => res.sendFile(path.join(__dirname, 'public', 'record.html')));
 app.get('/booking/dashboard', (req, res) => {
   if (!req.session.userId) return res.redirect('/auth/google');
   res.sendFile(path.join(__dirname, 'public', 'booking', 'dashboard.html'));
@@ -1373,6 +1569,118 @@ app.get('/api/facility/call-records/csv', requireAuth, (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="call_records.csv"');
   res.send('﻿' + header + body);
+});
+
+
+// ---- 対面録音モード ----
+const faceRecordUpload = multer({
+  storage: multer.diskStorage({
+    destination: recDir,
+    filename: (req, file, cb) => {
+      const uid = req.session?.userId || 'anon';
+      cb(null, `face-${uid}-${Date.now()}.webm`);
+    }
+  }),
+  limits: { fileSize: 30 * 1024 * 1024 } // 30MB
+});
+
+app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'no audio file' });
+  if (!openai) return res.status(503).json({ error: 'AI unavailable' });
+  const u = db.prepare('SELECT plan, facility_id FROM users WHERE id=?').get(req.session.userId);
+  const { memberName='', staffName='', welfareSystem='', welfareRecordType='', interviewDate='' } = req.body;
+  if (!welfareSystem || !welfareRecordType) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: 'welfareSystem and welfareRecordType required' });
+  }
+  // AI eligibility check
+  let canUseAI = false;
+  if (u?.facility_id) {
+    const fac = db.prepare('SELECT * FROM nm_facilities WHERE id=?').get(u.facility_id);
+    const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(u.facility_id)?.cnt || 0;
+    const facStatus = getFacilityStatus(fac);
+    if (facStatus !== 'expired') {
+      const usedMin = getMonthlyUsageMinutes(u.facility_id);
+      const limitMin = lc * 50 * 60;
+      canUseAI = usedMin < limitMin;
+    }
+  } else {
+    canUseAI = u?.plan === 'paid';
+  }
+  if (!canUseAI) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(403).json({ error: 'AI not available for your plan' });
+  }
+  try {
+    // Whisper transcription
+    const result = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(req.file.path),
+      model: 'whisper-1',
+      language: 'ja',
+      prompt: 'はい。',
+      response_format: 'verbose_json',
+    });
+    fs.unlink(req.file.path, () => {});
+    const segs = (result.segments || []).filter(s => s.text?.trim() && !isWhisperHallucination(s.text.trim()));
+    // Speaker diarization
+    const SPEAKER_GAP = 2.0;
+    const turns = [];
+    let speaker = 'A', lastEnd = 0, buf = [];
+    for (const seg of segs) {
+      if (seg.start - lastEnd > SPEAKER_GAP && buf.length) {
+        turns.push({ speaker, text: buf.join(' ') });
+        speaker = speaker === 'A' ? 'B' : 'A';
+        buf = [];
+      }
+      buf.push(seg.text.trim());
+      lastEnd = seg.end;
+    }
+    if (buf.length) turns.push({ speaker, text: buf.join(' ') });
+    const transcript = turns.map(t => `【話者${t.speaker}】${t.text}`).join('\n');
+    if (!transcript) return res.status(422).json({ error: 'no speech detected' });
+    // GPT summary with welfare prompt
+    const welfarePrompt = FACE_PROMPTS[welfareSystem]?.[welfareRecordType] || WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null;
+    const systemPrompt = welfarePrompt
+      ? `${welfarePrompt}\n\n対象者: ${memberName || '（記載なし）'} / 担当: ${staffName || '（記載なし）'}`
+      : '以下は対面会話の文字起こしです。日本語で業務記録文体（〜が見られた／〜が確認された）で要約してください。主要な内容・意向・特記事項を箇条書きでまとめてください。';
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: transcript }]
+    });
+    const summary = completion.choices[0].message.content;
+    // Save as draft
+    const idate = interviewDate || new Date().toISOString().substring(0, 10);
+    const info = db.prepare(
+      'INSERT INTO nm_call_records (facility_id, room_id, welfare_system, record_type, member_name, staff_name, interview_date, summary_text, raw_transcript, status, source) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(u.facility_id, null, welfareSystem, welfareRecordType, memberName, staffName, idate, summary, transcript, 'draft', 'face');
+    console.log(`[face-record] draft saved id=${info.lastInsertRowid} system=${welfareSystem} member=${memberName}`);
+    res.json({ ok: true, id: info.lastInsertRowid, summary, transcript });
+  } catch(e) {
+    fs.unlink(req.file.path, () => {});
+    console.error('[face-record] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/face-record/confirm/:id', requireAuth, express.json(), (req, res) => {
+  const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
+  if (!u?.facility_id) return res.status(403).json({ error: 'no facility' });
+  const id = parseInt(req.params.id);
+  const rec = db.prepare('SELECT * FROM nm_call_records WHERE id=? AND facility_id=? AND status=?').get(id, u.facility_id, 'draft');
+  if (!rec) return res.status(404).json({ error: 'draft not found' });
+  const summary = req.body.summary || rec.summary_text;
+  db.prepare("UPDATE nm_call_records SET summary_text=?, status='confirmed' WHERE id=?").run(summary, id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/face-record/draft/:id', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
+  if (!u?.facility_id) return res.status(403).json({ error: 'no facility' });
+  const id = parseInt(req.params.id);
+  const rec = db.prepare("SELECT * FROM nm_call_records WHERE id=? AND facility_id=? AND status='draft'").get(id, u.facility_id);
+  if (!rec) return res.status(404).json({ error: 'draft not found' });
+  db.prepare('DELETE FROM nm_call_records WHERE id=?').run(id);
+  res.json({ ok: true });
 });
 
 // ─────────────────────────────────────────────────────────────────

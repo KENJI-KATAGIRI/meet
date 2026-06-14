@@ -253,6 +253,12 @@ function copyInappUrl() {
       </label>
     </div>
     <div class="error-msg" id="error-msg"></div>
+    <div style="border-top:1px solid #2a2a4a;margin-top:18px;padding-top:16px">
+      <div style="font-size:11px;color:#555;margin-bottom:10px;letter-spacing:.5px;text-align:center">または</div>
+      <a href="/record" id="face-rec-link" style="display:none;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);border-radius:10px;color:#4ade80;font-size:14px;font-weight:600;text-decoration:none">
+        &#x1F3A4; 対面録音モード（福祉施設向け）
+      </a>
+    </div>
   </div>
 </div>
 
@@ -2586,5 +2592,14 @@ function loadBgSettings() {
   </div>
 </div>
 
+
+<script>
+fetch('/api/me').then(r=>r.json()).then(me=>{
+  if(me && me.ui_mode==='welfare'){
+    var lnk=document.getElementById('face-rec-link');
+    if(lnk) lnk.style.display='flex';
+  }
+}).catch(function(){});
+</script>
 </body>
 </html>

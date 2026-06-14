@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>対面録音 - NiceMeet</title>
+  <style>
+    :root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#252540;--accent:#6c63ff;--success:#4ade80;--danger:#ef4444;--warn:#fbbf24;--muted:#888;--border:#2a2a4a}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:#fff;min-height:100vh;min-height:100dvh;-webkit-tap-highlight-color:transparent}
+    button,input,select{font-family:inherit;outline:none}
+    input,select{-webkit-appearance:none;appearance:none}
+    
+    /* Header */
+    .hdr{padding:14px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);background:var(--bg)}
+    .hdr-back{background:none;border:none;color:#aaa;font-size:14px;cursor:pointer;padding:6px 10px;border-radius:8px;transition:background .15s}
+    .hdr-back:active{background:var(--bg3)}
+    .hdr-title{font-size:15px;font-weight:700;flex:1}
+    .hdr-mode{font-size:11px;color:var(--accent);background:rgba(108,99,255,.15);padding:3px 9px;border-radius:10px;font-weight:600}
+    
+    /* Screens */
+    .screen{display:none;padding:16px;flex-direction:column;min-height:calc(100dvh - 53px);min-height:calc(100vh - 53px)}
+    .screen.active{display:flex}
+    
+    /* Setup screen */
+    .consent-box{background:rgba(108,99,255,.1);border:1px solid rgba(108,99,255,.3);border-radius:12px;padding:13px 15px;margin-bottom:14px}
+    .consent-lbl{font-size:11px;color:#a78bfa;margin-bottom:5px;font-weight:600;letter-spacing:.3px}
+    .consent-text{font-size:14px;color:#c4b5fd;font-style:italic;line-height:1.5}
+    .form-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:15px;margin-bottom:14px}
+    .form-card h3{font-size:11px;color:var(--muted);margin-bottom:13px;letter-spacing:.6px;text-transform:uppercase}
+    .fld{margin-bottom:13px}
+    .fld:last-child{margin-bottom:0}
+    .fld label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+    .fld input,.fld select{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;color:#fff;padding:12px 13px;font-size:15px;transition:border .15s}
+    .fld input:focus,.fld select:focus{border-color:var(--accent)}
+    .fld select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23888' d='M5 7L0 2h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;padding-right:36px}
+    .req{color:#f87171}
+    .btn-start{width:100%;padding:20px;background:var(--accent);border:none;border-radius:15px;color:#fff;font-size:18px;font-weight:700;cursor:pointer;margin-top:auto;transition:all .2s;letter-spacing:.3px}
+    .btn-start:disabled{background:rgba(108,99,255,.3);color:rgba(255,255,255,.4);cursor:not-allowed}
+    .btn-start:not(:disabled):active{opacity:.8;transform:scale(.98)}
+    
+    /* Recording screen */
+    #screen-recording{align-items:center;justify-content:space-between;text-align:center;padding:32px 20px}
+    .rec-top{display:flex;flex-direction:column;align-items:center;gap:10px}
+    .rec-dot{width:22px;height:22px;background:#ef4444;border-radius:50%;display:inline-block;animation:pulse 1.2s ease-in-out infinite}
+    @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{opacity:.7;box-shadow:0 0 0 10px rgba(239,68,68,0)}}
+    .rec-status{font-size:14px;color:#f87171;font-weight:700;letter-spacing:.5px}
+    .rec-timer{font-size:80px;font-weight:700;letter-spacing:-3px;font-variant-numeric:tabular-nums;line-height:1;color:#fff}
+    .rec-info{font-size:13px;color:var(--muted);line-height:1.7}
+    .rec-info strong{color:#e2e2f8;display:block;font-size:16px;font-weight:600;margin-bottom:2px}
+    .rec-warn{font-size:12px;color:var(--warn);margin-top:6px}
+    .btn-stop{width:100%;padding:24px;background:#ef4444;border:none;border-radius:18px;color:#fff;font-size:24px;font-weight:700;cursor:pointer;transition:opacity .15s;letter-spacing:1px}
+    .btn-stop:active{opacity:.8}
+    
+    /* Processing screen */
+    #screen-processing{align-items:center;justify-content:center;text-align:center;gap:20px}
+    .spinner{width:52px;height:52px;border:4px solid rgba(108,99,255,.2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.9s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .proc-title{font-size:18px;font-weight:600}
+    .proc-steps{font-size:13px;color:var(--muted);line-height:2}
+    
+    /* Draft screen */
+    #screen-draft{padding:16px;gap:0}
+    .draft-warn{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.35);border-radius:11px;padding:11px 14px;font-size:13px;color:#fde047;margin-bottom:13px;line-height:1.5}
+    .draft-meta{background:var(--bg2);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:12px;line-height:1.7;font-size:13px;color:var(--muted)}
+    .draft-meta strong{color:#e2e2f8;font-size:15px;display:block;margin-bottom:2px}
+    .draft-lbl{font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:.3px;font-weight:600}
+    .draft-ta{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:11px;color:#fff;padding:13px;font-size:13px;line-height:1.75;resize:vertical;min-height:220px;flex:1;margin-bottom:14px;transition:border .15s}
+    .draft-ta:focus{border-color:var(--accent)}
+    .draft-actions{display:flex;gap:10px}
+    .btn-confirm{flex:2;padding:16px;background:var(--success);border:none;border-radius:13px;color:#0f1a0f;font-size:16px;font-weight:700;cursor:pointer;transition:opacity .15s}
+    .btn-confirm:active{opacity:.8}
+    .btn-discard{flex:1;padding:16px;background:var(--bg3);border:1px solid var(--border);border-radius:13px;color:var(--muted);font-size:14px;cursor:pointer;transition:background .15s}
+    .btn-discard:active{background:rgba(239,68,68,.15);color:#f87171;border-color:#f87171}
+    
+    /* Offline screen */
+    #screen-offline{align-items:center;justify-content:center;text-align:center;gap:14px;padding:40px 24px}
+    .off-icon{font-size:70px}
+    .off-title{font-size:22px;font-weight:700}
+    .off-sub{font-size:14px;color:var(--muted);line-height:1.8}
+    .off-status{font-size:13px;color:var(--warn);margin-top:6px;font-weight:600}
+    
+    /* Error/auth screen */
+    #screen-auth{align-items:center;justify-content:center;text-align:center;gap:16px;padding:40px 24px}
+    .auth-icon{font-size:60px}
+    .auth-title{font-size:18px;font-weight:600}
+    .auth-sub{font-size:13px;color:var(--muted);line-height:1.6}
+    .auth-link{display:inline-block;margin-top:8px;color:var(--accent);font-size:14px;text-decoration:none;padding:10px 20px;border:1px solid rgba(108,99,255,.4);border-radius:10px}
+    
+    /* Toast */
+    .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(8px);background:#2a2a4a;border:1px solid #3a3a5a;padding:12px 22px;border-radius:12px;font-size:14px;font-weight:600;opacity:0;transition:all .25s;pointer-events:none;z-index:999;white-space:nowrap;max-width:90vw;text-align:center}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  </style>
+</head>
+<body>
+<div class="hdr">
+  <button class="hdr-back" onclick="goBack()">← 戻る</button>
+  <div class="hdr-title">対面録音</div>
+  <span class="hdr-mode">FACE REC</span>
+</div>
+
+<!-- Auth check -->
+<div class="screen active" id="screen-auth">
+  <div class="auth-icon">&#x23F3;</div>
+  <div class="auth-title">確認中...</div>
+</div>
+
+<!-- Setup -->
+<div class="screen" id="screen-setup">
+  <div class="consent-box">
+    <div class="consent-lbl">&#x1F4AC; 録音前に一言添えてください</div>
+    <div class="consent-text">「記録のため録音させていただきますね」</div>
+  </div>
+  <div class="form-card">
+    <h3>記録情報</h3>
+    <div class="fld">
+      <label>対象者名</label>
+      <input id="member-name" type="text" placeholder="例：山田 太郎" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <div class="fld">
+      <label>担当職員名</label>
+      <input id="staff-name" type="text" placeholder="例：田中 花子" autocomplete="off">
+    </div>
+    <div class="fld">
+      <label>業態 <span class="req">*</span></label>
+      <select id="welfare-system" onchange="onSysChange()">
+        <option value="">選択してください</option>
+        <option value="houdei">放課後等デイサービス</option>
+        <option value="houmon">訪問介護</option>
+        <option value="shuro">就労継続支援（A型・B型）</option>
+        <option value="kaigo">介護グループホーム</option>
+      </select>
+    </div>
+    <div class="fld">
+      <label>記録種別 <span class="req">*</span></label>
+      <select id="record-type" onchange="checkReady()">
+        <option value="">業態を先に選択</option>
+      </select>
+    </div>
+  </div>
+  <button class="btn-start" id="btn-start" onclick="startRecording()" disabled>&#x1F3A4;&nbsp; 録音を開始する</button>
+</div>
+
+<!-- Recording -->
+<div class="screen" id="screen-recording">
+  <div class="rec-top">
+    <span class="rec-dot"></span>
+    <div class="rec-status">録音中</div>
+  </div>
+  <div>
+    <div class="rec-timer" id="rec-timer">00:00</div>
+    <div class="rec-info">
+      <strong id="rec-member">—</strong>
+      <span id="rec-detail">—</span>
+    </div>
+    <div class="rec-warn" id="rec-warn" style="display:none">&#x26A0;&#xFE0F; 15分を超えました。長時間録音はファイルが大きくなります。</div>
+  </div>
+  <button class="btn-stop" onclick="stopRecording()">&#x25A0;&nbsp;&nbsp;停&nbsp;止</button>
+</div>
+
+<!-- Processing -->
+<div class="screen" id="screen-processing">
+  <div class="spinner"></div>
+  <div>
+    <div class="proc-title">処理中...</div>
+    <div class="proc-steps">&#x2713; 音声受信完了<br>&#x23F3; 文字起こし中（Whisper AI）<br>&#x23F3; 記録様式に変換中（GPT-4o）</div>
+  </div>
+</div>
+
+<!-- Draft review -->
+<div class="screen" id="screen-draft">
+  <div class="draft-warn">&#x26A0;&#xFE0F; 下書き — 内容を確認・修正してから「確定」してください。確定前は正式記録として扱われません。</div>
+  <div class="draft-meta" id="draft-meta"></div>
+  <div class="draft-lbl">AI生成サマリー（修正可）</div>
+  <textarea class="draft-ta" id="draft-ta"></textarea>
+  <div class="draft-actions">
+    <button class="btn-confirm" onclick="confirmRecord()">&#x2713;&nbsp;確定する</button>
+    <button class="btn-discard" onclick="discardRecord()">破棄</button>
+  </div>
+</div>
+
+<!-- Offline -->
+<div class="screen" id="screen-offline">
+  <div class="off-icon">&#x1F4F5;</div>
+  <div class="off-title">オフライン保存済み</div>
+  <div class="off-sub">録音データを端末に保存しました。<br>電波が回復すると自動で送信・処理されます。</div>
+  <div class="off-status" id="off-status">&#x23F3; 送信待機中...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const WR_TYPES = {
+  houdei: ['保護者面談記録','個別支援計画モニタリング記録','サービス担当者会議記録'],
+  houmon: ['訪問記録（サービス提供記録）','モニタリング面談記録','サービス担当者会議記録'],
+  shuro:  ['個別面談記録','個別支援計画モニタリング記録','就労移行支援面談記録','サービス担当者会議記録'],
+  kaigo:  ['日常生活支援記録','家族・入居者面談記録','月次モニタリング記録','サービス担当者会議記録']
+};
+const SYS_LABELS = {
+  houdei:'放課後等デイサービス', houmon:'訪問介護',
+  shuro:'就労継続支援', kaigo:'介護グループホーム'
+};
+
+let mediaRecorder = null, audioChunks = [], timerInterval = null;
+let recordSeconds = 0, currentDraftId = null, currentPayload = null;
+
+// ---- IndexedDB offline store ----
+const IDB = 'nicemeet-fr', STORE = 'pending';
+function openIDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(IDB, 1);
+    r.onupgradeneeded = e => e.target.result.createObjectStore(STORE);
+    r.onsuccess = e => res(e.target.result);
+    r.onerror = e => rej(e.target.error);
+  });
+}
+async function saveOffline(data) {
+  const db = await openIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(data, 'cur');
+    tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+  });
+}
+async function loadOffline() {
+  const db = await openIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const r = tx.objectStore(STORE).get('cur');
+    r.onsuccess = e => res(e.target.result);
+    r.onerror = e => rej(e.target.error);
+  });
+}
+async function clearOffline() {
+  const db = await openIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete('cur');
+    tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+  });
+}
+
+// ---- Screens ----
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById('screen-' + id);
+  if (el) el.classList.add('active');
+}
+
+// ---- Init ----
+async function init() {
+  try {
+    const me = await fetch('/api/me').then(r => r.json());
+    if (!me || !me.id) {
+      showAuthError('&#x1F510;', 'ログインが必要です', 'NiceMeetダッシュボードにログインしてください。', '/booking', 'ログインへ');
+      return;
+    }
+    if (me.ui_mode !== 'welfare') {
+      showAuthError('&#x1F3E5;', '施設アカウントが必要です', 'この機能は福祉施設向けプランでご利用いただけます。<br>管理者にお問い合わせください。', '/booking/dashboard', 'ダッシュボードへ');
+      return;
+    }
+    // Pre-fill staff name
+    if (me.name) document.getElementById('staff-name').value = me.name;
+    // Check pending offline recording
+    const pending = await loadOffline();
+    if (pending) {
+      currentPayload = pending;
+      if (pending.memberName) document.getElementById('member-name').value = pending.memberName;
+      if (pending.staffName) document.getElementById('staff-name').value = pending.staffName;
+      if (pending.welfareSystem) { document.getElementById('welfare-system').value = pending.welfareSystem; onSysChange(); }
+      if (pending.welfareRecordType) document.getElementById('record-type').value = pending.welfareRecordType;
+      showScreen('offline');
+      if (navigator.onLine) { handleOnline(); }
+      else { window.addEventListener('online', handleOnline, { once: true }); }
+      return;
+    }
+    showScreen('setup');
+  } catch(e) {
+    showAuthError('&#x26A0;&#xFE0F;', '読み込みエラー', 'ページを再読み込みしてください。', '/booking/dashboard', 'ダッシュボードへ');
+  }
+}
+
+function showAuthError(icon, title, sub, href, label) {
+  document.getElementById('screen-auth').innerHTML =
+    `<div class="auth-icon">${icon}</div>
+     <div class="auth-title">${title}</div>
+     <div class="auth-sub">${sub}</div>
+     <a class="auth-link" href="${href}">${label}</a>`;
+}
+
+function onSysChange() {
+  const sys = document.getElementById('welfare-system').value;
+  const sel = document.getElementById('record-type');
+  const types = WR_TYPES[sys] || [];
+  sel.innerHTML = types.length
+    ? types.map(t => `<option value="${t}">${t}</option>`).join('')
+    : '<option value="">業態を先に選択</option>';
+  checkReady();
+}
+
+function checkReady() {
+  const sys = document.getElementById('welfare-system').value;
+  const rt = document.getElementById('record-type').value;
+  document.getElementById('btn-start').disabled = !(sys && rt);
+}
+
+// ---- Recording ----
+async function startRecording() {
+  const memberName = document.getElementById('member-name').value.trim();
+  const staffName = document.getElementById('staff-name').value.trim();
+  const welfareSystem = document.getElementById('welfare-system').value;
+  const welfareRecordType = document.getElementById('record-type').value;
+  if (!welfareSystem || !welfareRecordType) { toast('業態と記録種別を選択してください'); return; }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch(e) {
+    toast('マイクを使用できません: ' + e.message); return;
+  }
+  const opts = {};
+  if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+    opts.mimeType = 'audio/webm;codecs=opus';
+    opts.audioBitsPerSecond = 32000;
+  }
+  mediaRecorder = new MediaRecorder(stream, opts);
+  audioChunks = [];
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = () => handleStop({ memberName, staffName, welfareSystem, welfareRecordType });
+  mediaRecorder.start(1000);
+  recordSeconds = 0;
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    recordSeconds++;
+    const m = String(Math.floor(recordSeconds / 60)).padStart(2, '0');
+    const s = String(recordSeconds % 60).padStart(2, '0');
+    document.getElementById('rec-timer').textContent = m + ':' + s;
+    if (recordSeconds === 900) document.getElementById('rec-warn').style.display = '';
+  }, 1000);
+  document.getElementById('rec-member').textContent = memberName || '（氏名未記入）';
+  document.getElementById('rec-detail').textContent = (SYS_LABELS[welfareSystem] || '') + ' / ' + welfareRecordType;
+  showScreen('recording');
+}
+
+function stopRecording() {
+  clearInterval(timerInterval);
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+  showScreen('processing');
+}
+
+async function handleStop({ memberName, staffName, welfareSystem, welfareRecordType }) {
+  const mimeType = mediaRecorder?.mimeType || 'audio/webm';
+  const blob = new Blob(audioChunks, { type: mimeType });
+  const interviewDate = new Date().toISOString().substring(0, 10);
+  currentPayload = { blob, memberName, staffName, welfareSystem, welfareRecordType, interviewDate };
+  if (!navigator.onLine) {
+    await saveOffline(currentPayload);
+    document.getElementById('off-status').textContent = '⏳ 送信待機中...';
+    showScreen('offline');
+    window.addEventListener('online', handleOnline, { once: true });
+    return;
+  }
+  await upload(currentPayload);
+}
+
+async function handleOnline() {
+  document.getElementById('off-status').textContent = '📶 電波が回復しました。送信中...';
+  if (!currentPayload) {
+    const pending = await loadOffline();
+    if (!pending) { showScreen('setup'); return; }
+    currentPayload = pending;
+  }
+  try {
+    await upload(currentPayload);
+    await clearOffline();
+  } catch(e) {
+    document.getElementById('off-status').textContent = '送信エラー。ページを再読み込みしてください。';
+  }
+}
+
+async function upload({ blob, memberName, staffName, welfareSystem, welfareRecordType, interviewDate }) {
+  showScreen('processing');
+  const form = new FormData();
+  form.append('audio', blob, 'recording.webm');
+  form.append('memberName', memberName || '');
+  form.append('staffName', staffName || '');
+  form.append('welfareSystem', welfareSystem || '');
+  form.append('welfareRecordType', welfareRecordType || '');
+  form.append('interviewDate', interviewDate || new Date().toISOString().substring(0, 10));
+  try {
+    const r = await fetch('/api/face-record/upload', { method: 'POST', body: form }).then(r => r.json());
+    if (r.ok && r.id) {
+      currentDraftId = r.id;
+      document.getElementById('draft-ta').value = r.summary || '';
+      const sysLabel = SYS_LABELS[welfareSystem] || welfareSystem;
+      document.getElementById('draft-meta').innerHTML =
+        `<strong>${memberName || '（氏名未記入）'}</strong>${sysLabel} / ${welfareRecordType}<br>
+         <span style="font-size:12px;color:var(--muted)">${interviewDate}</span>`;
+      showScreen('draft');
+    } else {
+      toast('エラー: ' + (r.error || '処理に失敗しました'));
+      showScreen('setup');
+    }
+  } catch(e) {
+    toast('通信エラーが発生しました');
+    showScreen('setup');
+  }
+}
+
+// ---- Draft actions ----
+async function confirmRecord() {
+  const summary = document.getElementById('draft-ta').value.trim();
+  if (!summary) { toast('内容を入力してください'); return; }
+  try {
+    const r = await fetch('/api/face-record/confirm/' + currentDraftId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ summary })
+    }).then(r => r.json());
+    if (r.ok) {
+      currentDraftId = null; audioChunks = []; currentPayload = null;
+      toast('✓ 記録を確定しました');
+      setTimeout(() => showScreen('setup'), 700);
+    } else { toast('エラー: ' + (r.error || '')); }
+  } catch(e) { toast('通信エラー'); }
+}
+
+async function discardRecord() {
+  if (!confirm('この記録を破棄しますか？')) return;
+  if (currentDraftId) {
+    try { await fetch('/api/face-record/draft/' + currentDraftId, { method: 'DELETE' }); } catch(e) {}
+  }
+  currentDraftId = null; audioChunks = []; currentPayload = null;
+  showScreen('setup');
+}
+
+function goBack() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    if (!confirm('録音中です。停止して戻りますか？')) return;
+    clearInterval(timerInterval);
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  }
+  window.location.href = '/booking/dashboard';
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+window.addEventListener('beforeunload', e => {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    e.preventDefault(); e.returnValue = '';
+  }
+});
+
+init();
+</script>
+</body>
+</html>

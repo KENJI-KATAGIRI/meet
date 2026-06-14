@@ -116,6 +116,10 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
 .rec-body{display:none;padding:0 14px 14px;border-top:1px solid var(--border)}
 .rec-body.open{display:block}
 .rec-full{font-size:13px;line-height:1.75;white-space:pre-wrap;margin-top:10px;background:rgba(255,255,255,.03);border-radius:8px;padding:12px}
+.rec-badge-draft{background:rgba(251,191,36,.15);border:1px solid rgba(251,191,36,.4);color:#fde047;font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700}
+.rec-badge-face{background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.35);color:#4ade80;font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700}
+.btn-confirm-rec{margin-top:10px;width:100%;padding:11px;background:#4ade80;border:none;border-radius:9px;color:#0f1a0f;font-size:13px;font-weight:700;cursor:pointer}
+.btn-confirm-rec:hover{opacity:.85}
 </style>
 </head>
 <body>
@@ -709,9 +713,17 @@ function renderCallRecords(records) {
     const sysLabel = SYS_LABELS[rec.welfare_system] || rec.welfare_system || '—';
     const fullText = rec.summary_text || '';
     const preview = fullText.replace(/\n/g, ' ').substring(0, 80) + (fullText.length > 80 ? '…' : '');
+    const isDraft = rec.status === 'draft';
+    const isFace = rec.source === 'face';
+    const draftBadge = isDraft ? '<span class="rec-badge-draft">&#x26A0; 下書き</span>' : '';
+    const faceBadge = isFace ? '<span class="rec-badge-face">&#x1F3A4; 対面録音</span>' : '';
+    const confirmBtn = isDraft
+      ? '<button class="btn-confirm-rec" onclick="event.stopPropagation();confirmFromDash(' + rec.id + ',' + i + ')">✓ 確定する</button>'
+      : '';
     return '<div class="rec-row">' +
       '<div class="rec-head" onclick="toggleRecord(' + i + ')">' +
         '<div class="rec-meta">' +
+          draftBadge + faceBadge +
           '<span class="rec-tag">' + escHtml(sysLabel) + '</span>' +
           '<span class="rec-tag">' + escHtml(rec.record_type || '—') + '</span>' +
           '<span class="rec-date">' + date + '</span>' +
@@ -720,7 +732,9 @@ function renderCallRecords(records) {
         '<div class="rec-preview">' + escHtml(preview) + '</div>' +
       '</div>' +
       '<div class="rec-body" id="rec-body-' + i + '">' +
-        '<div class="rec-full">' + escHtml(fullText || '（要約なし）') + '</div>' +
+        (isDraft ? '<p style="font-size:12px;color:#fde047;margin-bottom:8px">&#x26A0; 下書きです。内容を確認して確定してください。</p>' : '') +
+        '<div class="rec-full" id="rec-full-' + i + '">' + escHtml(fullText || '（要約なし）') + '</div>' +
+        confirmBtn +
       '</div>' +
     '</div>';
   }).join('');
@@ -729,6 +743,22 @@ function renderCallRecords(records) {
 function toggleRecord(i) {
   var body = document.getElementById('rec-body-' + i);
   if (body) body.classList.toggle('open');
+}
+
+async function confirmFromDash(id, i) {
+  if (!confirm('この記録を確定しますか？
+確定後は正式記録として扱われます。')) return;
+  var fullEl = document.getElementById('rec-full-' + i);
+  var summary = fullEl ? fullEl.textContent : '';
+  try {
+    var r = await fetch('/api/face-record/confirm/' + id, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ summary: summary })
+    }).then(function(r){ return r.json(); });
+    if (r.ok) { toast('✓ 記録を確定しました'); loadCallRecords(); }
+    else toast('エラー: ' + (r.error || ''));
+  } catch(e) { toast('通信エラー'); }
 }
 
 function escHtml(s) {
