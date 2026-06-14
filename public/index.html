@@ -339,7 +339,6 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 
 <div id="notification"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const ICE_CONFIG = {
@@ -363,11 +362,10 @@ const peers = {}, peerNames = {}, peerStreams = {}, peerInitiator = {};
 
 // === エフェクト状態 ===
 let effectsInited = false;
-let mpSelfie = null, mpReady = false, mpSending = false, mpModelLoading = false;
+let mpSegmenter = null, mpReady = false, mpSending = false, mpModelLoading = false;
+let mpTimestamp = 0;
 let maskCanvas2 = null, maskCtx2 = null, maskBuf = null;
-let maskReadCtx = null;
 let prevMaskData = null;
-const EMA_ALPHA = 0.3;
 let bgMode = 'none';
 let bgColorVal = '#1a1a3e';
 let bgImg = null;
@@ -877,7 +875,7 @@ async function leaveRoom() {
   if (screenStream) screenStream.getTracks().forEach(t => t.stop());
   if (effectsStream) effectsStream.getTracks().forEach(t => t.stop());
   if (rafId) cancelAnimationFrame(rafId);
-  if (mpSelfie) { mpSelfie.close(); mpSelfie = null; }
+  if (mpSegmenter) { mpSegmenter.close(); mpSegmenter = null; }
   if (socket) socket.disconnect();
   location.href = '/';
 }
@@ -1225,23 +1223,31 @@ function renderFrame() {
     applyBeautyOverlay(effectsCtx, effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
   }
 
-  if (bgMode !== 'none' && mpSelfie && mpReady && !mpSending) {
+  if (bgMode !== 'none' && mpSegmenter && mpReady && !mpSending) {
     runInference();
   }
 }
 
 function runInference() {
+  if (!mpSegmenter || mpSending) return;
   mpSending = true;
-  mpSelfie.send({ image: segCanvas }).catch(e => {
-    console.warn('MP:', e);
+  mpTimestamp = performance.now();
+  try {
+    mpSegmenter.segmentForVideo(segCanvas, mpTimestamp, onMpResults);
+  } catch(e) {
+    console.warn('MP segmentForVideo error:', e);
     mpSending = false;
-  });
+  }
 }
 
-function onMpResults(results) {
-  if (!results.segmentationMask) { mpSending = false; return; }
-  const mask = results.segmentationMask;
-  const w = mask.width, h = mask.height;
+function onMpResults(result) {
+  // selfie_multiclass: index 0 = background confidence, 1-5 = person classes
+  const confidenceMask = result.confidenceMasks?.[0];
+  if (!confidenceMask) { result.close?.(); mpSending = false; return; }
+
+  const w = confidenceMask.width;
+  const h = confidenceMask.height;
+
   if (!maskCanvas2 || maskCanvas2.width !== w || maskCanvas2.height !== h) {
     maskCanvas2 = document.createElement('canvas');
     maskCanvas2.width = w; maskCanvas2.height = h;
@@ -1249,52 +1255,55 @@ function onMpResults(results) {
     maskBuf = new Uint8ClampedArray(w * h * 4);
     prevMaskData = null;
   }
-  if (!maskReadCtx || maskReadCtx.canvas.width !== w) {
-    const mc = document.createElement('canvas');
-    mc.width = w; mc.height = h;
-    maskReadCtx = mc.getContext('2d', { willReadFrequently: true });
-  }
-  maskReadCtx.drawImage(mask, 0, 0, w, h);
-  const d = maskReadCtx.getImageData(0, 0, w, h).data;
   if (!prevMaskData || prevMaskData.length !== w * h) {
     prevMaskData = new Float32Array(w * h);
   }
+
+  // index 0 = background → person = 1 - background
+  const bgData = confidenceMask.getAsFloat32Array();
+
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
-    const raw = Math.max(d[j], d[j+3]) / 255;
-    // smoothstep: 低めの閾値で動き中の低信頼フレームも拾う
-    const t = Math.max(0, Math.min(1, (raw - 0.45) / 0.3));
+    const person = 1.0 - bgData[i];
+    // ゆるめのsmoothstep（髪・肌の境界を広めに拾う）
+    const t = Math.max(0, Math.min(1, (person - 0.25) / 0.5));
     const stepped = t * t * (3 - 2 * t);
-    // 非対称EMA: 上昇は速く、減衰は0.92で約1秒保持（15fps換算で15フレーム）
-    const alpha = stepped > prevMaskData[i] ? 0.35 : 0.92;
+    // 非対称EMA: 上昇は速く、減衰はゆっくり（ちらつき防止）
+    const alpha = stepped > prevMaskData[i] ? 0.5 : 0.75;
     prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
     const out = Math.round(prevMaskData[i] * 255);
     maskBuf[j] = maskBuf[j+1] = maskBuf[j+2] = maskBuf[j+3] = out;
   }
+
   maskCtx2.putImageData(new ImageData(maskBuf, w, h), 0, 0);
+  result.close();
   mpSending = false;
 }
 
 function drawWithMask(w, h) {
+  const { sx, sy, sw, sh } = getZoomRect();
   if (personCanvas.width !== w || personCanvas.height !== h) {
     personCanvas.width = w; personCanvas.height = h;
   }
   personCtx.clearRect(0, 0, w, h);
+  // フルHD解像度のeffectsVideoから人物を描く（segCanvasは低解像のため使わない）
   if (beautyLevel > 0) {
-    applyBeautyToCanvas(segCanvas, w, h);
+    applyBeautyToCanvas(effectsVideo, w, h, sx, sy, sw, sh);
     personCtx.drawImage(beautyCanvas, 0, 0, w, h);
   } else {
-    personCtx.drawImage(segCanvas, 0, 0, w, h);
+    personCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
   }
+  // マスクを destination-in で合成：ぼかしで髪の境界をなめらかに
   personCtx.globalCompositeOperation = 'destination-in';
-  personCtx.filter = 'blur(4px)';
+  personCtx.filter = 'blur(5px)';
   personCtx.drawImage(maskCanvas2, 0, 0, w, h);
   personCtx.filter = 'none';
   personCtx.globalCompositeOperation = 'source-over';
 
   effectsCtx.clearRect(0, 0, w, h);
   if (bgMode === 'blur') {
-    effectsCtx.filter = 'blur(20px) brightness(0.75)';
-    effectsCtx.drawImage(segCanvas, 0, 0, w, h);
+    // 背景はフルHDから高品質ぼかし
+    effectsCtx.filter = 'blur(24px) brightness(0.7)';
+    effectsCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
     effectsCtx.filter = 'none';
   } else if (bgMode === 'color') {
     effectsCtx.fillStyle = bgColorVal;
@@ -1306,53 +1315,67 @@ function drawWithMask(w, h) {
 }
 
 async function loadSegModel() {
-  if (mpSelfie || mpModelLoading) return;
+  if (mpSegmenter || mpModelLoading) return;
   mpModelLoading = true;
   document.getElementById('loading-model').style.display = 'block';
   try {
-    const isMobile = window.innerWidth <= 640 || /Mobi|Android/i.test(navigator.userAgent);
-    mpSelfie = new SelfieSegmentation({ locateFile: f =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}` });
-    mpSelfie.setOptions({ modelSelection: 1, selfieMode: false });
-    mpSelfie.onResults(onMpResults);
-    await mpSelfie.initialize();
+    // MediaPipe Tasks Vision（新API）を動的ロード
+    const visionModule = await import(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs'
+    );
+    const { ImageSegmenter, FilesetResolver } = visionModule;
+    const filesetResolver = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm'
+    );
+    // selfie_multiclass: 髪・顔・肌・服を個別に分類→高精度マスク
+    mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',
+        delegate: 'GPU'
+      },
+      runningMode: 'VIDEO',
+      outputCategoryMask: false,
+      outputConfidenceMasks: true
+    });
     mpReady = true;
     prevMaskData = null;
-    notify('背景分離 準備完了（MediaPipe）');
+    mpTimestamp = 0;
+    notify('背景分離 準備完了');
   } catch(e) {
     console.error('loadSegModel:', e);
     notify('読込失敗: ' + (e?.message || '').slice(0, 60));
-    mpSelfie = null;
+    mpSegmenter = null;
   }
   mpModelLoading = false;
   document.getElementById('loading-model').style.display = 'none';
 }
 
 // --- 美肌フィルター（screen blend でシミ・テカり軽減） ---
-// src から beautyCanvas に美肌済み画像を書き込む
-function applyBeautyToCanvas(src, w, h) {
+// src から beautyCanvas に美肌済み画像を書き込む（sx/sy/sw/sh でズーム対応）
+function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
+  if (sw == null) sw = src.videoWidth || src.width || w;
+  if (sh == null) sh = src.videoHeight || src.height || h;
   const strong = beautyLevel === 2;
   const blurR  = strong ? 3 : 2;
-  const detail = strong ? 0.42 : 0.52; // 元画像の復元率
+  const detail = strong ? 0.42 : 0.52;
 
+  if (beautyCanvas.width !== w || beautyCanvas.height !== h) {
+    beautyCanvas.width = w; beautyCanvas.height = h;
+  }
   beautyCtx.clearRect(0, 0, w, h);
   beautyCtx.globalCompositeOperation = 'source-over';
   beautyCtx.globalAlpha = 1.0;
 
-  // ① ぼかしベースを描く（スキントーンを均一化）
   beautyCtx.filter = `blur(${blurR}px)`;
-  beautyCtx.drawImage(src, 0, 0, w, h);
+  beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
   beautyCtx.filter = 'none';
 
-  // ② 元画像を lighten で重ねる
-  // lighten = max(ぼかし, 元) → ぼかし>元の部分(シミ)はぼかしが残り、元>ぼかしの部分(ハイライト)は元が残る
   beautyCtx.globalCompositeOperation = 'lighten';
-  beautyCtx.drawImage(src, 0, 0, w, h);
+  beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
 
-  // ③ 元画像を薄く重ねて眉・目・口などの細部を復元
   beautyCtx.globalCompositeOperation = 'source-over';
   beautyCtx.globalAlpha = detail;
-  beautyCtx.drawImage(src, 0, 0, w, h);
+  beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
   beautyCtx.globalAlpha = 1.0;
 }
 
