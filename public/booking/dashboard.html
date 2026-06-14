@@ -201,10 +201,7 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
     <div id="plan-free-content">
       <p class="card-desc" style="margin-bottom:16px">現在は<strong>無料プラン</strong>です。通話時間は45分まで、文字起こしは利用できません。<br>有料プランにアップグレードすると<strong>通話時間無制限 + AI文字起こし・要約</strong>が使えます（¥980/月〜）。</p>
       <button id="plan-upgrade-btn" class="plan-upgrade-btn" onclick="startUpgrade()" style="width:100%;border:none;cursor:pointer">🚀 有料プランにアップグレード（¥980/月〜）</button>
-      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-        <p class="card-desc" style="margin-bottom:8px">福祉施設として複数拠点でご利用の場合は拠点数プランをご利用ください（30日間無料）。</p>
-        <button class="btn btn-secondary btn-sm" onclick="openRegModal()">🏥 施設アカウントとして登録（30日無料トライアル）</button>
-      </div>
+
     </div>
     <div id="plan-paid-content" style="display:none">
       <p class="card-desc">現在は<strong>有料プラン</strong>です。通話時間無制限・AI文字起こし・要約がご利用いただけます。</p>
@@ -341,8 +338,23 @@ async function init() {
     history.replaceState({}, '', '/booking/dashboard');
   }
 
-  // 施設プラン or 個人プランを表示
-  await loadFacilityStatus(me);
+  // ui_mode に応じてプランカードを表示
+  if (me.ui_mode === 'welfare') {
+    await loadFacilityStatus(me);
+  } else {
+    // シンプルモード: 個人プランカードのみ表示
+    document.getElementById('plan-card').style.display = '';
+    document.getElementById('facility-card').style.display = 'none';
+    const planR = await fetch('/api/my-plan').then(r => r.json());
+    const badge = document.getElementById('plan-badge');
+    if (planR.plan === 'paid') {
+      badge.textContent = 'PRO'; badge.className = 'plan-badge paid';
+      document.getElementById('plan-free-content').style.display = 'none';
+      document.getElementById('plan-paid-content').style.display = '';
+    } else {
+      badge.textContent = 'FREE'; badge.className = 'plan-badge free';
+    }
+  }
 
   renderDow();
   renderBookings(bookRes);

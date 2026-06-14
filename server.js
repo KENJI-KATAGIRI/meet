@@ -147,6 +147,7 @@ db.exec(`
   );
 `);
 try { db.exec('ALTER TABLE users ADD COLUMN facility_id INTEGER'); } catch(e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN ui_mode TEXT DEFAULT 'simple'"); } catch(e) {}
 
 // ── 施設サブスク ヘルパー ────────────────────────────────────────
 function calcMonthlyAmount(locationCount, isEarlyAdopter) {
@@ -347,7 +348,7 @@ function requireAuth(req, res, next) {
 
 // ---- API: me ----
 app.get('/api/me', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT id, name, email, slug, slot_duration FROM users WHERE id=?').get(req.session.userId);
+  const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode FROM users WHERE id=?').get(req.session.userId);
   res.json(u);
 });
 
@@ -1063,7 +1064,7 @@ app.post('/api/facility/register', requireAuth, async (req, res) => {
     db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(facilityId, loc);
   }
   db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(facilityId, locations.length, '初回登録');
-  db.prepare('UPDATE users SET facility_id=? WHERE id=?').run(facilityId, req.session.userId);
+  db.prepare('UPDATE users SET facility_id=?, ui_mode=\'welfare\' WHERE id=?').run(facilityId, req.session.userId);
   const amount = calcMonthlyAmount(locations.length, 1);
   await sendMail(process.env.GMAIL_USER || '',
     `【NiceMeet】新規施設トライアル開始: ${facility_name}`,
@@ -1150,6 +1151,28 @@ app.get('/api/facility/export/csv', requireAuth, (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="nicemeet_meetings.csv"');
   res.send('\ufeff' + header + body);
+});
+
+// ─────────────────────────────────────────────────────────────────
+// ── 管理者用エンドポイント ────────────────────────────────────────
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'nicemeet-admin-2026';
+
+app.post('/api/admin/set-mode', (req, res) => {
+  const { secret, email, mode } = req.body;
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
+  if (!['simple', 'welfare'].includes(mode)) return res.status(400).json({ error: 'invalid mode' });
+  const u = db.prepare('SELECT id FROM users WHERE email=?').get(email);
+  if (!u) return res.status(404).json({ error: 'user not found' });
+  db.prepare("UPDATE users SET ui_mode=? WHERE email=?").run(mode, email);
+  console.log(`[admin] ui_mode=${mode} set for ${email}`);
+  res.json({ ok: true, email, mode });
+});
+
+app.get('/api/admin/users', (req, res) => {
+  const { secret } = req.query;
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
+  const rows = db.prepare('SELECT id, name, email, ui_mode, facility_id FROM users ORDER BY id DESC').all();
+  res.json(rows);
 });
 
 // ─────────────────────────────────────────────────────────────────
