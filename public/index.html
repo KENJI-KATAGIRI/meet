@@ -1018,10 +1018,7 @@ async function toggleScreen() {
       btn.classList.add('active'); btn.querySelector('span').textContent = '共有中';
       const screenTrack = screenStream.getVideoTracks()[0];
       // addTrack + 手動リオファーで相手のontrackを確実に発火させる
-      const peerCount = Object.keys(peers).length;
-      notify('[共有] ピア数:' + peerCount);
       for (const [peerId, pc] of Object.entries(peers)) {
-        notify('[共有] 状態:' + pc.connectionState);
         const savedNeg = pc.onnegotiationneeded;
         pc.onnegotiationneeded = null;
         try {
@@ -1030,12 +1027,7 @@ async function toggleScreen() {
           offer.sdp = applyOpusParams(offer.sdp);
           await pc.setLocalDescription(offer);
           socket.emit('offer', { to: peerId, offer });
-          notify('[共有] offer送信OK');
-          console.log('[screen] offer sent to', peerId);
-        } catch(e) {
-          notify('[共有] ERR:' + e.message);
-          console.error('[screen] peer', peerId, e);
-        }
+        } catch(e) { console.error('[screen] peer', peerId, e); }
         pc.onnegotiationneeded = savedNeg;
       }
       addVideoTile('screen', '🖥️ 画面共有', screenStream, false, 'screen-tile');
