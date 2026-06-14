@@ -143,13 +143,38 @@ function getCalendarClient() {
 
 // ---- Auth ----
 // Whisperハルシネーション検出（同じ単語の繰り返しを除外）
+const HALLUCINATION_PHRASES = [
+  'ご視聴ありがとうございました',
+  'チャンネル登録',
+  'いいねボタン',
+  'サブスクライブ',
+  '次の動画でお会いしましょう',
+  'この動画が良かったら',
+  'ご覧いただきありがとうございました',
+  '字幕を使用することで',
+  'ビデオの字幕を読む',
+  '日本語のビデオの字幕',
+  '以下は日本語のビデオ',
+  'かわいい かわいい',
+];
 function isWhisperHallucination(text) {
   if (!text || text.length < 3) return true;
+  // 既知の幻覚フレーズ
+  for (const phrase of HALLUCINATION_PHRASES) {
+    if (text.includes(phrase)) return true;
+  }
+  // 句読点単位の繰り返し（「。」「、」で分割）
+  const segs = text.split(/[。！？\n]+/).map(s => s.trim()).filter(s => s.length > 2);
+  if (segs.length >= 3) {
+    const uniqSegs = new Set(segs);
+    if (uniqSegs.size / segs.length < 0.5) return true;
+  }
+  // 単語単位の繰り返し
   const words = text.split(/[\s、。！？]+/).filter(w => w.length > 0);
-  if (words.length < 4) return false;
-  const unique = new Set(words);
-  // ユニーク率が20%未満なら幻覚とみなす
-  if (unique.size / words.length < 0.2) return true;
+  if (words.length >= 4) {
+    const unique = new Set(words);
+    if (unique.size / words.length < 0.3) return true;
+  }
   return false;
 }
 
@@ -632,7 +657,7 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
           file: fs.createReadStream(sendPath),
           model: 'whisper-1',
           language: 'ja',
-          prompt: '以下は日本語のビデオ会議の音声です。',
+          prompt: 'はい。',
         });
         const text = result.text?.trim();
         if (text && !isWhisperHallucination(text)) {
