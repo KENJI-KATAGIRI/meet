@@ -1300,10 +1300,20 @@ function drawWithMask(w, h) {
     personCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
   }
   // マスクを destination-in で合成：ぼかしで髪の境界をなめらかに
+  // マスク解像度でblur+contrast dilation（端からでなくマスク境界から真に外側拡張）
+  if (!dilCanvas || dilCanvas.width !== maskCanvas2.width || dilCanvas.height !== maskCanvas2.height) {
+    dilCanvas = document.createElement('canvas');
+    dilCanvas.width = maskCanvas2.width;
+    dilCanvas.height = maskCanvas2.height;
+    dilCtx = dilCanvas.getContext('2d');
+  }
+  dilCtx.clearRect(0, 0, dilCanvas.width, dilCanvas.height);
+  dilCtx.filter = 'blur(7px) brightness(2) contrast(15)';
+  dilCtx.drawImage(maskCanvas2, 0, 0);
+  dilCtx.filter = 'none';
   personCtx.globalCompositeOperation = 'destination-in';
-  const d = 18;
-  personCtx.filter = 'blur(4px)';
-  personCtx.drawImage(maskCanvas2, -d, -d, w + d * 2, h + d * 2);
+  personCtx.filter = 'blur(3px)';
+  personCtx.drawImage(dilCanvas, 0, 0, w, h);
   personCtx.filter = 'none';
   personCtx.globalCompositeOperation = 'source-over';
 
