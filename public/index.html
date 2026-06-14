@@ -365,6 +365,7 @@ let effectsInited = false;
 let mpSegmenter = null, mpReady = false, mpSending = false, mpModelLoading = false;
 let mpTimestamp = 0;
 let maskCanvas2 = null, maskCtx2 = null, maskBuf = null;
+let dilCanvas = null, dilCtx = null;
 let prevMaskData = null;
 let bgMode = 'none';
 let bgColorVal = '#1a1a3e';
@@ -1296,11 +1297,29 @@ function drawWithMask(w, h) {
     personCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
   }
   // マスクを destination-in で合成：ぼかしで髪の境界をなめらかに
+  // lighten多方向描画でdilation（白領域を周囲に拡張して隙間を埋める）
+  if (!dilCanvas || dilCanvas.width !== w || dilCanvas.height !== h) {
+    dilCanvas = document.createElement('canvas');
+    dilCanvas.width = w; dilCanvas.height = h;
+    dilCtx = dilCanvas.getContext('2d');
+  }
+  dilCtx.clearRect(0, 0, w, h);
+  dilCtx.globalCompositeOperation = 'source-over';
+  dilCtx.drawImage(maskCanvas2, 0, 0, w, h);
+  dilCtx.globalCompositeOperation = 'lighten';
+  const dilPx = 18;
+  for (const r of [dilPx * 0.5, dilPx]) {
+    for (let a = 0; a < 8; a++) {
+      const angle = a * Math.PI / 4;
+      const dx = Math.round(Math.cos(angle) * r);
+      const dy = Math.round(Math.sin(angle) * r);
+      dilCtx.drawImage(maskCanvas2, dx, dy, w, h);
+    }
+  }
+  dilCtx.globalCompositeOperation = 'source-over';
   personCtx.globalCompositeOperation = 'destination-in';
-  // マスクを外側に拡張（dilation）してから小さいblurで境界をなめらかに
-  const d = 30;
-  personCtx.filter = 'blur(2px)';
-  personCtx.drawImage(maskCanvas2, -d, -d, w + d * 2, h + d * 2);
+  personCtx.filter = 'blur(3px)';
+  personCtx.drawImage(dilCanvas, 0, 0);
   personCtx.filter = 'none';
   personCtx.globalCompositeOperation = 'source-over';
 
