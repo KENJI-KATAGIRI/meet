@@ -370,7 +370,7 @@ let bgCanvas = null, bgCtx = null;
 let prevMaskData = null;
 let bgMode = 'none';
 let bgColorVal = '#1a1a3e';
-let bgImg = null;
+let bgImg = null, bgImgDataUrl = null;
 let beautyLevel = 0;
 let zoomLevel = 1.0;
 let effectsCanvas, effectsCtx, effectsStream, effectsVideo;
@@ -452,6 +452,7 @@ async function joinRoom() {
   }
   localStream = rawStream;
   myName = name; myRoomId = room;
+  loadBgSettings();
   document.getElementById('lobby').style.display = 'none';
   document.getElementById('meeting').style.display = 'flex';
   document.getElementById('room-info').textContent = 'ルーム: ' + room;
@@ -1480,6 +1481,7 @@ async function setBg(mode) {
   }
   await loadSegModel();
   await initEffectsStream();
+  saveBgSettings();
 }
 
 function setBgColor(color, el) {
@@ -1487,6 +1489,7 @@ function setBgColor(color, el) {
   document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
   if (el) el.classList.add('selected');
   if (bgMode !== 'color') setBg('color');
+  else saveBgSettings();
 }
 
 async function setZoom(val) {
@@ -1520,18 +1523,61 @@ async function setZoom(val) {
 function loadBgImage(input) {
   const file = input.files[0];
   if (!file) return;
-  const img = new Image();
-  img.onload = async () => {
-    bgImg = img;
-    document.getElementById('bg-image').classList.add('selected');
-    ['none','blur','color'].forEach(m => document.getElementById('bg-' + m).classList.remove('selected'));
-    bgMode = 'image';
-    document.getElementById('color-picker-row').style.display = 'none';
-    await loadSegModel();
-    await initEffectsStream();
-    notify('背景画像を設定しました');
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const dataUrl = e.target.result;
+    const img = new Image();
+    img.onload = async () => {
+      bgImg = img;
+      bgImgDataUrl = dataUrl;
+      document.getElementById('bg-image').classList.add('selected');
+      ['none','blur','color'].forEach(m => document.getElementById('bg-' + m).classList.remove('selected'));
+      bgMode = 'image';
+      document.getElementById('color-picker-row').style.display = 'none';
+      await loadSegModel();
+      await initEffectsStream();
+      saveBgSettings();
+      notify('背景画像を設定しました');
+    };
+    img.src = dataUrl;
   };
-  img.src = URL.createObjectURL(file);
+  reader.readAsDataURL(file);
+}
+
+function saveBgSettings() {
+  if (!myEmail) return;
+  const settings = { mode: bgMode, color: bgColorVal };
+  if (bgMode === 'image' && bgImgDataUrl) settings.imgDataUrl = bgImgDataUrl;
+  try { localStorage.setItem('meet_bg_' + myEmail, JSON.stringify(settings)); } catch(e) {}
+}
+
+function loadBgSettings() {
+  if (!myEmail) return;
+  const raw = localStorage.getItem('meet_bg_' + myEmail);
+  if (!raw) return;
+  try {
+    const s = JSON.parse(raw);
+    if (s.color) {
+      bgColorVal = s.color;
+      const picker = document.getElementById('bg-color-input');
+      if (picker) picker.value = s.color;
+    }
+    if (s.mode === 'blur') setBg('blur');
+    else if (s.mode === 'color') setBg('color');
+    else if (s.mode === 'image' && s.imgDataUrl) {
+      const img = new Image();
+      img.onload = async () => {
+        bgImg = img;
+        bgImgDataUrl = s.imgDataUrl;
+        bgMode = 'image';
+        document.getElementById('bg-image')?.classList.add('selected');
+        ['none','blur','color'].forEach(m => document.getElementById('bg-' + m)?.classList.remove('selected'));
+        await loadSegModel();
+        await initEffectsStream();
+      };
+      img.src = s.imgDataUrl;
+    }
+  } catch(e) {}
 }
 </script>
 </body>
