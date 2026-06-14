@@ -370,8 +370,9 @@ let maskCanvas2 = null, maskCtx2 = null, maskBuf = null;
 let bgCanvas = null, bgCtx = null;
 let prevMaskData = null;
 let skinMaskCanvas = null, skinMaskCtx = null, skinMaskBuf = null;
-let skinSampleCanvas = null, skinSampleCtx = null;
-let avgSkinR = 190, avgSkinG = 158, avgSkinB = 135; // 肌色ランニング平均（初期値は標準肌色）
+// WebGL bilateral filter（美肌用）
+let beautyGl = null, beautyGlCanvas = null, beautyGlProg = null, beautyGlVAO = null;
+let beautyGlVidTex = null, beautyGlMaskTex = null, beautyGlLocs = null;
 let bgMode = 'none';
 let bgColorVal = '#1a1a3e';
 let bgImg = null, bgImgDataUrl = null;
@@ -381,9 +382,7 @@ let effectsCanvas, effectsCtx, effectsStream, effectsVideo;
 let segCanvas, segCtx;
 let rafId = null;
 
-// 美肌フィルター用
 let beautyCanvas = null, beautyCtx = null;
-let beautyBlurCanvas = null, beautyBlurCtx = null;
 
 const urlParams = new URLSearchParams(location.search);
 if (urlParams.get('room')) {
@@ -1337,14 +1336,17 @@ function drawWithMask(w, h) {
     bgCtx.fillStyle = bgColorVal;
     bgCtx.fillRect(0, 0, w, h);
   } else if (bgMode === 'image' && bgImg) {
+    bgCtx.imageSmoothingEnabled = true;
+    bgCtx.imageSmoothingQuality = 'high';
     bgCtx.save();
     bgCtx.scale(-1, 1);
     bgCtx.drawImage(bgImg, -w, 0, w, h);
     bgCtx.restore();
   }
 
-  // Step3: maskCanvas2を直接destination-outに使う（EMAグラデーションが自然な境界）
-  // 中間canvas不要・拡張なし = over-cutによる元背景露出ゼロ
+  // Step3: maskCanvas2を直接destination-outに使う
+  bgCtx.imageSmoothingEnabled = true;
+  bgCtx.imageSmoothingQuality = 'high';
   bgCtx.globalCompositeOperation = 'destination-out';
   bgCtx.drawImage(maskCanvas2, 0, 0, w, h);
   bgCtx.globalCompositeOperation = 'source-over';
@@ -1390,30 +1392,139 @@ async function loadSegModel() {
   document.getElementById('loading-model').style.display = 'none';
 }
 
-// --- 美肌フィルター（暫定：元の実装に戻す）---
+// --- 美肌フィルター: WebGL バイラテラルフィルター ---
+// バイラテラル = 距離×色の差でウェイト → 肌テクスチャ(シミ・凹凸)を平滑化しつつ
+// 目・口・輪郭など色が大きく違う部分はウェイトが下がりシャープなまま保持
+// スキンマスク（MediaPipe）で肌エリアのみ適用
+
+function _glShader(gl, type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error('GL shader:', gl.getShaderInfoLog(s)); return null;
+  }
+  return s;
+}
+
+function initBeautyGL(w, h) {
+  if (!beautyGlCanvas) {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false });
+    if (!gl) return false;
+    beautyGlCanvas = c; beautyGl = gl;
+
+    const vs = _glShader(gl, gl.VERTEX_SHADER, `#version 300 es
+      in vec2 a_pos; out vec2 v_uv;
+      void main(){v_uv=a_pos*0.5+0.5; gl_Position=vec4(a_pos,0,1);}`);
+
+    const fs = _glShader(gl, gl.FRAGMENT_SHADER, `#version 300 es
+      precision highp float;
+      uniform sampler2D u_vid, u_mask;
+      uniform vec2 u_px;
+      uniform float u_sd, u_sr;
+      in vec2 v_uv; out vec4 o;
+      void main(){
+        float m = texture(u_mask, v_uv).a;
+        vec4 c = texture(u_vid, v_uv);
+        if(m < 0.04){ o=c; return; }
+        vec4 sum=vec4(0); float ws=0.0;
+        float d2=2.*u_sd*u_sd, r2=2.*u_sr*u_sr;
+        for(int x=-4;x<=4;x++) for(int y=-4;y<=4;y++){
+          vec2 off=vec2(float(x),float(y))*u_px;
+          vec4 s=texture(u_vid,v_uv+off);
+          float w=exp(-float(x*x+y*y)/d2)*exp(-dot(s.rgb-c.rgb,s.rgb-c.rgb)/r2);
+          sum+=s*w; ws+=w;
+        }
+        o=mix(c, sum/ws, m);
+      }`);
+
+    if (!vs || !fs) return false;
+    const p = gl.createProgram();
+    gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      console.error('GL link:', gl.getProgramInfoLog(p)); return false;
+    }
+    beautyGlProg = p;
+
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(p, 'a_pos');
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    beautyGlVAO = vao;
+
+    function mkTex(gl){ const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); return t; }
+    beautyGlVidTex = mkTex(gl); beautyGlMaskTex = mkTex(gl);
+
+    beautyGlLocs = {
+      vid:  gl.getUniformLocation(p,'u_vid'),
+      mask: gl.getUniformLocation(p,'u_mask'),
+      px:   gl.getUniformLocation(p,'u_px'),
+      sd:   gl.getUniformLocation(p,'u_sd'),
+      sr:   gl.getUniformLocation(p,'u_sr'),
+    };
+  }
+  if (beautyGlCanvas.width!==w || beautyGlCanvas.height!==h) {
+    beautyGlCanvas.width=w; beautyGlCanvas.height=h;
+    beautyGl.viewport(0,0,w,h);
+  }
+  return true;
+}
+
 function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
-  if (sw == null) sw = src.videoWidth || src.width || w;
-  if (sh == null) sh = src.videoHeight || src.height || h;
-  const strong = beautyLevel === 2;
-  const blurR  = strong ? 3 : 2;
-  const detail = strong ? 0.42 : 0.52;
-  if (!beautyCanvas || beautyCanvas.width !== w || beautyCanvas.height !== h) {
+  if (sw==null) sw=src.videoWidth||src.width||w;
+  if (sh==null) sh=src.videoHeight||src.height||h;
+
+  if (!beautyCanvas || beautyCanvas.width!==w || beautyCanvas.height!==h) {
     beautyCanvas = document.createElement('canvas');
-    beautyCanvas.width = w; beautyCanvas.height = h;
+    beautyCanvas.width=w; beautyCanvas.height=h;
     beautyCtx = beautyCanvas.getContext('2d');
   }
-  beautyCtx.clearRect(0, 0, w, h);
-  beautyCtx.globalCompositeOperation = 'source-over';
-  beautyCtx.globalAlpha = 1.0;
-  beautyCtx.filter = `blur(${blurR}px)`;
+  // 元映像をbeautyCanvasに描画（ズームクロップ済み）
+  beautyCtx.clearRect(0,0,w,h);
   beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
-  beautyCtx.filter = 'none';
-  beautyCtx.globalCompositeOperation = 'lighten';
-  beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
-  beautyCtx.globalCompositeOperation = 'source-over';
-  beautyCtx.globalAlpha = detail;
-  beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
-  beautyCtx.globalAlpha = 1.0;
+
+  if (!initBeautyGL(w, h)) return; // WebGL非対応ならCanvas2Dのまま
+  const gl = beautyGl;
+  const strong = beautyLevel===2;
+
+  // ビデオフレームをWebGLテクスチャにアップロード（Y反転）
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, beautyGlVidTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, beautyCanvas);
+
+  // スキンマスクをWebGLテクスチャにアップロード
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, beautyGlMaskTex);
+  if (skinMaskCanvas) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, skinMaskCanvas);
+  } else {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255,255,255,255]));
+  }
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+
+  // バイラテラルフィルター実行
+  gl.viewport(0,0,w,h);
+  gl.useProgram(beautyGlProg); gl.bindVertexArray(beautyGlVAO);
+  gl.uniform1i(beautyGlLocs.vid,  0);
+  gl.uniform1i(beautyGlLocs.mask, 1);
+  gl.uniform2f(beautyGlLocs.px,   1/w, 1/h);
+  gl.uniform1f(beautyGlLocs.sd,   strong ? 4.5 : 3.0); // 空間シグマ
+  gl.uniform1f(beautyGlLocs.sr,   strong ? 0.14 : 0.09); // 色シグマ
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindVertexArray(null);
+
+  // WebGL出力をbeautyCanvasにコピー（WebGLはY軸が逆なのでY反転して貼る）
+  beautyCtx.save();
+  beautyCtx.translate(0, h);
+  beautyCtx.scale(1, -1);
+  beautyCtx.drawImage(beautyGlCanvas, 0, 0, w, h);
+  beautyCtx.restore();
 }
 
 function replaceTracksInPeers() {
@@ -1586,7 +1697,7 @@ function loadBgImage(input) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const compressed = await compressImageDataUrl(e.target.result, 640, 360, 0.78);
+    const compressed = await compressImageDataUrl(e.target.result, 1280, 720, 0.92);
     addToBgHistory(compressed);
     await applyBgFromHistory(compressed);
     notify('背景画像を設定しました');
