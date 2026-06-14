@@ -3,280 +3,263 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>オンライン面談を予約する</title>
+<title>NiceMeet - 予約</title>
 <style>
-:root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#2a2a4a;--accent:#6c63ff;--text:#fff;--muted:#888;--border:#2a2a4a;--success:#4ade80}
+:root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#2a2a4a;--accent:#6c63ff;--adim:rgba(108,99,255,.15);--text:#fff;--muted:#888;--border:#2a2a4a;--success:#4ade80;--danger:#e94560}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-.container{max-width:600px;margin:0 auto;padding:32px 16px 60px}
-.host-card{background:var(--bg2);border-radius:16px;padding:28px;margin-bottom:24px;border:1px solid var(--border);display:flex;align-items:center;gap:20px}
-.avatar{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b82ff);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;flex-shrink:0}
-.host-info h1{font-size:20px;font-weight:700;margin-bottom:4px}
-.host-info p{color:var(--muted);font-size:14px;line-height:1.5}
-.badge{display:inline-flex;align-items:center;gap:6px;background:#1e1e4a;border:1px solid var(--accent);border-radius:20px;padding:4px 12px;font-size:12px;color:#a89fff;margin-top:8px}
-.steps{display:flex;align-items:center;gap:0;margin-bottom:24px;background:var(--bg2);border-radius:12px;padding:4px;border:1px solid var(--border)}
-.step{flex:1;text-align:center;padding:10px 8px;border-radius:9px;font-size:12px;font-weight:600;color:var(--muted);transition:all .3s;cursor:default}
-.step.active{background:var(--accent);color:#fff}
-.step.done{color:var(--success)}
-.card{background:var(--bg2);border-radius:16px;padding:24px;margin-bottom:16px;border:1px solid var(--border)}
-.card-title{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
-.month-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.month-nav button{width:32px;height:32px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center}
-.month-nav button:hover{border-color:var(--accent);color:var(--accent)}
-.month-nav span{font-size:16px;font-weight:700}
-.dow-row{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px}
-.dow-label{text-align:center;font-size:11px;color:#444;padding:4px 0;font-weight:600}
-.dow-label:first-child{color:#e94560}
-.dow-label:last-child{color:#4ade80}
-.date-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-.date-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;transition:all .2s;font-size:14px;font-weight:500;border:1.5px solid transparent}
-.date-cell:hover:not(.disabled):not(.empty-cell){background:var(--bg3);border-color:var(--border)}
-.date-cell.selected{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
-.date-cell.today:not(.selected){border-color:var(--accent);color:var(--accent)}
-.date-cell.disabled{opacity:.25;cursor:not-allowed}
-.date-cell.empty-cell{cursor:default}
-.slots-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.slot-btn{padding:11px 8px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;text-align:center}
-.slot-btn:hover{border-color:var(--accent);color:var(--accent);background:#1e1e4a}
-.slot-btn.selected{background:var(--accent);border-color:var(--accent);color:#fff}
-.empty-slots{color:var(--muted);font-size:14px;text-align:center;padding:28px;background:var(--bg3);border-radius:12px}
+.container{max-width:800px;margin:0 auto;padding:28px 16px 60px}
+
+/* ホストカード */
+.host-card{background:var(--bg2);border-radius:16px;padding:22px 24px;margin-bottom:16px;border:1px solid var(--border);display:flex;align-items:center;gap:18px}
+.avatar{width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b82ff);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;flex-shrink:0}
+.host-info h1{font-size:17px;font-weight:700;margin-bottom:4px}
+.host-info p{color:var(--muted);font-size:13px;line-height:1.5}
+.badge{display:inline-flex;align-items:center;gap:5px;background:var(--adim);border:1px solid rgba(108,99,255,.3);border-radius:20px;padding:3px 10px;font-size:11px;color:#a89fff;margin-top:7px}
+
+/* 週ナビ */
+.week-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.week-nav button{background:var(--bg2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s}
+.week-nav button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.week-nav button:disabled{opacity:.35;cursor:not-allowed}
+.week-range{font-size:14px;font-weight:600;color:var(--muted);text-align:center}
+
+/* 週グリッド */
+.week-wrap{background:var(--bg2);border-radius:16px;border:1px solid var(--border);overflow:hidden;margin-bottom:16px}
+.week-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.week-grid{display:grid;grid-template-columns:repeat(7,minmax(90px,1fr));min-width:560px}
+.day-col{border-right:1px solid var(--border)}
+.day-col:last-child{border-right:none}
+.day-head{padding:12px 6px;text-align:center;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);z-index:1}
+.day-head.today{background:var(--adim)}
+.day-head.past{opacity:.35}
+.dow{font-size:10px;font-weight:800;letter-spacing:.5px;color:var(--muted);margin-bottom:3px}
+.day-head.today .dow{color:var(--accent)}
+.day-num{font-size:20px;font-weight:800;line-height:1}
+.day-head.today .day-num{color:var(--accent)}
+.day-mon{font-size:10px;color:var(--muted);margin-top:2px}
+.slots-col{padding:8px 6px;display:flex;flex-direction:column;gap:5px;min-height:60px}
+.slot-pill{padding:8px 4px;background:var(--adim);border:1px solid rgba(108,99,255,.3);border-radius:8px;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;text-align:center;transition:all .2s;user-select:none}
+.slot-pill:hover{background:var(--accent);color:#fff;transform:translateY(-1px);box-shadow:0 3px 10px rgba(108,99,255,.4)}
+.slot-pill.selected{background:var(--accent);color:#fff;border-color:var(--accent)}
+.no-slot{text-align:center;color:#2a2a4a;font-size:12px;padding:16px 4px}
+.skel{background:linear-gradient(90deg,#1e1e3a 25%,#252540 50%,#1e1e3a 75%);background-size:200% 100%;animation:shimmer 1.2s infinite;border-radius:8px;height:30px;margin-bottom:5px}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* 予約フォーム */
+.booking-panel{background:var(--bg2);border-radius:16px;padding:24px;border:1.5px solid var(--accent);margin-bottom:16px;animation:fadeUp .25s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.slot-banner{background:var(--adim);border:1px solid rgba(108,99,255,.3);border-radius:12px;padding:14px 16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.slot-banner .lbl{font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.slot-banner .val{font-size:16px;font-weight:800}
+.change-btn{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:7px 12px;font-size:12px;cursor:pointer;transition:all .2s;white-space:nowrap;flex-shrink:0}
+.change-btn:hover{border-color:var(--accent);color:var(--accent)}
 .form-group{margin-bottom:14px}
-.form-group label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px}
-.form-group label span{color:#e94560}
+.form-group label{display:block;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:7px}
 input,textarea{width:100%;padding:12px 14px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;outline:none;transition:border .2s;font-family:inherit}
 input:focus,textarea:focus{border-color:var(--accent)}
-input::placeholder,textarea::placeholder{color:#444}
+input::placeholder,textarea::placeholder{color:#3a3a5a}
 textarea{resize:vertical;min-height:80px}
-.summary-box{background:#1a1a3a;border:1.5px solid var(--accent);border-radius:12px;padding:16px;margin-bottom:16px}
-.summary-box .label{font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-.summary-box .value{font-size:16px;font-weight:700}
-.btn-primary{width:100%;padding:15px;background:var(--accent);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:.3px}
-.btn-primary:hover:not(:disabled){background:#7b73ff;transform:translateY(-1px);box-shadow:0 6px 20px rgba(108,99,255,.4)}
-.btn-primary:disabled{background:#2a2a4a;cursor:not-allowed;color:var(--muted)}
-.helper{font-size:12px;color:#444;text-align:center;margin-top:12px}
-.loading{text-align:center;padding:28px;color:var(--muted);font-size:14px}
-.loading::after{content:'';display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-left:8px;vertical-align:middle}
-@keyframes spin{to{transform:rotate(360deg)}}
-.success-page{text-align:center;padding:16px 0}
-.success-icon{width:80px;height:80px;background:linear-gradient(135deg,#1a3a2a,#0f2a1a);border:2px solid var(--success);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 24px}
-.success-page h2{font-size:26px;font-weight:800;margin-bottom:8px}
-.success-page .sub{color:var(--muted);font-size:14px;margin-bottom:28px;line-height:1.6}
-.detail-grid{display:flex;flex-direction:column;gap:10px;margin-bottom:24px;text-align:left}
-.detail-row{display:flex;align-items:flex-start;gap:12px;background:var(--bg3);border-radius:10px;padding:14px}
-.detail-row .icon{font-size:18px;flex-shrink:0;margin-top:1px}
-.detail-row .info .label{font-size:11px;color:var(--muted);margin-bottom:3px}
-.detail-row .info .val{font-size:14px;font-weight:600}
-.meet-btn{display:block;background:linear-gradient(135deg,var(--accent),#8b82ff);border-radius:12px;padding:16px;color:#fff;text-decoration:none;font-size:15px;font-weight:700;text-align:center;margin-bottom:10px;transition:all .2s}
-.meet-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(108,99,255,.5)}
-.meet-note{font-size:12px;color:#444;text-align:center}
-@media(max-width:480px){.slots-grid{grid-template-columns:repeat(2,1fr)}.host-card{flex-direction:column;text-align:center}.badge{justify-content:center}}
+.btn-submit{width:100%;padding:15px;background:var(--accent);border:none;border-radius:12px;color:#fff;font-size:16px;font-weight:800;cursor:pointer;transition:all .2s;letter-spacing:.3px}
+.btn-submit:hover:not(:disabled){background:#7b73ff;transform:translateY(-1px);box-shadow:0 6px 20px rgba(108,99,255,.4)}
+.btn-submit:disabled{background:var(--bg3);color:var(--muted);cursor:not-allowed}
+.form-hint{font-size:12px;color:#3a3a5a;text-align:center;margin-top:12px}
+
+/* 完了 */
+.success-card{background:var(--bg2);border-radius:16px;padding:36px 24px;border:1px solid var(--border);text-align:center}
+.success-icon{width:72px;height:72px;background:linear-gradient(135deg,#0a1f10,#143020);border:2px solid var(--success);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 20px}
+.success-card h2{font-size:24px;font-weight:800;margin-bottom:8px}
+.success-card .sub{color:var(--muted);font-size:14px;margin-bottom:24px;line-height:1.7}
+.detail-list{display:flex;flex-direction:column;gap:8px;margin-bottom:24px;text-align:left}
+.detail-row{display:flex;gap:12px;background:var(--bg3);border-radius:10px;padding:13px 14px;align-items:center}
+.detail-row .ico{font-size:16px;flex-shrink:0}
+.detail-row .lbl{font-size:11px;color:var(--muted);margin-bottom:3px}
+.detail-row .val{font-size:14px;font-weight:700}
+.meet-btn{display:block;background:linear-gradient(135deg,var(--accent),#8b82ff);border-radius:12px;padding:16px;color:#fff;text-decoration:none;font-size:15px;font-weight:800;text-align:center;transition:all .2s}
+.meet-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(108,99,255,.4)}
+.meet-note{font-size:12px;color:#444;margin-top:10px;line-height:1.6}
+
+@media(max-width:520px){.host-card{flex-direction:column;text-align:center}.badge{justify-content:center}}
 </style>
 </head>
 <body>
 <div class="container">
-  <div id="main-content">
-    <div class="loading" style="padding:80px;text-align:center">読み込み中</div>
-  </div>
+  <div id="app"><div style="text-align:center;padding:80px;color:var(--muted)">読み込み中...</div></div>
 </div>
 <script>
 const slug = location.pathname.split('/').pop();
-let selectedDate = null, selectedSlot = null, hostName = '', viewYear, viewMonth;
+const DOW = ['日','月','火','水','木','金','土'];
+let hostName = '', weekStart = null, selectedSlot = null, slotsCache = {};
+
+function getMonday(d) {
+  const r = new Date(d); r.setHours(0,0,0,0);
+  const dw = r.getDay();
+  r.setDate(r.getDate() + (dw===0 ? -6 : 1-dw));
+  return r;
+}
+function dateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function weekDays() {
+  return Array.from({length:7},(_,i)=>{ const d=new Date(weekStart); d.setDate(d.getDate()+i); return d; });
+}
 
 async function init() {
-  const now = new Date();
-  viewYear = now.getFullYear();
-  viewMonth = now.getMonth();
-  renderPage();
+  weekStart = getMonday(new Date());
+  await load();
 }
 
-function getInitial(name) {
-  if (!name) return '?';
-  const arr = [...name];
-  return arr[0].toUpperCase();
+async function load() {
+  slotsCache = {};
+  render();
+  const days = weekDays();
+  await Promise.all(days.map(async d => {
+    const ds = dateStr(d);
+    try {
+      const r = await fetch(`/api/b/${slug}/slots?date=${ds}`);
+      const data = await r.json();
+      if (data.hostName) hostName = data.hostName;
+      slotsCache[ds] = data.slots || [];
+    } catch { slotsCache[ds] = []; }
+  }));
+  render();
 }
 
-function renderPage() {
-  const el = document.getElementById('main-content');
-  const step = !selectedDate ? 1 : !selectedSlot ? 2 : 3;
-  el.innerHTML = `
+function render() {
+  const days = weekDays();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const thisMonday = getMonday(today);
+  const we = new Date(weekStart); we.setDate(we.getDate()+6);
+  const rangeLabel = `${weekStart.getMonth()+1}月${weekStart.getDate()}日(${DOW[weekStart.getDay()]}) 〜 ${we.getMonth()+1}月${we.getDate()}日(${DOW[we.getDay()]})`;
+  const prevDisabled = weekStart.getTime() <= thisMonday.getTime();
+
+  const cols = days.map((d,di) => {
+    const ds = dateStr(d);
+    const isPast = d < today;
+    const isToday = d.getTime() === today.getTime();
+    const isSun = d.getDay()===0, isSat = d.getDay()===6;
+    const dowColor = isSun?'color:var(--danger)':isSat?'color:var(--success)':'';
+    const headCls = isToday?' today':isPast?' past':'';
+    const slots = slotsCache[ds];
+
+    let body = '';
+    if (slots === undefined) {
+      body = `<div class="skel"></div><div class="skel" style="opacity:.5"></div><div class="skel" style="opacity:.25"></div>`;
+    } else if (isPast || slots.length===0) {
+      body = `<div class="no-slot">${isPast?'——':'空きなし'}</div>`;
+    } else {
+      body = slots.map((s,idx) => {
+        const isSel = selectedSlot && selectedSlot.start===s.start;
+        return `<div class="slot-pill${isSel?' selected':''}" onclick="pick('${ds}',${idx})">${s.label}</div>`;
+      }).join('');
+    }
+
+    return `<div class="day-col">
+      <div class="day-head${headCls}">
+        <div class="dow" style="${dowColor}">${DOW[d.getDay()]}</div>
+        <div class="day-num">${d.getDate()}</div>
+        <div class="day-mon">${d.getMonth()+1}/${d.getDate()}</div>
+      </div>
+      <div class="slots-col">${body}</div>
+    </div>`;
+  }).join('');
+
+  let formHtml = '';
+  if (selectedSlot) {
+    const sd = new Date(selectedSlot.start);
+    const slotLabel = sd.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'}) + ' ' + selectedSlot.label;
+    formHtml = `<div class="booking-panel">
+      <div class="slot-banner">
+        <div><div class="lbl">選択した日時</div><div class="val">📅 ${slotLabel}</div></div>
+        <button class="change-btn" onclick="clearSlot()">別の日時を選ぶ</button>
+      </div>
+      <div class="form-group">
+        <label>お名前 <span style="color:var(--danger)">*</span></label>
+        <input id="inp-name" placeholder="例：山田 太郎" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label>メールアドレス <span style="font-weight:400;text-transform:none;color:var(--muted)">（確認書類をお送りします）</span></label>
+        <input id="inp-email" type="email" placeholder="例：your@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>ご用件 <span style="font-weight:400;text-transform:none;color:var(--muted)">（任意）</span></label>
+        <textarea id="inp-purpose" placeholder="面談でお話したい内容があればご記入ください"></textarea>
+      </div>
+      <button class="btn-submit" id="submit-btn" onclick="submit()">予約を確定する →</button>
+      <p class="form-hint">📧 入力いただいたメールアドレスに確認メールをお送りします</p>
+    </div>`;
+  }
+
+  document.getElementById('app').innerHTML = `
     <div class="host-card">
-      <div class="avatar" id="host-avatar">?</div>
+      <div class="avatar">${(hostName||'?')[0]}</div>
       <div class="host-info">
-        <h1 id="host-title">読み込み中...</h1>
-        <p id="host-desc">ご希望の日時を選んでオンライン面談を予約できます</p>
-        <div class="badge">🎥 ビデオ通話（ブラウザのみ・アプリ不要）</div>
+        <h1>${hostName ? hostName+' さんとのオンライン面談' : '読み込み中...'}</h1>
+        <p>ご希望の日時をお選びください。予約完了後にビデオ通話URLをお送りします。</p>
+        <div class="badge">🎥 ビデオ通話（アプリ不要）</div>
       </div>
     </div>
-    <div class="steps">
-      <div class="step ${step===1?'active':step>1?'done':''}">${step>1?'✓ ':''}日程を選ぶ</div>
-      <div class="step ${step===2?'active':step>2?'done':''}">${step>2?'✓ ':''}時間を選ぶ</div>
-      <div class="step ${step===3?'active':''}">お名前を入力</div>
+    <div class="week-nav">
+      <button onclick="changeWeek(-1)" ${prevDisabled?'disabled':''}>‹ 前の週</button>
+      <span class="week-range">${rangeLabel}</span>
+      <button onclick="changeWeek(1)">次の週 ›</button>
     </div>
-    <div class="card">
-      <div class="card-title">📅 ${step===1?'ご希望の日程をお選びください':selectedDate?formatDate(selectedDate)+'の予定':'日程'}</div>
-      <div class="month-nav">
-        <button onclick="changeMonth(-1)">‹</button>
-        <span id="month-label"></span>
-        <button onclick="changeMonth(1)">›</button>
-      </div>
-      <div class="dow-row">
-        ${['日','月','火','水','木','金','土'].map(d=>`<div class="dow-label">${d}</div>`).join('')}
-      </div>
-      <div class="date-grid" id="date-grid"></div>
-    </div>
-    <div id="slots-section" style="display:${selectedDate?'block':'none'}">
-      <div class="card">
-        <div class="card-title">🕐 空いている時間帯をお選びください</div>
-        <div id="slots-container"><div class="loading">空き時間を確認中</div></div>
-      </div>
-    </div>
-    <div id="form-section" style="display:${selectedSlot?'block':'none'}">
-      <div class="card">
-        <div class="card-title">✏️ お客様情報を入力してください</div>
-        <div class="summary-box">
-          <div class="label">予約日時</div>
-          <div class="value" id="selected-display">${selectedSlot?formatSlot():''}</div>
-        </div>
-        <div class="form-group">
-          <label>お名前 <span>*</span></label>
-          <input id="input-name" placeholder="例：山田 太郎" autocomplete="name">
-        </div>
-        <div class="form-group">
-          <label>メールアドレス <span style="color:var(--muted);font-weight:400">（確認メールをお送りします）</span></label>
-          <input id="input-email" type="email" placeholder="例：your@email.com" autocomplete="email">
-        </div>
-        <div class="form-group">
-          <label>ご用件 <span style="color:var(--muted);font-weight:400">（任意）</span></label>
-          <textarea id="input-purpose" placeholder="面談でお話したいことや質問があればご記入ください"></textarea>
-        </div>
-        <button class="btn-primary" id="submit-btn" onclick="submitBooking()">予約を確定する</button>
-        <p class="helper">📧 ご入力のメールアドレス宛に確認書類をお送りします</p>
+    ${formHtml}
+    <div class="week-wrap">
+      <div class="week-scroll">
+        <div class="week-grid">${cols}</div>
       </div>
     </div>
   `;
-  renderCalendar();
-  if (selectedDate) loadSlots(selectedDate);
 }
 
-function formatDate(d) {
-  return new Date(d + 'T12:00:00+09:00').toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'});
+function pick(ds, idx) {
+  selectedSlot = slotsCache[ds][idx];
+  render();
+  setTimeout(()=>document.querySelector('.booking-panel')?.scrollIntoView({behavior:'smooth',block:'start'}),50);
 }
-function formatSlot() {
-  if (!selectedSlot) return '';
-  const d = new Date(selectedSlot.start);
-  return d.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'}) + ' ' + selectedSlot.label;
-}
+function clearSlot() { selectedSlot=null; render(); }
 
-function renderCalendar() {
-  const label = new Date(viewYear, viewMonth, 1).toLocaleDateString('ja-JP',{year:'numeric',month:'long'});
-  document.getElementById('month-label').textContent = label;
-  const grid = document.getElementById('date-grid');
-  grid.innerHTML = '';
-  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
-  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
-  const today = new Date(); today.setHours(0,0,0,0);
-  for (let i=0;i<firstDay;i++){
-    const e=document.createElement('div');e.className='date-cell empty-cell';grid.appendChild(e);
-  }
-  for (let d=1;d<=daysInMonth;d++){
-    const date=new Date(viewYear,viewMonth,d);
-    const dateStr=`${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const isPast=date<today;
-    const isToday=date.getTime()===today.getTime();
-    const isSelected=dateStr===selectedDate;
-    const cell=document.createElement('div');
-    cell.className='date-cell'+(isPast?' disabled':'')+(isSelected?' selected':'')+(isToday&&!isSelected?' today':'');
-    cell.textContent=d;
-    if(!isPast)cell.onclick=()=>selectDate(dateStr);
-    grid.appendChild(cell);
-  }
+async function changeWeek(delta) {
+  const n = new Date(weekStart); n.setDate(n.getDate()+delta*7);
+  const mon = getMonday(new Date());
+  if (n < mon) return;
+  weekStart = n; selectedSlot = null;
+  await load();
 }
 
-async function selectDate(date) {
-  selectedDate = date;
-  selectedSlot = null;
-  renderPage();
-}
-
-async function loadSlots(date) {
-  const res = await fetch(`/api/b/${slug}/slots?date=${date}`);
-  const data = await res.json();
-  hostName = data.hostName || slug;
-  document.getElementById('host-title').textContent = hostName + ' さんとのオンライン面談';
-  document.getElementById('host-avatar').textContent = getInitial(hostName);
-
-  const container = document.getElementById('slots-container');
-  if (!data.slots || data.slots.length === 0) {
-    container.innerHTML = '<div class="empty-slots">⚠️ この日は空きがありません<br><span style="font-size:12px;margin-top:4px;display:block">別の日程をお選びください</span></div>';
-    return;
-  }
-  const grid = document.createElement('div');
-  grid.className = 'slots-grid';
-  data.slots.forEach(slot => {
-    const btn = document.createElement('div');
-    btn.className = 'slot-btn' + (selectedSlot&&selectedSlot.start===slot.start?' selected':'');
-    btn.textContent = slot.label;
-    btn.onclick = () => selectSlot(slot);
-    grid.appendChild(btn);
-  });
-  container.innerHTML = '';
-  container.appendChild(grid);
-}
-
-function selectSlot(slot) {
-  selectedSlot = slot;
-  renderPage();
-  setTimeout(() => document.getElementById('form-section')?.scrollIntoView({behavior:'smooth',block:'start'}), 50);
-}
-
-async function submitBooking() {
-  const name = document.getElementById('input-name').value.trim();
-  const email = document.getElementById('input-email').value.trim();
-  const purpose = document.getElementById('input-purpose').value.trim();
-  if (!name) { document.getElementById('input-name').focus(); document.getElementById('input-name').style.borderColor='#e94560'; return; }
+async function submit() {
+  const name = document.getElementById('inp-name')?.value.trim();
+  const email = document.getElementById('inp-email')?.value.trim();
+  const purpose = document.getElementById('inp-purpose')?.value.trim();
+  if (!name) { const el=document.getElementById('inp-name'); el.focus(); el.style.borderColor='var(--danger)'; return; }
   const btn = document.getElementById('submit-btn');
-  btn.disabled = true; btn.textContent = '予約処理中...';
-  const res = await fetch(`/api/b/${slug}/book`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({booker_name:name,booker_email:email,start_time:selectedSlot.start,end_time:selectedSlot.end,purpose})
+  btn.disabled=true; btn.textContent='予約処理中...';
+  const res = await fetch(`/api/b/${slug}/book`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({booker_name:name,booker_email:email,start_time:selectedSlot.start,end_time:selectedSlot.end,purpose})
   });
   const data = await res.json();
   if (data.ok) {
     const d = new Date(selectedSlot.start);
-    const fmtDate = d.toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
-    document.getElementById('main-content').innerHTML = `
-      <div class="card">
-        <div class="success-page">
-          <div class="success-icon">✓</div>
-          <h2>予約が確定しました！</h2>
-          <p class="sub">ご予約ありがとうございます。<br>確認メールをお送りしましたのでご確認ください。</p>
-          <div class="detail-grid">
-            <div class="detail-row">
-              <div class="icon">📅</div>
-              <div class="info"><div class="label">日時</div><div class="val">${fmtDate}<br>${selectedSlot.label}</div></div>
-            </div>
-            <div class="detail-row">
-              <div class="icon">👤</div>
-              <div class="info"><div class="label">お相手</div><div class="val">${hostName} さん</div></div>
-            </div>
-            ${email?`<div class="detail-row"><div class="icon">📧</div><div class="info"><div class="label">確認メール送付先</div><div class="val">${email}</div></div></div>`:''}
-          </div>
-          <a class="meet-btn" href="${data.meet_url}" target="_blank">🎥 ビデオ通話URLを開く</a>
-          <p class="meet-note">このURLは当日にクリックするだけでそのまま入室できます<br>アプリのインストールは不要です</p>
+    const fd = d.toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
+    document.getElementById('app').innerHTML = `
+      <div class="success-card">
+        <div class="success-icon">✓</div>
+        <h2>予約が確定しました！</h2>
+        <p class="sub">ご予約ありがとうございます。<br>確認メールをお送りしましたのでご確認ください。</p>
+        <div class="detail-list">
+          <div class="detail-row"><div class="ico">📅</div><div><div class="lbl">日時</div><div class="val">${fd} ${selectedSlot.label}</div></div></div>
+          <div class="detail-row"><div class="ico">👤</div><div><div class="lbl">お相手</div><div class="val">${hostName} さん</div></div></div>
+          ${email?`<div class="detail-row"><div class="ico">📧</div><div><div class="lbl">確認メール送付先</div><div class="val">${email}</div></div></div>`:''}
         </div>
-      </div>
-    `;
+        <a class="meet-btn" href="${data.meet_url}" target="_blank">🎥 ビデオ通話URLを開く</a>
+        <p class="meet-note">当日はこのURLをクリックするだけで入室できます。<br>アプリのインストールは不要です。</p>
+      </div>`;
   } else {
-    alert(data.error || '予約に失敗しました。もう一度お試しください。');
-    btn.disabled = false; btn.textContent = '予約を確定する';
+    alert(data.error||'予約に失敗しました。もう一度お試しください。');
+    btn.disabled=false; btn.textContent='予約を確定する →';
   }
-}
-
-function changeMonth(delta) {
-  viewMonth += delta;
-  if (viewMonth<0){viewMonth=11;viewYear--;}
-  if (viewMonth>11){viewMonth=0;viewYear++;}
-  renderCalendar();
 }
 
 init();
