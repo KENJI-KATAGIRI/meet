@@ -1319,7 +1319,9 @@ function drawWithMask(w, h) {
     bgCtx.restore();
   }
 
-  // Step3: dilCanvasにマスクをdilation処理
+  // Step3: マスクをマスク解像度でblurしてからbgCanvasをdestination-out
+  // brightness/contrastなし＝外側拡張しない → VBが人物の少し内側で止まる
+  // (逆コンポジットではunder-cutの方が隙間が出ない)
   if (!dilCanvas || dilCanvas.width !== maskCanvas2.width || dilCanvas.height !== maskCanvas2.height) {
     dilCanvas = document.createElement('canvas');
     dilCanvas.width = maskCanvas2.width;
@@ -1327,15 +1329,13 @@ function drawWithMask(w, h) {
     dilCtx = dilCanvas.getContext('2d');
   }
   dilCtx.clearRect(0, 0, dilCanvas.width, dilCanvas.height);
-  dilCtx.filter = 'blur(6px) brightness(2) contrast(12)';
+  dilCtx.filter = 'blur(5px)';
   dilCtx.drawImage(maskCanvas2, 0, 0);
   dilCtx.filter = 'none';
 
-  // Step4: bgCanvasの人物部分をマスクでくり抜く（destination-out）
+  // Step4: bgCanvasの人物部分をくり抜く
   bgCtx.globalCompositeOperation = 'destination-out';
-  bgCtx.filter = 'blur(3px)';
   bgCtx.drawImage(dilCanvas, 0, 0, w, h);
-  bgCtx.filter = 'none';
   bgCtx.globalCompositeOperation = 'source-over';
 
   // Step5: オリジナル映像の上にくり抜き済み背景を重ねる
