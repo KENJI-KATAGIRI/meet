@@ -1545,15 +1545,17 @@ function loadBgImage(input) {
 }
 
 function saveBgSettings() {
-  if (!myEmail) return;
+  const bgKey = myEmail || myName;
+  if (!bgKey) return;
   const settings = { mode: bgMode, color: bgColorVal };
   if (bgMode === 'image' && bgImgDataUrl) settings.imgDataUrl = bgImgDataUrl;
-  try { localStorage.setItem('meet_bg_' + myEmail, JSON.stringify(settings)); } catch(e) {}
+  try { localStorage.setItem('meet_bg_' + bgKey, JSON.stringify(settings)); } catch(e) {}
 }
 
 function loadBgSettings() {
-  if (!myEmail) return;
-  const raw = localStorage.getItem('meet_bg_' + myEmail);
+  const bgKey = myEmail || myName;
+  if (!bgKey) return;
+  const raw = localStorage.getItem('meet_bg_' + bgKey);
   if (!raw) return;
   try {
     const s = JSON.parse(raw);
