@@ -1269,15 +1269,13 @@ function onMpResults(result) {
 
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
     const person = Math.min(1.0, d1[i] + d2[i] + d3[i] + (d4 ? d4[i] : 0));
-    // 下限0.20で椅子等の低信頼誤検出を除外、遷移幅0.55
-    const t = Math.max(0, Math.min(1, (person - 0.20) / 0.55));
+    // 下限0.10に下げて境界ピクセルを広く拾う
+    const t = Math.max(0, Math.min(1, (person - 0.10) / 0.50));
     const stepped = t * t * (3 - 2 * t);
-    // 上昇はほぼ即時、減衰はゆっくり（ちらつき防止）
     const alpha = stepped > prevMaskData[i] ? 0.05 : 0.55;
     prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
-    // 急峻な出力カーブ: 0.35未満→0、0.65超→255、その間は線形
-    const v = prevMaskData[i];
-    const out = v < 0.25 ? 0 : v > 0.55 ? 255 : Math.round((v - 0.25) / 0.30 * 255);
+    // 二値化しない: グラデーション値そのまま出力（blur+contrastが中間値を拡張できる）
+    const out = Math.round(prevMaskData[i] * 255);
     maskBuf[j] = maskBuf[j+1] = maskBuf[j+2] = maskBuf[j+3] = out;
   }
 
@@ -1308,7 +1306,7 @@ function drawWithMask(w, h) {
     dilCtx = dilCanvas.getContext('2d');
   }
   dilCtx.clearRect(0, 0, dilCanvas.width, dilCanvas.height);
-  dilCtx.filter = 'blur(7px) brightness(2) contrast(15)';
+  dilCtx.filter = 'blur(6px) brightness(2) contrast(12)';
   dilCtx.drawImage(maskCanvas2, 0, 0);
   dilCtx.filter = 'none';
   personCtx.globalCompositeOperation = 'destination-in';
