@@ -1215,6 +1215,11 @@ function renderFrame() {
   segCtx.clearRect(0, 0, segCanvas.width, segCanvas.height);
   segCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, segCanvas.width, segCanvas.height);
 
+  // 推論を先に実行→同フレームのマスクで描画（1フレーム分の遅延を解消）
+  if (bgMode !== 'none' && mpSegmenter && mpReady && !mpSending) {
+    runInference();
+  }
+
   if (bgMode !== 'none' && maskCanvas2) {
     drawWithMask(w, h);
   } else {
@@ -1222,10 +1227,6 @@ function renderFrame() {
     effectsCtx.filter = 'none';
     effectsCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
     applyBeautyOverlay(effectsCtx, effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
-  }
-
-  if (bgMode !== 'none' && mpSegmenter && mpReady && !mpSending) {
-    runInference();
   }
 }
 
@@ -1272,11 +1273,11 @@ function onMpResults(result) {
     const t = Math.max(0, Math.min(1, (person - 0.20) / 0.55));
     const stepped = t * t * (3 - 2 * t);
     // 上昇はほぼ即時、減衰はゆっくり（ちらつき防止）
-    const alpha = stepped > prevMaskData[i] ? 0.05 : 0.65;
+    const alpha = stepped > prevMaskData[i] ? 0.05 : 0.55;
     prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
     // 急峻な出力カーブ: 0.35未満→0、0.65超→255、その間は線形
     const v = prevMaskData[i];
-    const out = v < 0.35 ? 0 : v > 0.65 ? 255 : Math.round((v - 0.35) / 0.30 * 255);
+    const out = v < 0.25 ? 0 : v > 0.55 ? 255 : Math.round((v - 0.25) / 0.30 * 255);
     maskBuf[j] = maskBuf[j+1] = maskBuf[j+2] = maskBuf[j+3] = out;
   }
 
@@ -1300,7 +1301,7 @@ function drawWithMask(w, h) {
   }
   // マスクを destination-in で合成：ぼかしで髪の境界をなめらかに
   personCtx.globalCompositeOperation = 'destination-in';
-  const d = 10;
+  const d = 18;
   personCtx.filter = 'blur(4px)';
   personCtx.drawImage(maskCanvas2, -d, -d, w + d * 2, h + d * 2);
   personCtx.filter = 'none';
