@@ -2,3 +2,5 @@ node_modules/
 .env
 data/
 recordings/
+service-account.json
+public/index.html.bak*

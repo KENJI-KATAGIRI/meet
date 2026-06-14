@@ -96,10 +96,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 .effect-opt.selected{border-color:#6c63ff;background:#2d2d5a;color:#fff}
 .effect-opt .eff-icon{font-size:24px;margin-bottom:4px}
 .beauty-slider{display:flex;flex-direction:column;gap:8px}
-.beauty-level-btns{display:flex;gap:8px}
-.beauty-btn{flex:1;padding:8px;background:#2a2a4a;border:2px solid transparent;border-radius:8px;color:#ccc;font-size:12px;cursor:pointer;text-align:center;transition:all .2s}
-.beauty-btn:hover{border-color:#3a3a5a}
-.beauty-btn.selected{border-color:#6c63ff;color:#fff;background:#2d2d5a}
+.beauty-slider-row{margin-top:4px}.beauty-slider-row input[type=range]{width:100%;accent-color:#6c63ff;cursor:pointer}
 .color-picker-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .color-swatch{width:32px;height:32px;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:border .2s}
 .color-swatch:hover,.color-swatch.selected{border-color:#fff}
@@ -117,7 +114,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 
 /* スマホ用 */
 #btn-flip{display:none}
-#bg-history-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.bg-thumb{width:48px;height:48px;border-radius:6px;cursor:pointer;border:2px solid transparent;background-size:cover;background-position:center;flex-shrink:0;transition:border-color .2s}.bg-thumb.selected{border-color:#7c6fff}.bg-thumb:hover{border-color:#888}
+#bg-history-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.bg-thumb-wrap{position:relative;width:112px;height:63px;flex-shrink:0}.bg-thumb{width:112px;height:63px;border-radius:6px;cursor:pointer;border:2px solid transparent;background-size:cover;background-position:center;transition:border-color .2s;display:block}.bg-thumb.selected{border-color:#7c6fff}.bg-thumb:hover{border-color:#888}.bg-thumb-del{position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.75);color:#fff;font-size:13px;line-height:18px;text-align:center;cursor:pointer;display:none;z-index:10;font-style:normal}.bg-thumb-wrap:hover .bg-thumb-del{display:block}
 #btn-more{display:none}
 #more-menu{display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e1e3a;border:1px solid #3a3a5a;border-radius:12px;padding:8px;z-index:150;box-shadow:0 8px 32px rgba(0,0,0,.7);gap:4px}
 #more-menu.open{display:flex}
@@ -134,6 +131,24 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
   #effects-panel{width:100%;left:-100%}
   #effects-panel.open{left:0}
 }
+
+#breakout-panel{position:fixed;right:-340px;top:0;width:320px;height:100vh;background:#1e1e3a;border-left:1px solid #2a2a4a;display:flex;flex-direction:column;transition:right .3s;z-index:100;overflow-y:auto;padding:16px;box-sizing:border-box}
+#breakout-panel.open{right:0}
+.br-label{font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.br-btn-primary{width:100%;padding:10px;background:#6c63ff;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
+.br-btn-primary:hover{background:#5a52e0}
+.br-btn-secondary{padding:8px 14px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#ccc;font-size:13px;cursor:pointer;transition:border-color .2s}
+.br-btn-secondary:hover{border-color:#6c63ff;color:#fff}
+.br-num-btn{padding:6px 12px;background:#2a2a4a;border:2px solid transparent;border-radius:8px;color:#ccc;font-size:14px;cursor:pointer;transition:all .2s;min-width:36px;text-align:center}
+.br-num-btn.sel{border-color:#6c63ff;color:#fff;background:#2d2d5a}
+.br-participant-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #2a2a4a}
+.br-participant-row:last-child{border-bottom:none}
+.br-participant-name{flex:1;font-size:13px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.br-room-card{background:#2a2a4a;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.br-room-card.is-me{border:1px solid #6c63ff}
+select.br-room-select{padding:4px 8px;background:#1e1e3a;border:1px solid #3a3a5a;border-radius:6px;color:#ccc;font-size:12px;cursor:pointer;outline:none}
+.cohost-badge{font-size:10px;background:#4a2fb8;color:#c4b5fd;padding:2px 6px;border-radius:4px;margin-left:4px;vertical-align:middle}
+@media(max-width:600px){#breakout-panel{width:100%;right:-100%}}
 </style>
 </head>
 <body>
@@ -167,6 +182,11 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
     <div id="top-bar-left">
       <span id="top-room-name"></span>
       <span id="elapsed-time">00:00</span>
+      <div id="br-topbar" style="display:none;align-items:center;gap:8px;padding-left:10px;border-left:1px solid #3a3a5a;margin-left:4px">
+        <span id="br-room-label" style="font-size:12px;color:#a78bfa;font-weight:600"></span>
+        <span id="br-timer-topbar" style="font-size:12px;color:#fbbf24;font-weight:700"></span>
+        <button onclick="brReturnToMain()" style="font-size:11px;padding:3px 10px;background:#4a2fb8;border:none;border-radius:6px;color:#fff;cursor:pointer;white-space:nowrap">メインに戻る</button>
+      </div>
     </div>
     <div id="top-bar-right">
       <button class="layout-btn active" id="btn-layout-grid" onclick="setLayout('grid')" title="グリッド">⊞</button>
@@ -200,6 +220,9 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
     </button>
     <button class="ctrl-btn ctrl-btn-secondary" id="btn-record" onclick="toggleRecording()">
       <div class="icon">⏺️</div><span>録画</span>
+    </button>
+    <button class="ctrl-btn ctrl-btn-secondary" id="btn-breakout" onclick="toggleBreakout()" style="display:none">
+      <div class="icon">👥</div><span>ブレイクアウト</span>
     </button>
     <button class="ctrl-btn" id="btn-more" onclick="toggleMore()">
       <div class="icon">⋯</div><span>もっと</span>
@@ -235,10 +258,12 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
   <!-- 美肌フィルター -->
   <div class="effects-section">
     <h3>美肌フィルター <span style="font-size:10px;color:#666;text-transform:none">（シミ・テカり軽減）</span></h3>
-    <div class="beauty-level-btns">
-      <div class="beauty-btn selected" id="beauty-off" onclick="setBeauty(0)">OFF</div>
-      <div class="beauty-btn" id="beauty-light" onclick="setBeauty(1)">ナチュラル</div>
-      <div class="beauty-btn" id="beauty-strong" onclick="setBeauty(2)">しっかり</div>
+    <div class="beauty-slider-row">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;color:#aaa">強度</span>
+        <span id="beauty-level-label" style="font-size:12px;color:#7c6fff;font-weight:bold">OFF</span>
+      </div>
+      <input type="range" id="beauty-slider" min="0" max="100" value="0" oninput="setBeauty(parseInt(this.value))">
     </div>
   </div>
 
@@ -323,6 +348,76 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
   <button class="ctrl-btn" id="btn-record-m" onclick="toggleRecording();closeMore()">
     <div class="icon">⏺️</div><span>録画</span>
   </button>
+  <button class="ctrl-btn" id="btn-breakout-m" onclick="toggleBreakout();closeMore()" style="display:none">
+    <div class="icon">👥</div><span>ブレイクアウト</span>
+  </button>
+</div>
+
+<!-- ブレイクアウトパネル -->
+<div id="breakout-panel">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-shrink:0">
+    <div style="font-size:15px;font-weight:700">👥 ブレイクアウトルーム</div>
+    <button onclick="toggleBreakout()" style="background:none;border:none;color:#888;font-size:18px;cursor:pointer;line-height:1">✕</button>
+  </div>
+  <!-- PHASE 1: Setup -->
+  <div id="br-phase-setup">
+    <div class="br-label">部屋数</div>
+    <div id="br-num-btns" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 16px"></div>
+    <div class="br-label">タイマー</div>
+    <div style="display:flex;align-items:center;gap:8px;margin:8px 0 20px">
+      <input id="br-timer-input" type="number" min="0" max="120" value="10" style="width:64px;padding:8px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:14px;outline:none;text-align:center">
+      <span style="font-size:13px;color:#888">分（0 = なし）</span>
+    </div>
+    <button class="br-btn-primary" onclick="brCreate()">部屋を作成</button>
+  </div>
+  <!-- PHASE 2: Assign -->
+  <div id="br-phase-assign" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="br-label" style="margin:0">参加者の振り分け</div>
+      <button onclick="brAutoAssign()" class="br-btn-secondary">ランダム</button>
+    </div>
+    <div id="br-assign-list"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button onclick="brReset()" class="br-btn-secondary" style="flex:1">やり直す</button>
+      <button onclick="brOpen()" class="br-btn-primary" style="flex:2">▶ 開始</button>
+    </div>
+  </div>
+  <!-- PHASE 3: Active -->
+  <div id="br-phase-active" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:13px;color:#7c6fff;font-weight:600">進行中</div>
+      <div id="br-active-timer" style="font-size:14px;color:#fbbf24;font-weight:700"></div>
+    </div>
+    <div id="br-room-list" style="margin-bottom:16px"></div>
+    <div style="margin-bottom:16px">
+      <div class="br-label">全員にメッセージ</div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <input id="br-msg-input" placeholder="全員に送信..." style="flex:1;padding:8px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:13px;outline:none" onkeydown="if(event.key==='Enter')brBroadcast()">
+        <button onclick="brBroadcast()" class="br-btn-secondary">送信</button>
+      </div>
+    </div>
+    <button onclick="brClose()" style="width:100%;padding:10px;background:#7f1d1d;border:1px solid #991b1b;border-radius:8px;color:#fca5a5;font-size:13px;font-weight:600;cursor:pointer">ブレイクアウト終了</button>
+  </div>
+</div>
+
+<!-- ブレイクアウト招待モーダル -->
+<div id="br-invite-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:350;align-items:center;justify-content:center">
+  <div style="background:#1e1e3a;border:2px solid #4a2fb8;border-radius:16px;padding:32px 28px;width:min(340px,90vw);text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+    <div style="font-size:32px;margin-bottom:10px">🚪</div>
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;color:#fff">ブレイクアウトルームへの招待</div>
+    <div id="br-invite-roomname" style="font-size:24px;font-weight:800;color:#a78bfa;margin:14px 0 8px"></div>
+    <div id="br-invite-timer-info" style="font-size:13px;color:#888;margin-bottom:24px"></div>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button onclick="brAcceptInvite()" style="padding:12px 28px;background:#6c63ff;border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s">参加する</button>
+      <button onclick="brDeclineInvite()" style="padding:12px 20px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:10px;color:#ccc;font-size:15px;cursor:pointer">後で</button>
+    </div>
+  </div>
+</div>
+
+<!-- ブレイクアウトブロードキャストバナー -->
+<div id="br-broadcast-banner" style="display:none;position:fixed;top:56px;left:50%;transform:translateX(-50%);background:#16162a;border:2px solid #6c63ff;border-radius:12px;padding:14px 22px;z-index:250;max-width:min(420px,90vw);text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.6)">
+  <div id="br-broadcast-from" style="font-size:11px;color:#888;margin-bottom:4px"></div>
+  <div id="br-broadcast-text" style="font-size:14px;font-weight:600;color:#fff"></div>
 </div>
 
 <!-- 文字起こしモーダル（クライアント向け） -->
@@ -411,7 +506,13 @@ if (urlParams.get('room')) {
 }
 document.getElementById('input-email').value = localStorage.getItem('meetEmail') || '';
 
-let myEmail = '', isHost = false, roomTranscribeMode = 'host_only';
+let myEmail = '', isHost = false, isCoHost = false, roomTranscribeMode = 'host_only';
+let myMainRoomId = '';
+let isInBreakout = false;
+let brInvitePending = null;
+let brTimerEnd = null, brTimerInterval = null;
+let brSetupRooms = [], brAssignments = {}, brParticipants = [], brNumRooms = 2;
+let coHostIds = new Set();
 let audioRecorder = null, audioSessionId = null, audioChunkIndex = 0;
 const pendingUploads = new Set();
 
@@ -463,15 +564,20 @@ async function joinRoom() {
   startTimer();
   startSpeakerDetection();
   addVideoTile('local', myName, localStream, true);
+  renderBrNumBtns();
   socket = io();
   socket.on('join-error', msg => { alert(msg); location.reload(); });
-  socket.on('room-joined', ({ existingUsers, transcribeMode }) => {
-    isHost = existingUsers.length === 0;
-    roomTranscribeMode = transcribeMode || 'host_only';
+  socket.on('room-joined', ({ existingUsers, transcribeMode, isHost: h, isCoHost: c, source }) => {
     existingUsers.forEach(({ id, name }) => { peerNames[id] = name; createPeer(id, name, true); });
     updateCount();
-    if (isHost && myEmail) startAutoAudioRecording();
-    else if (!isHost && roomTranscribeMode === 'all') setTimeout(showTranscribeModal, 800);
+    if (source !== 'breakout') {
+      isHost = h !== undefined ? h : existingUsers.length === 0;
+      isCoHost = c || false;
+      roomTranscribeMode = transcribeMode || 'host_only';
+      updateHostUI();
+      if (isHost && myEmail) startAutoAudioRecording();
+      else if (!isHost && roomTranscribeMode === 'all') setTimeout(showTranscribeModal, 800);
+    }
   });
   socket.on('user-joined', ({ id, name }) => {
     peerNames[id] = name; createPeer(id, name, false);
@@ -537,6 +643,69 @@ async function joinRoom() {
       peerStreams[id] = s ? new Set([s.id]) : new Set();
     }
   });
+  // ---- ブレイクアウト / サブホスト イベント ----
+  socket.on('host-assigned', () => {
+    isHost = true; isCoHost = false;
+    updateHostUI();
+    notify('あなたがホストになりました 🎉');
+  });
+  socket.on('host-changed', ({ newHostName }) => {
+    notify(newHostName + ' が新しいホストになりました');
+  });
+  socket.on('cohost-granted', ({ by }) => {
+    isCoHost = true;
+    updateHostUI();
+    notify(by + ' からサブホスト権限が付与されました ✨');
+  });
+  socket.on('cohost-revoked', () => {
+    isCoHost = false;
+    updateHostUI();
+    notify('サブホスト権限が解除されました');
+  });
+  socket.on('cohost-list', ({ coHosts, hostId }) => {
+    coHostIds = new Set(coHosts);
+    renderBrParticipants();
+  });
+  socket.on('breakout:ready', ({ rooms, participants, numRooms, timerSeconds }) => {
+    brSetupRooms = rooms; brParticipants = participants; brNumRooms = numRooms;
+    brAssignments = {};
+    renderBrAssignView();
+  });
+  socket.on('breakout:update', ({ rooms, assignments }) => {
+    brSetupRooms = rooms;
+    brAssignments = {};
+    assignments.forEach(({ id, room }) => { brAssignments[id] = room; });
+    renderBrAssignView();
+  });
+  socket.on('breakout:opened', ({ timerEnd, rooms }) => {
+    brSetupRooms = rooms; brTimerEnd = timerEnd;
+    document.getElementById('br-phase-assign').style.display = 'none';
+    document.getElementById('br-phase-active').style.display = '';
+    renderBrActiveView();
+    if (timerEnd) startBrTimer(timerEnd);
+  });
+  socket.on('breakout:invited', ({ roomNum, roomName, brRoomId, mainRoomId, timerEnd }) => {
+    brInvitePending = { roomNum, roomName, brRoomId, mainRoomId, timerEnd };
+    document.getElementById('br-invite-roomname').textContent = roomName;
+    document.getElementById('br-invite-timer-info').textContent = timerEnd
+      ? '制限時間: ' + Math.round((timerEnd - Date.now()) / 60000) + ' 分'
+      : '';
+    const m = document.getElementById('br-invite-modal');
+    m.style.display = 'flex';
+  });
+  socket.on('breakout:ended', ({ mainRoomId }) => {
+    brReturnToMain(mainRoomId);
+  });
+  socket.on('breakout:broadcast-msg', ({ from, message, time }) => {
+    const banner = document.getElementById('br-broadcast-banner');
+    document.getElementById('br-broadcast-from').textContent = from + ' からのメッセージ (' + time + ')';
+    document.getElementById('br-broadcast-text').textContent = message;
+    banner.style.display = 'block';
+    clearTimeout(banner._hideTimer);
+    banner._hideTimer = setTimeout(() => { banner.style.display = 'none'; }, 8000);
+    addChatMessage(from + ' [全員へ]', message, time, false, false);
+  });
+
   socket.emit('join-room', { roomId: room, password: pass, userName: name, transcribeMode });
   history.replaceState(null, '', '?room=' + encodeURIComponent(room));
 }
@@ -871,6 +1040,218 @@ function addChatMessage(from, message, time, isSelf, isHtml) {
   if (!document.getElementById('chat-panel').classList.contains('open')) {
     document.getElementById('btn-chat').querySelector('.icon').style.boxShadow = '0 0 0 3px #6c63ff';
   }
+}
+
+// ======== ホスト管理 ========
+function updateHostUI() {
+  const show = isHost || isCoHost;
+  ['btn-breakout','btn-breakout-m'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? '' : 'none';
+  });
+}
+
+function grantCohost(targetId) {
+  socket.emit('grant-cohost', { targetId });
+}
+function revokeCohost(targetId) {
+  socket.emit('revoke-cohost', { targetId });
+}
+
+// ======== ブレイクアウトルーム ========
+function toggleBreakout() {
+  const p = document.getElementById('breakout-panel');
+  p.classList.toggle('open');
+  if (p.classList.contains('open')) renderBrParticipants();
+}
+
+function brCreate() {
+  const timerMins = parseInt(document.getElementById('br-timer-input').value) || 0;
+  socket.emit('breakout:setup', { numRooms: brNumRooms, timerSeconds: timerMins * 60 });
+  document.getElementById('br-phase-setup').style.display = 'none';
+}
+
+function brSelectNumRooms(n) {
+  brNumRooms = n;
+  document.querySelectorAll('.br-num-btn').forEach(b => b.classList.toggle('sel', parseInt(b.dataset.n) === n));
+}
+
+function brAutoAssign() {
+  socket.emit('breakout:auto-assign');
+}
+
+function brAssign(targetId, roomNum) {
+  socket.emit('breakout:assign', { targetId, roomNum: parseInt(roomNum) });
+}
+
+function brOpen() {
+  socket.emit('breakout:open');
+}
+
+function brClose() {
+  if (!confirm('ブレイクアウトルームを終了して全員をメインルームに戻しますか？')) return;
+  socket.emit('breakout:close');
+  stopBrTimer();
+  document.getElementById('br-phase-active').style.display = 'none';
+  document.getElementById('br-phase-setup').style.display = '';
+  document.getElementById('breakout-panel').classList.remove('open');
+}
+
+function brReset() {
+  brAssignments = {};
+  brSetupRooms.forEach(r => r.participants = []);
+  document.getElementById('br-phase-assign').style.display = 'none';
+  document.getElementById('br-phase-setup').style.display = '';
+}
+
+function brBroadcast() {
+  const inp = document.getElementById('br-msg-input');
+  const msg = inp.value.trim();
+  if (!msg) return;
+  socket.emit('breakout:broadcast', { message: msg });
+  inp.value = '';
+}
+
+function brAcceptInvite() {
+  if (!brInvitePending) return;
+  const { brRoomId, mainRoomId } = brInvitePending;
+  document.getElementById('br-invite-modal').style.display = 'none';
+  switchRoom(brRoomId, mainRoomId);
+  const lb = document.getElementById('br-room-label');
+  if (lb) lb.textContent = brInvitePending.roomName;
+  if (brInvitePending.timerEnd) startBrTimer(brInvitePending.timerEnd);
+  const tb = document.getElementById('br-topbar');
+  if (tb) tb.style.display = 'flex';
+  isInBreakout = true;
+  myMainRoomId = mainRoomId;
+  brInvitePending = null;
+}
+
+function brDeclineInvite() {
+  document.getElementById('br-invite-modal').style.display = 'none';
+  brInvitePending = null;
+}
+
+function brReturnToMain(mainRoomId) {
+  const target = mainRoomId || myMainRoomId || myRoomId;
+  stopBrTimer();
+  document.getElementById('br-topbar').style.display = 'none';
+  document.getElementById('br-invite-modal').style.display = 'none';
+  document.getElementById('br-phase-active').style.display = 'none';
+  document.getElementById('br-phase-setup').style.display = '';
+  document.getElementById('breakout-panel').classList.remove('open');
+  if (isInBreakout) {
+    switchRoom(target, null);
+    isInBreakout = false;
+    myMainRoomId = '';
+    notify('メインルームに戻りました');
+  } else if (isHost || isCoHost) {
+    // host: just reset panel
+    notify('ブレイクアウトルームが終了しました');
+  }
+}
+
+function brJoinRoom(brRoomId, roomName) {
+  const mainId = myMainRoomId || myRoomId;
+  switchRoom(brRoomId, mainId);
+  document.getElementById('br-room-label').textContent = roomName;
+  document.getElementById('br-topbar').style.display = 'flex';
+  isInBreakout = true;
+  myMainRoomId = mainId;
+}
+
+function brReturnFromRoom() {
+  const target = myMainRoomId || myRoomId;
+  switchRoom(target, null);
+  document.getElementById('br-topbar').style.display = 'none';
+  isInBreakout = false;
+  myMainRoomId = '';
+}
+
+function switchRoom(newRoomId, mainRoomId) {
+  Object.values(peers).forEach(pc => pc.close());
+  Object.keys(peers).forEach(k => { delete peers[k]; });
+  Object.keys(peerNames).forEach(k => { delete peerNames[k]; });
+  Object.keys(peerStreams).forEach(k => { delete peerStreams[k]; });
+  Object.keys(peerInitiator).forEach(k => { delete peerInitiator[k]; });
+  document.querySelectorAll('.video-tile:not(#tile-local)').forEach(t => t.remove());
+  updateGrid();
+  myRoomId = newRoomId;
+  socket.emit('switch-room', { newRoomId, mainRoomId: mainRoomId || null });
+}
+
+function startBrTimer(timerEnd) {
+  brTimerEnd = timerEnd;
+  stopBrTimer();
+  brTimerInterval = setInterval(() => {
+    const remaining = Math.max(0, Math.round((brTimerEnd - Date.now()) / 1000));
+    const m = Math.floor(remaining / 60), sec = remaining % 60;
+    const str = m + ':' + String(sec).padStart(2, '0');
+    const el1 = document.getElementById('br-timer-topbar');
+    const el2 = document.getElementById('br-active-timer');
+    if (el1) el1.textContent = '⏱ ' + str;
+    if (el2) el2.textContent = '⏱ ' + str;
+    if (remaining === 0) stopBrTimer();
+  }, 1000);
+}
+
+function stopBrTimer() {
+  if (brTimerInterval) { clearInterval(brTimerInterval); brTimerInterval = null; }
+  const el1 = document.getElementById('br-timer-topbar');
+  const el2 = document.getElementById('br-active-timer');
+  if (el1) el1.textContent = '';
+  if (el2) el2.textContent = '';
+}
+
+function renderBrNumBtns() {
+  const c = document.getElementById('br-num-btns');
+  if (!c) return;
+  c.innerHTML = '';
+  [2,3,4,5,6,7,8].forEach(n => {
+    const b = document.createElement('button');
+    b.className = 'br-num-btn' + (n === brNumRooms ? ' sel' : '');
+    b.dataset.n = n; b.textContent = n;
+    b.onclick = () => brSelectNumRooms(n);
+    c.appendChild(b);
+  });
+}
+
+function renderBrAssignView() {
+  document.getElementById('br-phase-assign').style.display = '';
+  const list = document.getElementById('br-assign-list');
+  if (!list) return;
+  list.innerHTML = '';
+  brParticipants.forEach(({ id, name }) => {
+    const row = document.createElement('div');
+    row.className = 'br-participant-row';
+    const assigned = brAssignments[id] || 0;
+    let opts = '<option value="0"' + (!assigned ? ' selected' : '') + '>未割り当て</option>';
+    brSetupRooms.forEach(r => {
+      opts += '<option value="' + r.id + '"' + (assigned === r.id ? ' selected' : '') + '>' + r.name + '</option>';
+    });
+    row.innerHTML = '<span class="br-participant-name">' + name + '</span>'
+      + '<select class="br-room-select" onchange="brAssign('' + id + '', this.value)">' + opts + '</select>';
+    list.appendChild(row);
+  });
+}
+
+function renderBrActiveView() {
+  const list = document.getElementById('br-room-list');
+  if (!list) return;
+  list.innerHTML = '';
+  brSetupRooms.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'br-room-card';
+    const count = r.participants ? r.participants.length : 0;
+    card.innerHTML = '<div><div style="font-size:14px;font-weight:600">' + r.name + '</div><div style="font-size:12px;color:#888;margin-top:2px">' + count + '人</div></div>'
+      + '<button onclick="brJoinRoom('' + myRoomId.split('__br__')[0] + '__br__' + r.id + '','' + r.name + '')" class="br-btn-secondary" style="padding:6px 12px;font-size:12px">参加</button>';
+    list.appendChild(card);
+  });
+}
+
+function renderBrParticipants() {
+  const list = document.getElementById('br-assign-list');
+  if (!list || !document.getElementById('br-phase-assign').style.display !== 'none') return;
 }
 
 async function leaveRoom() {
@@ -1329,8 +1710,9 @@ function drawWithMask(w, h) {
   }
   bgCtx.clearRect(0, 0, w, h);
   if (bgMode === 'blur') {
+    const blurPad = 30;
     bgCtx.filter = 'blur(24px) brightness(0.7)';
-    bgCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
+    bgCtx.drawImage(effectsVideo, sx, sy, sw, sh, -blurPad, -blurPad, w + blurPad * 2, h + blurPad * 2);
     bgCtx.filter = 'none';
   } else if (bgMode === 'color') {
     bgCtx.fillStyle = bgColorVal;
@@ -1422,7 +1804,7 @@ function initBeautyGL(w, h) {
       precision highp float;
       uniform sampler2D u_vid, u_mask;
       uniform vec2 u_px;
-      uniform float u_sd, u_sr;
+      uniform float u_sd, u_sr, u_strength;
       in vec2 v_uv; out vec4 o;
       void main(){
         float m = texture(u_mask, v_uv).a;
@@ -1436,7 +1818,7 @@ function initBeautyGL(w, h) {
           float w=exp(-float(x*x+y*y)/d2)*exp(-dot(s.rgb-c.rgb,s.rgb-c.rgb)/r2);
           sum+=s*w; ws+=w;
         }
-        o=mix(c, sum/ws, m);
+        o=mix(c, sum/ws, m * u_strength);
       }`);
 
     if (!vs || !fs) return false;
@@ -1466,8 +1848,9 @@ function initBeautyGL(w, h) {
       vid:  gl.getUniformLocation(p,'u_vid'),
       mask: gl.getUniformLocation(p,'u_mask'),
       px:   gl.getUniformLocation(p,'u_px'),
-      sd:   gl.getUniformLocation(p,'u_sd'),
-      sr:   gl.getUniformLocation(p,'u_sr'),
+      sd:       gl.getUniformLocation(p,'u_sd'),
+      sr:       gl.getUniformLocation(p,'u_sr'),
+      strength: gl.getUniformLocation(p,'u_strength'),
     };
   }
   if (beautyGlCanvas.width!==w || beautyGlCanvas.height!==h) {
@@ -1492,8 +1875,6 @@ function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
 
   if (!initBeautyGL(w, h)) return; // WebGL非対応ならCanvas2Dのまま
   const gl = beautyGl;
-  const strong = beautyLevel===2;
-
   // ビデオフレームをWebGLテクスチャにアップロード（Y反転）
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, beautyGlVidTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -1514,8 +1895,10 @@ function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
   gl.uniform1i(beautyGlLocs.vid,  0);
   gl.uniform1i(beautyGlLocs.mask, 1);
   gl.uniform2f(beautyGlLocs.px,   1/w, 1/h);
-  gl.uniform1f(beautyGlLocs.sd,   strong ? 4.5 : 3.0); // 空間シグマ
-  gl.uniform1f(beautyGlLocs.sr,   strong ? 0.14 : 0.09); // 色シグマ
+  const t = Math.max(0, Math.min(1, beautyLevel / 100));
+  gl.uniform1f(beautyGlLocs.sd,   3.0 + t * 1.5);  // 空間シグマ: 3.0-4.5
+  gl.uniform1f(beautyGlLocs.sr,   0.08 + t * 0.06); // 色シグマ: 0.08-0.14
+  gl.uniform1f(beautyGlLocs.strength, t);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   gl.bindVertexArray(null);
 
@@ -1537,9 +1920,10 @@ function replaceTracksInPeers() {
 // ---- 外見補正 ----
 async function setBeauty(level) {
   beautyLevel = level;
-  ['off','light','strong'].forEach((n,i) => {
-    document.getElementById('beauty-' + n).classList.toggle('selected', i === level);
-  });
+  const slider = document.getElementById('beauty-slider');
+  if (slider) slider.value = level;
+  const label = document.getElementById('beauty-level-label');
+  if (label) label.textContent = level === 0 ? 'OFF' : level + '%';
   if (level > 0) {
     await loadSegModel();
     await initEffectsStream();
@@ -1663,13 +2047,38 @@ function renderBgHistory() {
   const hist = getBgHistory();
   row.innerHTML = '';
   hist.forEach(dataUrl => {
+    const wrap = document.createElement('div');
+    wrap.className = 'bg-thumb-wrap';
     const d = document.createElement('div');
     d.className = 'bg-thumb' + (bgImgDataUrl === dataUrl ? ' selected' : '');
     d.style.backgroundImage = 'url(' + dataUrl + ')';
     d.title = '背景画像を適用';
     d.onclick = () => applyBgFromHistory(dataUrl);
-    row.appendChild(d);
+    const del = document.createElement('i');
+    del.className = 'bg-thumb-del';
+    del.textContent = '×';
+    del.title = '削除';
+    del.onclick = (e) => { e.stopPropagation(); deleteBgHistory(dataUrl); };
+    wrap.appendChild(d);
+    wrap.appendChild(del);
+    row.appendChild(wrap);
   });
+}
+
+function deleteBgHistory(dataUrl) {
+  const bgKey = myEmail || myName;
+  if (!bgKey) return;
+  const hist = getBgHistory().filter(u => u !== dataUrl);
+  safeLsSet('meet_bg_hist_' + bgKey, JSON.stringify(hist));
+  if (bgImgDataUrl === dataUrl) {
+    bgImg = null;
+    bgImgDataUrl = null;
+    bgMode = 'none';
+    document.getElementById('bg-none')?.classList.add('selected');
+    ['blur','color','image'].forEach(m => document.getElementById('bg-' + m)?.classList.remove('selected'));
+    saveBgSettings();
+  }
+  renderBgHistory();
 }
 
 async function applyBgFromHistory(dataUrl) {

@@ -721,24 +721,25 @@ app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'b
 
 // ---- Socket.io (video chat) ----
 const rooms = new Map();
+const breakouts = new Map();
 io.on('connection', (socket) => {
   socket.on('join-room', ({ roomId, password, userName, transcribeMode }) => {
     const room = rooms.get(roomId);
     if (room && room.password && room.password !== password) {
       socket.emit('join-error', 'パスワードが違います'); return;
     }
-    if (!room) rooms.set(roomId, { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only' });
+    if (!room) rooms.set(roomId, { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set() });
     const cur = rooms.get(roomId);
-    // 切断済みのソケットを先に掃除
     for (const [id] of cur.users) {
       if (!io.sockets.sockets.get(id)) cur.users.delete(id);
     }
     cur.users.set(socket.id, { name: userName });
     socket.join(roomId);
     socket.roomId = roomId;
+    socket.mainRoomId = null;
     socket.userName = userName;
     const existing = [...cur.users.entries()].filter(([id]) => id !== socket.id).map(([id, d]) => ({ id, name: d.name }));
-    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode });
+    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main' });
     socket.to(roomId).emit('user-joined', { id: socket.id, name: userName });
   });
   socket.on('offer', ({ to, offer }) => io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }));
@@ -751,10 +752,164 @@ io.on('connection', (socket) => {
   });
   socket.on('disconnect', () => {
     if (!socket.roomId) return;
-    const room = rooms.get(socket.roomId);
-    if (room) { room.users.delete(socket.id); if (room.users.size === 0) rooms.delete(socket.roomId); }
-    socket.to(socket.roomId).emit('user-left', { id: socket.id, name: socket.userName });
+    const curRoomId = socket.roomId;
+    const room = rooms.get(curRoomId);
+    if (room) {
+      room.users.delete(socket.id);
+      const mainId = socket.mainRoomId || curRoomId;
+      const mainRoom = rooms.get(mainId);
+      if (mainRoom && mainRoom.hostId === socket.id && mainRoom.users.size > 0) {
+        let newHostId = null;
+        for (const cid of mainRoom.coHosts) { if (mainRoom.users.has(cid)) { newHostId = cid; break; } }
+        if (!newHostId) newHostId = [...mainRoom.users.keys()][0];
+        if (newHostId) {
+          mainRoom.hostId = newHostId;
+          mainRoom.coHosts.delete(newHostId);
+          io.to(newHostId).emit('host-assigned', {});
+          io.to(mainId).emit('host-changed', { newHostId, newHostName: mainRoom.users.get(newHostId)?.name });
+        }
+      }
+      if (room.users.size === 0) rooms.delete(curRoomId);
+    }
+    socket.to(curRoomId).emit('user-left', { id: socket.id, name: socket.userName });
+    const bsRoomId = socket.mainRoomId || curRoomId;
+    const bs = breakouts.get(bsRoomId);
+    if (bs) {
+      bs.rooms.forEach(r => { r.participants = r.participants.filter(id => id !== socket.id); });
+      bs.assignments.delete(socket.id);
+    }
   });
+
+  // ---- ルーム切替（ブレイクアウト用）----
+  socket.on('switch-room', ({ newRoomId, mainRoomId }) => {
+    const oldRoomId = socket.roomId;
+    if (oldRoomId) {
+      const oldRoom = rooms.get(oldRoomId);
+      if (oldRoom) {
+        oldRoom.users.delete(socket.id);
+        socket.to(oldRoomId).emit('user-left', { id: socket.id, name: socket.userName });
+        if (oldRoom.users.size === 0 && oldRoomId !== mainRoomId) rooms.delete(oldRoomId);
+      }
+      socket.leave(oldRoomId);
+    }
+    socket.mainRoomId = mainRoomId || null;
+    if (!rooms.has(newRoomId)) rooms.set(newRoomId, { password: '', users: new Map(), transcribeMode: 'none', hostId: socket.id, coHosts: new Set() });
+    const nr = rooms.get(newRoomId);
+    nr.users.set(socket.id, { name: socket.userName });
+    socket.join(newRoomId);
+    socket.roomId = newRoomId;
+    const existing2 = [...nr.users.entries()].filter(([id]) => id !== socket.id).map(([id, d]) => ({ id, name: d.name }));
+    socket.emit('room-joined', { existingUsers: existing2, transcribeMode: 'none', source: 'breakout' });
+    socket.to(newRoomId).emit('user-joined', { id: socket.id, name: socket.userName });
+  });
+
+  // ---- サブホスト管理 ----
+  socket.on('grant-cohost', ({ targetId }) => {
+    const mainId = socket.mainRoomId || socket.roomId;
+    const room = rooms.get(mainId);
+    if (!room || room.hostId !== socket.id) return;
+    room.coHosts.add(targetId);
+    io.to(targetId).emit('cohost-granted', { by: socket.userName });
+    io.to(mainId).emit('cohost-list', { coHosts: [...room.coHosts], hostId: room.hostId });
+  });
+  socket.on('revoke-cohost', ({ targetId }) => {
+    const mainId = socket.mainRoomId || socket.roomId;
+    const room = rooms.get(mainId);
+    if (!room || room.hostId !== socket.id) return;
+    room.coHosts.delete(targetId);
+    io.to(targetId).emit('cohost-revoked', {});
+    io.to(mainId).emit('cohost-list', { coHosts: [...room.coHosts], hostId: room.hostId });
+  });
+
+  // ---- ブレイクアウトルーム ----
+  socket.on('breakout:setup', ({ numRooms, timerSeconds }) => {
+    const mainId = socket.mainRoomId || socket.roomId;
+    const room = rooms.get(mainId);
+    if (!room || (room.hostId !== socket.id && !room.coHosts.has(socket.id))) return;
+    if (breakouts.has(mainId) && breakouts.get(mainId).active) return;
+    breakouts.set(mainId, {
+      numRooms, timerSeconds: timerSeconds||0, timerEnd: null, active: false, timerTimeout: null,
+      rooms: Array.from({length:numRooms}, (_,i) => ({id:i+1, name:'部屋 '+(i+1), participants:[]})),
+      assignments: new Map()
+    });
+    const pList = [...room.users.entries()].map(([id,d]) => ({id, name:d.name}));
+    socket.emit('breakout:ready', {
+      rooms: Array.from({length:numRooms}, (_,i) => ({id:i+1, name:'部屋 '+(i+1), participants:[]})),
+      participants: pList, numRooms, timerSeconds: timerSeconds||0
+    });
+  });
+
+  socket.on('breakout:assign', ({ targetId, roomNum }) => {
+    const mainId = socket.mainRoomId || socket.roomId;
+    const bs = breakouts.get(mainId);
+    const room = rooms.get(mainId);
+    if (!bs||!room||(room.hostId!==socket.id&&!room.coHosts.has(socket.id))) return;
+    bs.rooms.forEach(r => { r.participants = r.participants.filter(id => id!==targetId); });
+    if (roomNum>=1&&roomNum<=bs.numRooms) { bs.rooms[roomNum-1].participants.push(targetId); bs.assignments.set(targetId,roomNum); }
+    else bs.assignments.delete(targetId);
+    socket.emit('breakout:update', { rooms:bs.rooms.map(r=>({...r})), assignments:[...bs.assignments.entries()].map(([k,v])=>({id:k,room:v})) });
+  });
+
+  socket.on('breakout:auto-assign', () => {
+    const mainId = socket.mainRoomId || socket.roomId;
+    const bs = breakouts.get(mainId);
+    const room = rooms.get(mainId);
+    if (!bs||!room||(room.hostId!==socket.id&&!room.coHosts.has(socket.id))) return;
+    bs.rooms.forEach(r => r.participants=[]);
+    bs.assignments.clear();
+    const all = [...room.users.keys()].filter(id=>id!==socket.id);
+    for (let i=all.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [all[i],all[j]]=[all[j],all[i]]; }
+    all.forEach((id,idx) => { const rn=(idx%bs.numRooms)+1; bs.rooms[rn-1].participants.push(id); bs.assignments.set(id,rn); });
+    socket.emit('breakout:update', { rooms:bs.rooms.map(r=>({...r})), assignments:[...bs.assignments.entries()].map(([k,v])=>({id:k,room:v})) });
+  });
+
+  socket.on('breakout:open', () => {
+    const mainId = socket.mainRoomId || socket.roomId;
+    const bs = breakouts.get(mainId);
+    const room = rooms.get(mainId);
+    if (!bs||!room||(room.hostId!==socket.id&&!room.coHosts.has(socket.id))) return;
+    bs.active=true;
+    bs.timerEnd = bs.timerSeconds>0 ? Date.now()+bs.timerSeconds*1000 : null;
+    bs.assignments.forEach((rn,sid) => {
+      io.to(sid).emit('breakout:invited', {
+        roomNum:rn, roomName:bs.rooms[rn-1].name,
+        brRoomId:mainId+'__br__'+rn, mainRoomId:mainId, timerEnd:bs.timerEnd
+      });
+    });
+    if (bs.timerEnd) {
+      if (bs.timerTimeout) clearTimeout(bs.timerTimeout);
+      bs.timerTimeout = setTimeout(() => {
+        const b=breakouts.get(mainId); if(!b||!b.active) return;
+        b.active=false;
+        io.to(mainId).emit('breakout:ended',{mainRoomId:mainId});
+        b.rooms.forEach((_,i) => io.to(mainId+'__br__'+(i+1)).emit('breakout:ended',{mainRoomId:mainId}));
+        breakouts.delete(mainId);
+      }, bs.timerSeconds*1000);
+    }
+    socket.emit('breakout:opened', { timerEnd:bs.timerEnd, rooms:bs.rooms.map(r=>({...r})) });
+  });
+
+  socket.on('breakout:close', () => {
+    const mainId = socket.mainRoomId || socket.roomId;
+    const bs = breakouts.get(mainId);
+    const room = rooms.get(mainId);
+    if (!bs||!room||(room.hostId!==socket.id&&!room.coHosts.has(socket.id))) return;
+    if (bs.timerTimeout) clearTimeout(bs.timerTimeout);
+    bs.active=false;
+    io.to(mainId).emit('breakout:ended',{mainRoomId:mainId});
+    bs.rooms.forEach((_,i) => io.to(mainId+'__br__'+(i+1)).emit('breakout:ended',{mainRoomId:mainId}));
+    breakouts.delete(mainId);
+  });
+
+  socket.on('breakout:broadcast', ({ message }) => {
+    const mainId = socket.mainRoomId || socket.roomId;
+    const bs = breakouts.get(mainId);
+    if (!bs) return;
+    const t = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+    io.to(mainId).emit('breakout:broadcast-msg',{from:socket.userName,message,time:t});
+    bs.rooms.forEach((_,i) => io.to(mainId+'__br__'+(i+1)).emit('breakout:broadcast-msg',{from:socket.userName,message,time:t}));
+  });
+
 });
 
 server.listen(3100, () => console.log('Meet+Booking server on port 3100'));
