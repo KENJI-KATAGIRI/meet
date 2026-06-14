@@ -367,9 +367,9 @@ let effectsInited = false;
 let mpSegmenter = null, mpReady = false, mpSending = false, mpModelLoading = false;
 let mpTimestamp = 0;
 let maskCanvas2 = null, maskCtx2 = null, maskBuf = null;
-let dilCanvas = null, dilCtx = null;
 let bgCanvas = null, bgCtx = null;
 let prevMaskData = null;
+let skinMaskCanvas = null, skinMaskCtx = null, skinMaskBuf = null;
 let bgMode = 'none';
 let bgColorVal = '#1a1a3e';
 let bgImg = null, bgImgDataUrl = null;
@@ -377,11 +377,11 @@ let beautyLevel = 0;
 let zoomLevel = 1.0;
 let effectsCanvas, effectsCtx, effectsStream, effectsVideo;
 let segCanvas, segCtx;
-let personCanvas, personCtx;
 let rafId = null;
 
-// 美肌: beautyCanvas に screen blend で描画してシミ・テカりを軽減
+// 美肌フィルター用
 let beautyCanvas = null, beautyCtx = null;
+let beautyBlurCanvas = null, beautyBlurCtx = null;
 
 const urlParams = new URLSearchParams(location.search);
 if (urlParams.get('room')) {
@@ -1219,8 +1219,8 @@ function renderFrame() {
   segCtx.clearRect(0, 0, segCanvas.width, segCanvas.height);
   segCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, segCanvas.width, segCanvas.height);
 
-  // 推論を先に実行→同フレームのマスクで描画（1フレーム分の遅延を解消）
-  if (bgMode !== 'none' && mpSegmenter && mpReady && !mpSending) {
+  // 推論を先に実行→同フレームのマスクで描画（VB ON または美肌 ON で実行）
+  if ((bgMode !== 'none' || beautyLevel > 0) && mpSegmenter && mpReady && !mpSending) {
     runInference();
   }
 
@@ -1229,8 +1229,12 @@ function renderFrame() {
   } else {
     effectsCtx.clearRect(0, 0, w, h);
     effectsCtx.filter = 'none';
-    effectsCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
-    applyBeautyOverlay(effectsCtx, effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
+    if (beautyLevel > 0) {
+      applyBeautyToCanvas(effectsVideo, w, h, sx, sy, sw, sh);
+      effectsCtx.drawImage(beautyCanvas, 0, 0, w, h);
+    } else {
+      effectsCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
+    }
   }
 }
 
@@ -1283,6 +1287,23 @@ function onMpResults(result) {
   }
 
   maskCtx2.putImageData(new ImageData(maskBuf, w, h), 0, 0);
+
+  // 美肌用スキンマスク（肌クラスのみ: 髪・服・背景を除外）
+  if (!skinMaskCanvas || skinMaskCanvas.width !== w || skinMaskCanvas.height !== h) {
+    skinMaskCanvas = document.createElement('canvas');
+    skinMaskCanvas.width = w; skinMaskCanvas.height = h;
+    skinMaskCtx = skinMaskCanvas.getContext('2d');
+    skinMaskBuf = new Uint8ClampedArray(w * h * 4);
+  }
+  for (let i = 0, j = 0; i < w * h; i++, j += 4) {
+    const skin = Math.min(1.0, d2[i] + d3[i]);
+    const st = Math.max(0, Math.min(1, (skin - 0.08) / 0.37));
+    const a = Math.round(st * st * (3 - 2 * st) * 255);
+    skinMaskBuf[j] = skinMaskBuf[j+1] = skinMaskBuf[j+2] = 255;
+    skinMaskBuf[j+3] = a;
+  }
+  skinMaskCtx.putImageData(new ImageData(skinMaskBuf, w, h), 0, 0);
+
   result.close();
   mpSending = false;
 }
@@ -1367,58 +1388,55 @@ async function loadSegModel() {
   document.getElementById('loading-model').style.display = 'none';
 }
 
-// --- 美肌フィルター（screen blend でシミ・テカり軽減） ---
-// src から beautyCanvas に美肌済み画像を書き込む（sx/sy/sw/sh でズーム対応）
+// --- 美肌フィルター ---
+// src から beautyCanvas に美肌済み画像を書き込む
+// 強いぼかし＋lighten で肌のシミ・凹凸を除去し、スキンマスクで肌だけに限定
 function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
   if (sw == null) sw = src.videoWidth || src.width || w;
   if (sh == null) sh = src.videoHeight || src.height || h;
-  const strong = beautyLevel === 2;
-  const blurR  = strong ? 3 : 2;
-  const detail = strong ? 0.42 : 0.52;
 
-  if (beautyCanvas.width !== w || beautyCanvas.height !== h) {
+  const strong = beautyLevel === 2;
+  const blurPx = strong ? 20 : 14;
+  const strength = strong ? 0.90 : 0.78;
+
+  if (!beautyCanvas || beautyCanvas.width !== w || beautyCanvas.height !== h) {
+    beautyCanvas = document.createElement('canvas');
     beautyCanvas.width = w; beautyCanvas.height = h;
+    beautyCtx = beautyCanvas.getContext('2d');
   }
+  if (!beautyBlurCanvas || beautyBlurCanvas.width !== w || beautyBlurCanvas.height !== h) {
+    beautyBlurCanvas = document.createElement('canvas');
+    beautyBlurCanvas.width = w; beautyBlurCanvas.height = h;
+    beautyBlurCtx = beautyBlurCanvas.getContext('2d');
+  }
+
+  // Step A: 元映像をベースとして描画
+  beautyCtx.globalCompositeOperation = 'source-over';
+  beautyCtx.globalAlpha = 1;
   beautyCtx.clearRect(0, 0, w, h);
-  beautyCtx.globalCompositeOperation = 'source-over';
-  beautyCtx.globalAlpha = 1.0;
-
-  beautyCtx.filter = `blur(${blurR}px)`;
-  beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
-  beautyCtx.filter = 'none';
-
-  beautyCtx.globalCompositeOperation = 'lighten';
   beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
 
-  beautyCtx.globalCompositeOperation = 'source-over';
-  beautyCtx.globalAlpha = detail;
-  beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
-  beautyCtx.globalAlpha = 1.0;
-}
+  // Step B: 強いぼかし → lighten でシミ・凹凸の暗い部分を周囲の肌色で置換
+  beautyBlurCtx.clearRect(0, 0, w, h);
+  beautyBlurCtx.filter = `blur(${blurPx}px)`;
+  beautyBlurCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  beautyBlurCtx.filter = 'none';
+  beautyBlurCtx.globalCompositeOperation = 'lighten';
+  beautyBlurCtx.globalAlpha = 1;
+  beautyBlurCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  beautyBlurCtx.globalCompositeOperation = 'source-over';
 
-// bgMode=none のとき effectsCtx に直接美肌オーバーレイを追加
-function applyBeautyOverlay(ctx, src, sx, sy, sw, sh, dx, dy, dw, dh) {
-  if (beautyLevel === 0) return;
-  const strong = beautyLevel === 2;
-  const blurR  = strong ? 3 : 2;
-  const detail = strong ? 0.42 : 0.52;
+  // Step C: スキンマスクで肌エリアのみに限定（目・眉・唇・髪はシャープなまま）
+  if (skinMaskCanvas) {
+    beautyBlurCtx.globalCompositeOperation = 'destination-in';
+    beautyBlurCtx.drawImage(skinMaskCanvas, 0, 0, w, h);
+    beautyBlurCtx.globalCompositeOperation = 'source-over';
+  }
 
-  // ぼかしベースを source-over で重ねる（現フレームの上に）
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.filter = `blur(${blurR}px)`;
-  ctx.globalAlpha = 1.0;
-  ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh);
-  ctx.filter = 'none';
-
-  // lighten で元画像重ね（シミを飛ばす）
-  ctx.globalCompositeOperation = 'lighten';
-  ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh);
-
-  // 細部復元
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = detail;
-  ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh);
-  ctx.globalAlpha = 1.0;
+  // Step D: 美肌レイヤーを元映像に重ねる
+  beautyCtx.globalAlpha = strength;
+  beautyCtx.drawImage(beautyBlurCanvas, 0, 0);
+  beautyCtx.globalAlpha = 1;
 }
 
 function replaceTracksInPeers() {
@@ -1438,8 +1456,10 @@ async function setBeauty(level) {
   ['off','light','strong'].forEach((n,i) => {
     document.getElementById('beauty-' + n).classList.toggle('selected', i === level);
   });
-  if (level > 0) await initEffectsStream();
-  else if (bgMode === 'none' && effectsInited) {
+  if (level > 0) {
+    await loadSegModel();
+    await initEffectsStream();
+  } else if (bgMode === 'none' && effectsInited) {
     cancelAnimationFrame(rafId); rafId = null;
     effectsInited = false;
     prevMaskData = null;
