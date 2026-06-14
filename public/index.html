@@ -366,6 +366,7 @@ let mpSegmenter = null, mpReady = false, mpSending = false, mpModelLoading = fal
 let mpTimestamp = 0;
 let maskCanvas2 = null, maskCtx2 = null, maskBuf = null;
 let dilCanvas = null, dilCtx = null;
+let bgCanvas = null, bgCtx = null;
 let prevMaskData = null;
 let bgMode = 'none';
 let bgColorVal = '#1a1a3e';
@@ -1286,19 +1287,38 @@ function onMpResults(result) {
 
 function drawWithMask(w, h) {
   const { sx, sy, sw, sh } = getZoomRect();
-  if (personCanvas.width !== w || personCanvas.height !== h) {
-    personCanvas.width = w; personCanvas.height = h;
-  }
-  personCtx.clearRect(0, 0, w, h);
-  // フルHD解像度のeffectsVideoから人物を描く（segCanvasは低解像のため使わない）
+
+  // Step1: オリジナル映像（人物含む）をベースに描く
+  effectsCtx.clearRect(0, 0, w, h);
   if (beautyLevel > 0) {
     applyBeautyToCanvas(effectsVideo, w, h, sx, sy, sw, sh);
-    personCtx.drawImage(beautyCanvas, 0, 0, w, h);
+    effectsCtx.drawImage(beautyCanvas, 0, 0, w, h);
   } else {
-    personCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
+    effectsCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
   }
-  // マスクを destination-in で合成：ぼかしで髪の境界をなめらかに
-  // マスク解像度でblur+contrast dilation（端からでなくマスク境界から真に外側拡張）
+
+  // Step2: bgCanvasに背景（ぼかし/色/画像）を描く
+  if (!bgCanvas || bgCanvas.width !== w || bgCanvas.height !== h) {
+    bgCanvas = document.createElement('canvas');
+    bgCanvas.width = w; bgCanvas.height = h;
+    bgCtx = bgCanvas.getContext('2d');
+  }
+  bgCtx.clearRect(0, 0, w, h);
+  if (bgMode === 'blur') {
+    bgCtx.filter = 'blur(24px) brightness(0.7)';
+    bgCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
+    bgCtx.filter = 'none';
+  } else if (bgMode === 'color') {
+    bgCtx.fillStyle = bgColorVal;
+    bgCtx.fillRect(0, 0, w, h);
+  } else if (bgMode === 'image' && bgImg) {
+    bgCtx.save();
+    bgCtx.scale(-1, 1);
+    bgCtx.drawImage(bgImg, -w, 0, w, h);
+    bgCtx.restore();
+  }
+
+  // Step3: dilCanvasにマスクをdilation処理
   if (!dilCanvas || dilCanvas.width !== maskCanvas2.width || dilCanvas.height !== maskCanvas2.height) {
     dilCanvas = document.createElement('canvas');
     dilCanvas.width = maskCanvas2.width;
@@ -1309,29 +1329,17 @@ function drawWithMask(w, h) {
   dilCtx.filter = 'blur(6px) brightness(2) contrast(12)';
   dilCtx.drawImage(maskCanvas2, 0, 0);
   dilCtx.filter = 'none';
-  personCtx.globalCompositeOperation = 'destination-in';
-  personCtx.filter = 'blur(3px)';
-  personCtx.drawImage(dilCanvas, 0, 0, w, h);
-  personCtx.filter = 'none';
-  personCtx.globalCompositeOperation = 'source-over';
 
-  effectsCtx.clearRect(0, 0, w, h);
-  if (bgMode === 'blur') {
-    // 背景はフルHDから高品質ぼかし
-    effectsCtx.filter = 'blur(24px) brightness(0.7)';
-    effectsCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, w, h);
-    effectsCtx.filter = 'none';
-  } else if (bgMode === 'color') {
-    effectsCtx.fillStyle = bgColorVal;
-    effectsCtx.fillRect(0, 0, w, h);
-  } else if (bgMode === 'image' && bgImg) {
-    // CSS scaleX(-1) でローカルプレビューが反転するためカウンターflip
-    effectsCtx.save();
-    effectsCtx.scale(-1, 1);
-    effectsCtx.drawImage(bgImg, -w, 0, w, h);
-    effectsCtx.restore();
-  }
-  effectsCtx.drawImage(personCanvas, 0, 0);
+  // Step4: bgCanvasの人物部分をマスクでくり抜く（destination-out）
+  bgCtx.globalCompositeOperation = 'destination-out';
+  bgCtx.filter = 'blur(3px)';
+  bgCtx.drawImage(dilCanvas, 0, 0, w, h);
+  bgCtx.filter = 'none';
+  bgCtx.globalCompositeOperation = 'source-over';
+
+  // Step5: オリジナル映像の上にくり抜き済み背景を重ねる
+  // 人物部分は透明なのでオリジナルがそのまま透けて見える→隙間ゼロ
+  effectsCtx.drawImage(bgCanvas, 0, 0);
 }
 
 async function loadSegModel() {
