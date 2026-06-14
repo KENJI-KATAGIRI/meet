@@ -1389,15 +1389,15 @@ async function loadSegModel() {
 }
 
 // --- 美肌フィルター ---
-// src から beautyCanvas に美肌済み画像を書き込む
-// 強いぼかし＋lighten で肌のシミ・凹凸を除去し、スキンマスクで肌だけに限定
+// ぼかしで肌テクスチャを平滑化しスキンマスクで肌エリアのみ適用
+// lightenは使わない（顔の陰影・立体感が消えて白く飛ぶため）
 function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
   if (sw == null) sw = src.videoWidth || src.width || w;
   if (sh == null) sh = src.videoHeight || src.height || h;
 
   const strong = beautyLevel === 2;
-  const blurPx = strong ? 20 : 14;
-  const strength = strong ? 0.90 : 0.78;
+  const blurPx = strong ? 10 : 6;
+  const strength = strong ? 0.72 : 0.58;
 
   if (!beautyCanvas || beautyCanvas.width !== w || beautyCanvas.height !== h) {
     beautyCanvas = document.createElement('canvas');
@@ -1416,15 +1416,11 @@ function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
   beautyCtx.clearRect(0, 0, w, h);
   beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
 
-  // Step B: 強いぼかし → lighten でシミ・凹凸の暗い部分を周囲の肌色で置換
+  // Step B: ぼかし（シミ・凹凸を周囲肌色で平均化）
   beautyBlurCtx.clearRect(0, 0, w, h);
   beautyBlurCtx.filter = `blur(${blurPx}px)`;
   beautyBlurCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
   beautyBlurCtx.filter = 'none';
-  beautyBlurCtx.globalCompositeOperation = 'lighten';
-  beautyBlurCtx.globalAlpha = 1;
-  beautyBlurCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
-  beautyBlurCtx.globalCompositeOperation = 'source-over';
 
   // Step C: スキンマスクで肌エリアのみに限定（目・眉・唇・髪はシャープなまま）
   if (skinMaskCanvas) {
@@ -1433,7 +1429,7 @@ function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
     beautyBlurCtx.globalCompositeOperation = 'source-over';
   }
 
-  // Step D: 美肌レイヤーを元映像に重ねる
+  // Step D: 肌スムージング層を元映像に重ねる（陰影は元映像から保持）
   beautyCtx.globalAlpha = strength;
   beautyCtx.drawImage(beautyBlurCanvas, 0, 0);
   beautyCtx.globalAlpha = 1;
