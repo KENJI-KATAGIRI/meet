@@ -580,19 +580,21 @@ async function loadFacilityStatus(me) {
       document.getElementById('call-records-section').style.display = '';
       await loadCallRecords();
     } else {
-      // 個人プラン表示
-      document.getElementById('plan-card').style.display = '';
-      document.getElementById('facility-card').style.display = 'none';
+      // Welfareモードだが施設未登録 → 登録を促す
+      document.getElementById('plan-card').style.display = 'none';
       document.getElementById('call-records-section').style.display = 'none';
-      const planR = await fetch('/api/my-plan').then(r => r.json());
-      const badge = document.getElementById('plan-badge');
-      if (planR.plan === 'paid') {
-        badge.textContent = 'PRO'; badge.className = 'plan-badge paid';
-        document.getElementById('plan-free-content').style.display = 'none';
-        document.getElementById('plan-paid-content').style.display = '';
-      } else {
-        badge.textContent = 'FREE'; badge.className = 'plan-badge free';
-      }
+      const fc = document.getElementById('facility-card');
+      fc.style.display = '';
+      fc.querySelector('.card').innerHTML =
+        '<div class="card-header"><div class="card-title">&#x1F3E5; 施設アカウント登録</div></div>' +
+        '<p class="card-desc" style="margin-bottom:16px">施設プランを利用するには、はじめに施設情報を登録してください。<br>登録後、<strong>30日間の無料トライアル</strong>が即座に開始されます。</p>' +
+        '<ul style="font-size:13px;color:var(--muted);margin-bottom:18px;padding-left:18px;line-height:2">' +
+          '<li>AI文字起こし・要約（通話・対面録音）</li>' +
+          '<li>業態別の法定記録様式への自動変換</li>' +
+          '<li>面談記録の蓄積・CSVエクスポート</li>' +
+          '<li>複数拠点対応（1拠点 ¥2,980/月〜）</li>' +
+        '</ul>' +
+        '<button class="btn btn-primary" onclick="openRegModal()" style="width:100%;padding:14px;font-size:15px">&#x1F680; 施設登録して30日無料トライアルを開始</button>';
     }
   } catch(e) {
     console.error('facility status error:', e);
