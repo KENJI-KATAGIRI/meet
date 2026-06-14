@@ -1261,11 +1261,11 @@ function onMpResults(results) {
   }
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
     const raw = Math.max(d[j], d[j+3]) / 255;
-    // smoothstep: 0.55未満→0、0.85超→1、間はなめらかな曲線（vpalmisano方式）
-    const t = Math.max(0, Math.min(1, (raw - 0.55) / 0.3));
+    // smoothstep: 低めの閾値で動き中の低信頼フレームも拾う
+    const t = Math.max(0, Math.min(1, (raw - 0.45) / 0.3));
     const stepped = t * t * (3 - 2 * t);
-    // 非対称EMA: 上昇は速く追従、減衰はゆっくり保持（モデルが一瞬外れても消えない）
-    const alpha = stepped > prevMaskData[i] ? 0.35 : 0.82;
+    // 非対称EMA: 上昇は速く、減衰は0.92で約1秒保持（15fps換算で15フレーム）
+    const alpha = stepped > prevMaskData[i] ? 0.35 : 0.92;
     prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
     const out = Math.round(prevMaskData[i] * 255);
     maskBuf[j] = maskBuf[j+1] = maskBuf[j+2] = maskBuf[j+3] = out;
