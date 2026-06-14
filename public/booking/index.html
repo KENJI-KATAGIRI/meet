@@ -3,68 +3,132 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>予約システム</title>
+<title>Meet 予約システム</title>
 <style>
+:root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#2a2a4a;--accent:#6c63ff;--accent2:#8b82ff;--text:#fff;--muted:#888;--border:#2a2a4a}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
-.box{background:#1e1e3a;padding:40px;border-radius:16px;width:100%;max-width:420px;border:1px solid #2a2a4a}
-h1{font-size:26px;margin-bottom:8px;text-align:center}
-.subtitle{color:#888;font-size:14px;margin-bottom:28px;text-align:center}
-.btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px;background:#fff;border:none;border-radius:8px;color:#333;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none;transition:background .2s}
-.btn-google:hover{background:#f0f0f0}
-.btn-google svg{flex-shrink:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
+.left{flex:1;display:flex;flex-direction:column;justify-content:center;padding:60px;background:linear-gradient(135deg,#0f0f1a 0%,#1a1a3e 100%)}
+.right{width:480px;display:flex;align-items:center;justify-content:center;padding:40px;border-left:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:48px}
+.brand-icon{width:44px;height:44px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
+.brand-name{font-size:20px;font-weight:700;letter-spacing:-.3px}
+.left h1{font-size:36px;font-weight:800;line-height:1.2;margin-bottom:16px;letter-spacing:-.5px}
+.left h1 span{color:var(--accent)}
+.left p{color:var(--muted);font-size:16px;line-height:1.7;max-width:420px;margin-bottom:48px}
+.features{display:flex;flex-direction:column;gap:16px}
+.feature{display:flex;align-items:center;gap:14px}
+.feature-icon{width:36px;height:36px;background:#1e1e3a;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;border:1px solid var(--border)}
+.feature p{font-size:14px;color:var(--muted)}
+.feature p strong{color:var(--text);display:block;margin-bottom:2px}
+.box{width:100%;max-width:400px}
+.box h2{font-size:24px;font-weight:700;margin-bottom:6px}
+.box>p{color:var(--muted);font-size:14px;margin-bottom:28px}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px;background:#fff;border:none;border-radius:10px;color:#1a1a1a;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.btn-google:hover{background:#f5f5f5;transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,.4)}
 .divider{display:flex;align-items:center;gap:12px;margin:20px 0}
-.divider::before,.divider::after{content:'';flex:1;height:1px;background:#2a2a4a}
-.divider span{color:#555;font-size:12px}
-input{width:100%;padding:12px 14px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:14px;margin-bottom:10px;outline:none;transition:border .2s}
-input:focus{border-color:#6c63ff}
-input::placeholder{color:#555}
-.btn-primary{width:100%;padding:13px;background:#6c63ff;border:none;border-radius:8px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;transition:background .2s;margin-top:4px}
-.btn-primary:hover{background:#5a52e0}
-.toggle{text-align:center;margin-top:16px;font-size:13px;color:#666}
-.toggle a{color:#6c63ff;cursor:pointer;text-decoration:none}
-.toggle a:hover{text-decoration:underline}
-.error{color:#ff6b6b;font-size:13px;margin-top:10px;text-align:center;min-height:18px}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.divider span{color:#444;font-size:12px}
+.tabs{display:flex;background:var(--bg3);border-radius:10px;padding:3px;margin-bottom:20px}
+.tab{flex:1;padding:9px;text-align:center;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted);transition:all .2s}
+.tab.active{background:var(--accent);color:#fff}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:500}
+input{width:100%;padding:12px 14px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;outline:none;transition:border .2s}
+input:focus{border-color:var(--accent)}
+input::placeholder{color:#444}
+.btn-primary{width:100%;padding:13px;background:var(--accent);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;margin-top:4px}
+.btn-primary:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 4px 16px rgba(108,99,255,.4)}
 .form-section{display:none}
 .form-section.active{display:block}
+.error{color:#ff6b6b;font-size:13px;margin-top:12px;text-align:center;min-height:18px}
+.hint{font-size:12px;color:#444;text-align:center;margin-top:14px}
+@media(max-width:768px){
+  body{flex-direction:column}
+  .left{display:none}
+  .right{width:100%;border:none;padding:32px 20px;min-height:100vh}
+}
 </style>
 </head>
 <body>
-<div class="box">
-  <h1>予約システム</h1>
-  <p class="subtitle">ログインして予約ページを設定しましょう</p>
-
-  <a href="/auth/google" class="btn-google">
-    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-    Googleでログイン
-  </a>
-
-  <div class="divider"><span>または</span></div>
-
-  <!-- ログインフォーム -->
-  <div class="form-section active" id="form-login">
-    <input type="email" id="login-email" placeholder="メールアドレス" autocomplete="email">
-    <input type="password" id="login-pass" placeholder="パスワード" autocomplete="current-password">
-    <button class="btn-primary" onclick="doLogin()">ログイン</button>
-    <div class="toggle">アカウントをお持ちでない方は<a onclick="switchForm('register')">新規登録</a></div>
+<div class="left">
+  <div class="brand">
+    <div class="brand-icon">📅</div>
+    <span class="brand-name">Meet 予約</span>
   </div>
-
-  <!-- 新規登録フォーム -->
-  <div class="form-section" id="form-register">
-    <input type="text" id="reg-name" placeholder="お名前" autocomplete="name">
-    <input type="email" id="reg-email" placeholder="メールアドレス" autocomplete="email">
-    <input type="password" id="reg-pass" placeholder="パスワード（8文字以上）" autocomplete="new-password">
-    <button class="btn-primary" onclick="doRegister()">登録する</button>
-    <div class="toggle">すでにアカウントをお持ちの方は<a onclick="switchForm('login')">ログイン</a></div>
+  <h1>オンライン面談を<br><span>もっとスムーズに。</span></h1>
+  <p>予約URLを共有するだけ。相手が空いている時間を選んで予約してくれます。Googleカレンダーへの自動登録と確認メールの送信まで全部自動です。</p>
+  <div class="features">
+    <div class="feature">
+      <div class="feature-icon">🔗</div>
+      <p><strong>予約URLを共有するだけ</strong>メール・LINE・サイトに貼り付けてすぐ使えます</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📧</div>
+      <p><strong>確認メールを自動送信</strong>予約者とあなた両方に内容とビデオ通話URLをお届け</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📅</div>
+      <p><strong>Googleカレンダーと同期</strong>既存の予定と重複しないように自動でチェック</p>
+    </div>
   </div>
+</div>
+<div class="right">
+  <div class="box">
+    <h2>ログイン</h2>
+    <p>アカウントにログインして予約ページを管理しましょう</p>
 
-  <div class="error" id="err"></div>
+    <a href="/auth/google" class="btn-google">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Googleアカウントでログイン
+    </a>
+
+    <div class="divider"><span>またはメールアドレスでログイン</span></div>
+
+    <div class="tabs">
+      <div class="tab active" id="tab-login" onclick="switchTab('login')">ログイン</div>
+      <div class="tab" id="tab-register" onclick="switchTab('register')">新規登録</div>
+    </div>
+
+    <div class="form-section active" id="form-login">
+      <div class="form-group">
+        <label>メールアドレス</label>
+        <input type="email" id="login-email" placeholder="your@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>パスワード</label>
+        <input type="password" id="login-pass" placeholder="パスワードを入力" autocomplete="current-password">
+      </div>
+      <button class="btn-primary" onclick="doLogin()">ログイン</button>
+    </div>
+
+    <div class="form-section" id="form-register">
+      <div class="form-group">
+        <label>お名前</label>
+        <input type="text" id="reg-name" placeholder="山田 太郎" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label>メールアドレス</label>
+        <input type="email" id="reg-email" placeholder="your@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>パスワード <span style="color:#444;font-size:11px">（8文字以上）</span></label>
+        <input type="password" id="reg-pass" placeholder="パスワードを設定" autocomplete="new-password">
+      </div>
+      <button class="btn-primary" onclick="doRegister()">アカウントを作成</button>
+    </div>
+
+    <div class="error" id="err"></div>
+    <p class="hint">登録することで、利用規約とプライバシーポリシーに同意したものとみなされます</p>
+  </div>
 </div>
 <script>
 if (new URLSearchParams(location.search).get('error')) {
   document.getElementById('err').textContent = 'ログインに失敗しました。もう一度お試しください。';
 }
-function switchForm(mode) {
+function switchTab(mode) {
+  document.getElementById('tab-login').classList.toggle('active', mode === 'login');
+  document.getElementById('tab-register').classList.toggle('active', mode === 'register');
   document.getElementById('form-login').classList.toggle('active', mode === 'login');
   document.getElementById('form-register').classList.toggle('active', mode === 'register');
   document.getElementById('err').textContent = '';
@@ -72,22 +136,20 @@ function switchForm(mode) {
 async function doLogin() {
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-pass').value;
-  const err = document.getElementById('err');
-  err.textContent = '';
-  const r = await fetch('/auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
+  document.getElementById('err').textContent = '';
+  const r = await fetch('/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email,password}) });
   const d = await r.json();
-  if (d.error) { err.textContent = d.error; return; }
+  if (d.error) { document.getElementById('err').textContent = d.error; return; }
   location.href = '/booking/dashboard';
 }
 async function doRegister() {
   const name = document.getElementById('reg-name').value.trim();
   const email = document.getElementById('reg-email').value.trim();
   const password = document.getElementById('reg-pass').value;
-  const err = document.getElementById('err');
-  err.textContent = '';
-  const r = await fetch('/auth/register', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name, email, password }) });
+  document.getElementById('err').textContent = '';
+  const r = await fetch('/auth/register', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,email,password}) });
   const d = await r.json();
-  if (d.error) { err.textContent = d.error; return; }
+  if (d.error) { document.getElementById('err').textContent = d.error; return; }
   location.href = '/booking/dashboard';
 }
 document.addEventListener('keydown', e => {
