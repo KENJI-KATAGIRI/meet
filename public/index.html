@@ -476,6 +476,7 @@ function applyOpusParams(sdp) {
 }
 
 let socket, rawStream, localStream, screenStream;
+let screenSenders = {};
 let myName = '', myRoomId = '';
 const peers = {}, peerNames = {}, peerStreams = {}, peerInitiator = {};
 
@@ -780,6 +781,7 @@ function createPeer(peerId, peerName, isInitiator) {
   };
   if (isInitiator) {
     pc.onnegotiationneeded = async () => {
+      if (pc.signalingState !== 'stable') return;
       try {
         const offer = await pc.createOffer();
         offer.sdp = applyOpusParams(offer.sdp);
@@ -989,13 +991,22 @@ async function toggleScreen() {
       screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: false });
       btn.classList.add('active'); btn.querySelector('span').textContent = '共有中';
       const screenTrack = screenStream.getVideoTracks()[0];
-      // replaceTrackで再ネゴシエーション不要・確実に相手に届く
-      Object.values(peers).forEach(pc => {
-        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) sender.replaceTrack(screenTrack);
-      });
+      // addTrack + 手動リオファーで相手のontrackを確実に発火させる
+      for (const [peerId, pc] of Object.entries(peers)) {
+        const savedNeg = pc.onnegotiationneeded;
+        pc.onnegotiationneeded = null;
+        try {
+          screenSenders[peerId] = pc.addTrack(screenTrack, screenStream);
+          const offer = await pc.createOffer();
+          offer.sdp = applyOpusParams(offer.sdp);
+          await pc.setLocalDescription(offer);
+          socket.emit('offer', { to: peerId, offer });
+          console.log('[screen] offer sent to', peerId);
+        } catch(e) { console.error('[screen] peer', peerId, e); }
+        pc.onnegotiationneeded = savedNeg;
+      }
       addVideoTile('screen', '🖥️ 画面共有', screenStream, false, 'screen-tile');
-      const sv = document.getElementById('tile-screen') && document.getElementById('tile-screen').querySelector('video');
+      const sv = document.getElementById('tile-screen')?.querySelector('video');
       if (sv) sv.muted = true;
       setLayout('speaker');
       socket.emit('screen-share-start', { roomId: myRoomId });
@@ -1012,14 +1023,22 @@ async function stopScreen() {
   btn.classList.remove('active'); btn.querySelector('span').textContent = '画面共有';
   const screenTile = document.getElementById('tile-screen');
   if (screenTile) screenTile.remove();
-  // カメラに戻す
-  const cameraTrack = localStream.getVideoTracks()[0];
-  if (cameraTrack) {
-    Object.values(peers).forEach(pc => {
-      const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-      if (sender) sender.replaceTrack(cameraTrack);
-    });
+  // addTrackで追加したsenderをremoveTrack + リオファー
+  for (const [peerId, pc] of Object.entries(peers)) {
+    const sender = screenSenders[peerId];
+    if (!sender) continue;
+    const savedNeg = pc.onnegotiationneeded;
+    pc.onnegotiationneeded = null;
+    try {
+      pc.removeTrack(sender);
+      const offer = await pc.createOffer();
+      offer.sdp = applyOpusParams(offer.sdp);
+      await pc.setLocalDescription(offer);
+      socket.emit('offer', { to: peerId, offer });
+    } catch(e) {}
+    pc.onnegotiationneeded = savedNeg;
   }
+  screenSenders = {};
   socket.emit('screen-share-stop', { roomId: myRoomId });
   updateGrid();
 }
