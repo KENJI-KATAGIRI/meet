@@ -1164,10 +1164,10 @@ async function initEffectsStream() {
   beautyCanvas.width   = effectsCanvas.width;
   beautyCanvas.height  = effectsCanvas.height;
 
-  // セグメンテーション用キャンバス（元解像度）
+  // セグメンテーション用キャンバス（推論高速化のため解像度を抑える）
   segCanvas = document.createElement('canvas');
-  segCanvas.width = effectsCanvas.width;
-  segCanvas.height = effectsCanvas.height;
+  segCanvas.width = Math.min(effectsCanvas.width, 640);
+  segCanvas.height = Math.min(effectsCanvas.height, 360);
   segCtx = segCanvas.getContext('2d');
 
   // RVM合成用: 人物切り抜きキャンバス
@@ -1282,7 +1282,9 @@ function drawWithMask(w, h) {
     personCtx.drawImage(segCanvas, 0, 0, w, h);
   }
   personCtx.globalCompositeOperation = 'destination-in';
+  personCtx.filter = 'blur(4px)';
   personCtx.drawImage(maskCanvas2, 0, 0, w, h);
+  personCtx.filter = 'none';
   personCtx.globalCompositeOperation = 'source-over';
 
   effectsCtx.clearRect(0, 0, w, h);
@@ -1307,7 +1309,7 @@ async function loadSegModel() {
     const isMobile = window.innerWidth <= 640 || /Mobi|Android/i.test(navigator.userAgent);
     mpSelfie = new SelfieSegmentation({ locateFile: f =>
       `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}` });
-    mpSelfie.setOptions({ modelSelection: isMobile ? 1 : 0, selfieMode: false });
+    mpSelfie.setOptions({ modelSelection: 1, selfieMode: false });
     mpSelfie.onResults(onMpResults);
     await mpSelfie.initialize();
     mpReady = true;
