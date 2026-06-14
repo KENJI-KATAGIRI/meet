@@ -561,7 +561,9 @@ app.post('/api/audio-chunk', audioChunkUpload.single('chunk'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const { sessionId, chunkIndex } = req.body;
   if (!sessionId) { fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'no sessionId' }); }
-  const finalName = `audio-${sessionId}-${String(chunkIndex).padStart(4,'0')}.webm`;
+  const ext = req.body.audioExt || 'webm';
+  const finalName = `audio-${sessionId}-${String(chunkIndex).padStart(4,'0')}.${ext}`;
+  console.log(`[audio-chunk] session=${sessionId} idx=${chunkIndex} size=${req.file.size}bytes ext=${ext}`);
   fs.rename(req.file.path, path.join(recDir, finalName), () => {});
   res.json({ ok: true });
 });
@@ -570,15 +572,22 @@ const formParser = multer().none();
 app.post('/api/audio-finalize', formParser, async (req, res) => {
   res.json({ ok: true });
   const { sessionId, email } = req.body;
+  console.log(`[audio-finalize] session=${sessionId} email=${email} openai=${!!openai}`);
   if (!email || !sessionId || !openai) return;
   try {
     const chunkFiles = fs.readdirSync(recDir)
-      .filter(f => f.startsWith(`audio-${sessionId}-`) && f.endsWith('.webm'))
+      .filter(f => f.startsWith(`audio-${sessionId}-`) && /\.(webm|mp4|ogg|m4a)$/.test(f) && !f.includes('-final'))
       .sort();
-    if (chunkFiles.length === 0) return;
+    console.log(`[audio-finalize] chunks found: ${chunkFiles.length}`);
+    if (chunkFiles.length === 0) {
+      await sendMail(email, '【NiceMeet】会議終了（音声データなし）', '会議が終了しましたが、音声データが検出されませんでした。\n無音や短時間の場合は録音されないことがあります。');
+      return;
+    }
+    const chunkExt = require('path').extname(chunkFiles[0]) || '.webm';
     const combined = Buffer.concat(chunkFiles.map(f => fs.readFileSync(path.join(recDir, f))));
-    const finalPath = path.join(recDir, `audio-${sessionId}-final.webm`);
+    const finalPath = path.join(recDir, `audio-${sessionId}-final${chunkExt}`);
     fs.writeFileSync(finalPath, combined);
+    console.log(`[audio-finalize] final: ${require('path').basename(finalPath)} (${combined.length} bytes)`);
 
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(finalPath),
@@ -733,6 +742,10 @@ io.on('connection', (socket) => {
     for (const [id] of cur.users) {
       if (!io.sockets.sockets.get(id)) cur.users.delete(id);
     }
+    // ホストが切断済みなら参加者をホストにする（リフレッシュ時の競合対策）
+    if (!io.sockets.sockets.get(cur.hostId) || !cur.users.has(cur.hostId)) {
+      cur.hostId = socket.id;
+    }
     cur.users.set(socket.id, { name: userName });
     socket.join(roomId);
     socket.roomId = roomId;
@@ -745,10 +758,12 @@ io.on('connection', (socket) => {
   socket.on('offer', ({ to, offer }) => io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }));
   socket.on('answer', ({ to, answer }) => io.to(to).emit('answer', { from: socket.id, answer }));
   socket.on('ice-candidate', ({ to, candidate }) => io.to(to).emit('ice-candidate', { from: socket.id, candidate }));
+  socket.on('screen-share-start', () => { socket.to(socket.roomId).emit('screen-share-start', { id: socket.id, name: socket.userName }); });
   socket.on('screen-share-stop', () => { socket.to(socket.roomId).emit('screen-share-stop', { id: socket.id }); });
   socket.on('chat-message', ({ message }) => {
     if (!socket.roomId) return;
-    io.to(socket.roomId).emit('chat-message', { from: socket.userName, message, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) });
+    console.log('[chat] from=' + socket.userName + ' room=' + socket.roomId + ' len=' + (message||'').length);
+    socket.to(socket.roomId).emit('chat-message', { from: socket.userName, message, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) });
   });
   socket.on('disconnect', () => {
     if (!socket.roomId) return;
