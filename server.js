@@ -99,6 +99,81 @@ try { db.exec("ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'"); } catch(
 try { db.exec('ALTER TABLE users ADD COLUMN plan_expires TEXT'); } catch(e) {}
 try { db.exec('ALTER TABLE users ADD COLUMN stripe_customer_id TEXT'); } catch(e) {}
 
+// ── 施設サブスク管理テーブル ──────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS nm_facilities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    admin_email TEXT NOT NULL,
+    contact_name TEXT,
+    phone TEXT,
+    trial_started_at TEXT DEFAULT (datetime('now')),
+    trial_status TEXT DEFAULT 'trial',
+    early_adopter INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS nm_locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    facility_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS nm_location_count_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    facility_id INTEGER NOT NULL,
+    location_count INTEGER NOT NULL,
+    changed_at TEXT DEFAULT (datetime('now')),
+    note TEXT
+  );
+  CREATE TABLE IF NOT EXISTS nm_meetings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    facility_id INTEGER,
+    room_id TEXT,
+    host_email TEXT,
+    started_at TEXT,
+    ended_at TEXT,
+    duration_minutes REAL DEFAULT 0,
+    ai_summary_used INTEGER DEFAULT 0,
+    summary_text TEXT
+  );
+  CREATE TABLE IF NOT EXISTS nm_inquiries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    facility_id INTEGER,
+    name TEXT,
+    email TEXT,
+    message TEXT,
+    submitted_at TEXT DEFAULT (datetime('now')),
+    status TEXT DEFAULT 'new'
+  );
+`);
+try { db.exec('ALTER TABLE users ADD COLUMN facility_id INTEGER'); } catch(e) {}
+
+// ── 施設サブスク ヘルパー ────────────────────────────────────────
+function calcMonthlyAmount(locationCount, isEarlyAdopter) {
+  const unit = locationCount === 1
+    ? (isEarlyAdopter ? 2980 : 4980)
+    : locationCount <= 3 ? 2480 : 1980;
+  return { unit, total: locationCount * unit };
+}
+function getFacilityStatus(facility) {
+  if (!facility) return 'none';
+  if (facility.trial_status === 'active') return 'active';
+  const daysSince = (Date.now() - new Date(facility.trial_started_at).getTime()) / 86400000;
+  return daysSince > 30 ? 'expired' : 'trial';
+}
+function getMonthlyUsageMinutes(facilityId) {
+  const ym = new Date().toISOString().slice(0, 7);
+  const row = db.prepare(
+    "SELECT COALESCE(SUM(duration_minutes),0) as total FROM nm_meetings WHERE facility_id=? AND substr(started_at,1,7)=?"
+  ).get(facilityId, ym);
+  return row?.total || 0;
+}
+function getTrialDaysLeft(facility) {
+  const daysSince = (Date.now() - new Date(facility.trial_started_at).getTime()) / 86400000;
+  return Math.max(0, Math.ceil(30 - daysSince));
+}
+// ─────────────────────────────────────────────────────────────────
+
 // パスワードハッシュ
 async function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -725,9 +800,25 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
   const { sessionId, email } = req.body;
   console.log(`[audio-finalize] session=${sessionId} email=${email} openai=${!!openai}`);
   if (!email || !sessionId || !openai) return;
-  const fUser = db.prepare('SELECT plan FROM users WHERE email=?').get(email);
-  if (!fUser || fUser.plan !== 'paid') {
-    console.log('[audio-finalize] free plan, skipping transcription for:', email);
+  const fUser = db.prepare('SELECT plan, facility_id FROM users WHERE email=?').get(email);
+  let canUseAI = false;
+  if (fUser?.facility_id) {
+    const fac = db.prepare('SELECT * FROM nm_facilities WHERE id=?').get(fUser.facility_id);
+    const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(fUser.facility_id)?.cnt || 0;
+    const facStatus = getFacilityStatus(fac);
+    if (facStatus !== 'expired') {
+      const usedMin = getMonthlyUsageMinutes(fUser.facility_id);
+      const limitMin = lc * 50 * 60;
+      canUseAI = usedMin < limitMin;
+      if (!canUseAI) console.log(`[audio-finalize] usage limit: ${usedMin}/${limitMin}min facility=${fUser.facility_id}`);
+    } else {
+      console.log('[audio-finalize] facility expired:', email);
+    }
+  } else {
+    canUseAI = fUser?.plan === 'paid';
+  }
+  if (!canUseAI) {
+    console.log('[audio-finalize] no AI access for:', email);
     return;
   }
   try {
@@ -831,6 +922,13 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
       ]
     });
     const summary = completion.choices[0].message.content;
+
+    if (fUser?.facility_id) {
+      const durMin = chunkFiles.length * 2;
+      db.prepare(
+        'INSERT INTO nm_meetings (facility_id, room_id, host_email, started_at, ended_at, duration_minutes, ai_summary_used, summary_text) VALUES (?,?,?,datetime(\'now\',?),datetime(\'now\'),?,1,?)'
+      ).run(fUser.facility_id, sessionId, email, `-${durMin} minutes`, durMin, summary);
+    }
 
     await sendMail(email, '【NiceMeet】会議の文字起こし・要約',
 `━━━━━━━━━━━━━━━━━━
@@ -947,6 +1045,114 @@ app.get('/booking/dashboard', (req, res) => {
 });
 app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'index.html')));
 
+// ── 施設サブスク API ─────────────────────────────────────────────
+
+// 施設登録（トライアル開始）
+app.post('/api/facility/register', requireAuth, async (req, res) => {
+  const { facility_name, contact_name, phone, locations } = req.body;
+  if (!facility_name || !Array.isArray(locations) || !locations.length)
+    return res.status(400).json({ error: '施設名と拠点名は必須です' });
+  const u = db.prepare('SELECT email, facility_id FROM users WHERE id=?').get(req.session.userId);
+  if (!u) return res.status(404).json({ error: 'user not found' });
+  if (u.facility_id) return res.status(409).json({ error: 'already registered' });
+  const fac = db.prepare(
+    'INSERT INTO nm_facilities (name, admin_email, contact_name, phone) VALUES (?,?,?,?)'
+  ).run(facility_name, u.email, contact_name || '', phone || '');
+  const facilityId = fac.lastInsertRowid;
+  for (const loc of locations) {
+    db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(facilityId, loc);
+  }
+  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(facilityId, locations.length, '初回登録');
+  db.prepare('UPDATE users SET facility_id=? WHERE id=?').run(facilityId, req.session.userId);
+  const amount = calcMonthlyAmount(locations.length, 1);
+  await sendMail(process.env.GMAIL_USER || '',
+    `【NiceMeet】新規施設トライアル開始: ${facility_name}`,
+    `施設名: ${facility_name}\n担当者: ${contact_name}\nメール: ${u.email}\n拠点数: ${locations.length}\n月額(先行): ¥${amount.total.toLocaleString()}\n登録日: ${new Date().toLocaleString('ja-JP')}`
+  );
+  res.json({ ok: true, facilityId });
+});
+
+// 施設ステータス取得
+app.get('/api/facility/status', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT email, facility_id FROM users WHERE id=?').get(req.session.userId);
+  if (!u?.facility_id) return res.json({ registered: false });
+  const fac = db.prepare('SELECT * FROM nm_facilities WHERE id=?').get(u.facility_id);
+  if (!fac) return res.json({ registered: false });
+  const locs = db.prepare('SELECT * FROM nm_locations WHERE facility_id=? ORDER BY id').all(fac.id);
+  const lc = locs.length;
+  const status = getFacilityStatus(fac);
+  const daysLeft = getTrialDaysLeft(fac);
+  const amount = calcMonthlyAmount(lc, fac.early_adopter);
+  const usedMin = getMonthlyUsageMinutes(fac.id);
+  const limitMin = lc * 50 * 60;
+  res.json({
+    registered: true,
+    facility: { id: fac.id, name: fac.name, admin_email: fac.admin_email, contact_name: fac.contact_name, early_adopter: fac.early_adopter, trial_started_at: fac.trial_started_at },
+    locations: locs,
+    status,
+    daysLeft,
+    amount,
+    usage: { minutes: Math.round(usedMin), limit: limitMin, hours: Math.round(usedMin/60*10)/10, limitHours: Math.round(limitMin/60), percent: Math.min(100, Math.round(usedMin / limitMin * 100)) }
+  });
+});
+
+// 拠点追加
+app.post('/api/facility/location', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
+  if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: '拠点名は必須です' });
+  db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(u.facility_id, name);
+  const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(u.facility_id).cnt;
+  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(u.facility_id, lc, '拠点追加: ' + name);
+  res.json({ ok: true, locationCount: lc });
+});
+
+// 拠点削除
+app.delete('/api/facility/location/:id', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
+  if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
+  const loc = db.prepare('SELECT * FROM nm_locations WHERE id=? AND facility_id=?').get(req.params.id, u.facility_id);
+  if (!loc) return res.status(404).json({ error: 'not found' });
+  const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(u.facility_id).cnt;
+  if (lc <= 1) return res.status(400).json({ error: '最低1拠点は必要です' });
+  db.prepare('DELETE FROM nm_locations WHERE id=?').run(req.params.id);
+  const newLc = lc - 1;
+  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(u.facility_id, newLc, '拠点削除: ' + loc.name);
+  res.json({ ok: true, locationCount: newLc });
+});
+
+// 有料申込フォーム
+app.post('/api/facility/inquiry', requireAuth, async (req, res) => {
+  const u = db.prepare('SELECT email, facility_id FROM users WHERE id=?').get(req.session.userId);
+  const { message } = req.body;
+  const fac = u?.facility_id ? db.prepare('SELECT name FROM nm_facilities WHERE id=?').get(u.facility_id) : null;
+  db.prepare('INSERT INTO nm_inquiries (facility_id, name, email, message) VALUES (?,?,?,?)').run(u?.facility_id || null, fac?.name || '', u?.email || '', message || '');
+  await sendMail(process.env.GMAIL_USER || '',
+    `【NiceMeet】有料プラン申込: ${fac?.name || u?.email}`,
+    `施設名: ${fac?.name || '未登録'}\nメール: ${u?.email}\nメッセージ: ${message || '(なし)'}\n申込日時: ${new Date().toLocaleString('ja-JP')}`
+  );
+  res.json({ ok: true });
+});
+
+// CSV エクスポート（会議記録）
+app.get('/api/facility/export/csv', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
+  if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
+  const rows = db.prepare('SELECT * FROM nm_meetings WHERE facility_id=? ORDER BY started_at DESC').all(u.facility_id);
+  const header = '会議ID,ルームID,ホストメール,開始日時,終了日時,通話時間(分),AI要約\n';
+  const body = rows.map(r => [
+    r.id, r.room_id || '', r.host_email || '',
+    r.started_at || '', r.ended_at || '',
+    Math.round(r.duration_minutes || 0),
+    r.ai_summary_used ? 'あり' : 'なし'
+  ].join(',')).join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="nicemeet_meetings.csv"');
+  res.send('\ufeff' + header + body);
+});
+
+// ─────────────────────────────────────────────────────────────────
 // ---- Socket.io (video chat) ----
 const rooms = new Map();
 const breakouts = new Map();
@@ -959,11 +1165,15 @@ io.on('connection', (socket) => {
     if (!room) {
       const userId = socket.request.session?.userId;
       let hostPlan = 'free';
+      let hostFacilityId = null;
+      let hostEmail = null;
       if (userId) {
-        const hu = db.prepare('SELECT plan FROM users WHERE id=?').get(userId);
+        const hu = db.prepare('SELECT plan, facility_id, email FROM users WHERE id=?').get(userId);
         hostPlan = hu?.plan || 'free';
+        hostFacilityId = hu?.facility_id || null;
+        hostEmail = hu?.email || null;
       }
-      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now() };
+      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail };
       rooms.set(roomId, newRoom);
       if (hostPlan === 'free') {
         newRoom.warnTimer = setTimeout(() => { io.to(roomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
@@ -1019,6 +1229,12 @@ io.on('connection', (socket) => {
       if (room.users.size === 0) {
         if (room.warnTimer) clearTimeout(room.warnTimer);
         if (room.endTimer) clearTimeout(room.endTimer);
+        if (room.facilityId && room.startedAt) {
+          const durMin = (Date.now() - room.startedAt) / 60000;
+          db.prepare(
+            'INSERT INTO nm_meetings (facility_id, room_id, host_email, started_at, ended_at, duration_minutes, ai_summary_used) VALUES (?,?,?,?,?,?,0)'
+          ).run(room.facilityId, curRoomId, room.hostEmail || '', new Date(room.startedAt).toISOString(), new Date().toISOString(), durMin);
+        }
         rooms.delete(curRoomId);
       }
     }

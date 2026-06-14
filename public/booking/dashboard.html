@@ -67,6 +67,36 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
 .plan-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700}
 .plan-badge.free{background:rgba(136,136,136,.15);color:#888;border:1px solid #444}
 .plan-badge.paid{background:rgba(108,99,255,.15);color:#a78bfa;border:1px solid #6c63ff}
+.plan-badge.trial{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid #22c55e}
+.plan-badge.active{background:rgba(108,99,255,.15);color:#a78bfa;border:1px solid #6c63ff}
+.plan-badge.expired{background:rgba(239,68,68,.15);color:#f87171;border:1px solid #ef4444}
+.trial-banner{border-radius:12px;padding:12px 16px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px}
+.trial-banner.warn{background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);color:#fde047}
+.trial-banner.danger{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171}
+.trial-banner.expired{background:rgba(239,68,68,.15);border:1px solid #ef4444;color:#f87171}
+.usage-bar-wrap{margin:10px 0 4px}
+.usage-bar-bg{background:rgba(255,255,255,.08);border-radius:6px;height:8px;overflow:hidden}
+.usage-bar-fill{height:100%;border-radius:6px;transition:width .4s;background:#4ade80}
+.usage-bar-fill.warn{background:#fde047}
+.usage-bar-fill.danger{background:#f87171}
+.fac-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.fac-stat{background:rgba(255,255,255,.04);border-radius:10px;padding:12px 14px}
+.fac-stat-label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.fac-stat-value{font-size:18px;font-weight:700}
+.inquiry-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
+.inquiry-modal.show{display:flex}
+.inquiry-box{background:var(--bg2);border-radius:16px;padding:28px;width:min(480px,90vw);border:1px solid var(--border)}
+.inquiry-box h3{margin:0 0 12px;font-size:16px}
+.inquiry-box textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:10px;font-size:13px;resize:vertical;min-height:80px;box-sizing:border-box}
+.reg-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
+.reg-modal.show{display:flex}
+.reg-box{background:var(--bg2);border-radius:16px;padding:28px;width:min(520px,92vw);border:1px solid var(--border);max-height:90vh;overflow-y:auto}
+.reg-box h3{margin:0 0 16px;font-size:16px}
+.reg-field{margin-bottom:12px}
+.reg-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.reg-field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:9px 12px;font-size:13px;box-sizing:border-box}
+.loc-row{display:flex;gap:8px;margin-bottom:6px}
+.loc-row input{flex:1}
 .plan-upgrade-btn{display:inline-block;padding:10px 20px;background:linear-gradient(135deg,#6c63ff,#8b82ff);color:#fff;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none;transition:opacity .2s}
 .plan-upgrade-btn:hover{opacity:.85}
 .toast{position:fixed;bottom:24px;right:24px;background:#2a2a4a;border:1px solid #3a3a5a;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)}
@@ -101,7 +131,68 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
     </div>
   </div>
 
-  <!-- プランステータス -->
+  <!-- 施設プランカード -->
+  <div id="facility-card" style="margin-bottom:20px;display:none">
+
+    <!-- トライアル残日数バナー（JS で表示切替） -->
+    <div id="trial-banner" class="trial-banner" style="display:none"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🏥 施設プラン</div>
+        <span id="fac-badge" class="plan-badge trial">TRIAL</span>
+      </div>
+      <div class="fac-grid">
+        <div class="fac-stat">
+          <div class="fac-stat-label">ステータス</div>
+          <div class="fac-stat-value" id="fac-status-text">—</div>
+        </div>
+        <div class="fac-stat">
+          <div class="fac-stat-label">拠点数</div>
+          <div class="fac-stat-value" id="fac-loc-count">—</div>
+        </div>
+        <div class="fac-stat">
+          <div class="fac-stat-label">月額（目安）</div>
+          <div class="fac-stat-value" id="fac-amount">—</div>
+        </div>
+        <div class="fac-stat">
+          <div class="fac-stat-label">単価/拠点</div>
+          <div class="fac-stat-value" id="fac-unit">—</div>
+        </div>
+      </div>
+
+      <!-- AI使用量バー -->
+      <div class="usage-bar-wrap">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px">
+          <span>今月のAI文字起こし利用時間</span>
+          <span id="usage-text">0h / —h</span>
+        </div>
+        <div class="usage-bar-bg"><div id="usage-bar" class="usage-bar-fill" style="width:0%"></div></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">※ 月間上限（拠点数×50h）に達した場合のみAI要約が停止します。通話自体は継続できます。</div>
+      </div>
+
+      <!-- エクスポート -->
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+        <a href="/api/facility/export/csv" class="btn btn-secondary btn-sm">📥 会議記録CSV</a>
+        <button class="btn btn-secondary btn-sm" onclick="printSummaries()">🖨️ 要約印刷/PDF</button>
+        <button id="fac-inquiry-btn" class="btn btn-primary btn-sm" onclick="openInquiry()" style="display:none">📩 有料プランを申し込む</button>
+      </div>
+
+      <p style="font-size:11px;color:var(--muted);margin-top:10px">解約後もデータは削除されません。いつでも閲覧・エクスポート可能です。</p>
+
+      <!-- 拠点管理 -->
+      <details style="margin-top:14px">
+        <summary style="font-size:12px;color:var(--muted);cursor:pointer">拠点の追加・削除</summary>
+        <div id="loc-list" style="margin-top:10px"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="new-loc-name" placeholder="拠点名を入力" style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:7px 10px;font-size:13px">
+          <button class="btn btn-secondary btn-sm" onclick="addLocation()">＋ 追加</button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <!-- 個人プランカード（施設未登録ユーザー向け） -->
   <div class="card" id="plan-card" style="margin-bottom:20px;display:none">
     <div class="card-header">
       <div class="card-title">💎 プランステータス</div>
@@ -110,10 +201,53 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
     <div id="plan-free-content">
       <p class="card-desc" style="margin-bottom:16px">現在は<strong>無料プラン</strong>です。通話時間は45分まで、文字起こしは利用できません。<br>有料プランにアップグレードすると<strong>通話時間無制限 + AI文字起こし・要約</strong>が使えます（¥980/月〜）。</p>
       <button id="plan-upgrade-btn" class="plan-upgrade-btn" onclick="startUpgrade()" style="width:100%;border:none;cursor:pointer">🚀 有料プランにアップグレード（¥980/月〜）</button>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <p class="card-desc" style="margin-bottom:8px">福祉施設として複数拠点でご利用の場合は拠点数プランをご利用ください（30日間無料）。</p>
+        <button class="btn btn-secondary btn-sm" onclick="openRegModal()">🏥 施設アカウントとして登録（30日無料トライアル）</button>
+      </div>
     </div>
     <div id="plan-paid-content" style="display:none">
       <p class="card-desc">現在は<strong>有料プラン</strong>です。通話時間無制限・AI文字起こし・要約がご利用いただけます。</p>
       <a href="/api/stripe/portal" class="btn btn-secondary btn-sm" style="margin-top:8px;display:inline-flex">⚙️ 解約・カード変更</a>
+    </div>
+  </div>
+
+  <!-- 施設登録モーダル -->
+  <div class="reg-modal" id="reg-modal" onclick="if(event.target===this)closeRegModal()">
+    <div class="reg-box">
+      <h3>🏥 施設アカウント登録（30日無料トライアル）</h3>
+      <div class="reg-field"><label>施設名 *</label><input id="reg-fac-name" placeholder="例：〇〇就労継続支援事業所"></div>
+      <div class="reg-field"><label>担当者名</label><input id="reg-contact" placeholder="例：山田 太郎"></div>
+      <div class="reg-field"><label>電話番号</label><input id="reg-phone" placeholder="例：03-0000-0000"></div>
+      <div class="reg-field">
+        <label>拠点名（1つ以上） *</label>
+        <div id="reg-loc-list">
+          <div class="loc-row"><input class="reg-loc-input" placeholder="例：本店" value=""></div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="addRegLoc()" style="margin-top:4px">＋ 拠点を追加</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+        ※ 登録後30日間は全機能（AI要約込み）を無料でご利用いただけます。<br>
+        ※ 先行価格が適用されます（1拠点: ¥2,980/月〜）。<br>
+        ※ トライアル後は手動でのお申込みとなります。
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="registerFacility()" style="flex:1">登録してトライアルを開始</button>
+        <button class="btn btn-secondary" onclick="closeRegModal()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 有料申込モーダル -->
+  <div class="inquiry-modal" id="inquiry-modal" onclick="if(event.target===this)closeInquiry()">
+    <div class="inquiry-box">
+      <h3>📩 有料プランのお申込み</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">送信後、担当者よりご連絡いたします（通常1〜2営業日）。</p>
+      <textarea id="inquiry-msg" placeholder="ご質問・ご要望などがあればご記入ください（任意）"></textarea>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary" onclick="submitInquiry()" style="flex:1">申し込む</button>
+        <button class="btn btn-secondary" onclick="closeInquiry()">キャンセル</button>
+      </div>
     </div>
   </div>
 
@@ -206,6 +340,9 @@ async function init() {
     toast('🎉 有料プランが有効になりました！');
     history.replaceState({}, '', '/booking/dashboard');
   }
+
+  // 施設プラン or 個人プランを表示
+  await loadFacilityStatus(me);
 
   renderDow();
   renderBookings(bookRes);
@@ -330,6 +467,147 @@ function copyInstant() {}
 function copyUrl() {
   navigator.clipboard.writeText(`https://meet.gaiaarts.org/b/${me.slug}`);
   toast('✓ URLをコピーしました');
+}
+
+async function loadFacilityStatus(me) {
+  try {
+    const r = await fetch('/api/facility/status').then(r => r.json());
+    if (r.registered) {
+      // 施設カード表示
+      document.getElementById('facility-card').style.display = '';
+      document.getElementById('plan-card').style.display = 'none';
+
+      const badge = document.getElementById('fac-badge');
+      const s = r.status;
+      badge.textContent = s === 'trial' ? 'TRIAL' : s === 'active' ? 'PRO' : 'EXPIRED';
+      badge.className = 'plan-badge ' + s;
+
+      const statusText = { trial: `トライアル（残${r.daysLeft}日）`, active: '有料契約中', expired: '期限切れ' };
+      document.getElementById('fac-status-text').textContent = statusText[s] || s;
+      document.getElementById('fac-loc-count').textContent = r.locations.length + '拠点';
+      document.getElementById('fac-amount').textContent = r.amount.total === 0 ? '—' : '¥' + r.amount.total.toLocaleString() + '/月';
+      document.getElementById('fac-unit').textContent = '¥' + r.amount.unit.toLocaleString() + '/拠点';
+
+      // 使用量バー
+      const pct = r.usage.percent;
+      const bar = document.getElementById('usage-bar');
+      bar.style.width = pct + '%';
+      bar.className = 'usage-bar-fill' + (pct >= 100 ? ' danger' : pct >= 80 ? ' warn' : '');
+      document.getElementById('usage-text').textContent = r.usage.hours + 'h / ' + r.usage.limitHours + 'h（拠点数×50h）';
+
+      // トライアルバナー
+      const banner = document.getElementById('trial-banner');
+      if (s === 'trial' && r.daysLeft <= 7) {
+        banner.style.display = 'flex';
+        banner.className = 'trial-banner ' + (r.daysLeft <= 3 ? 'danger' : 'warn');
+        banner.innerHTML = (r.daysLeft === 0 ? '⚠️ 本日' : `⏰ 残り${r.daysLeft}日`) +
+          `でトライアルが終了します。引き続きAI要約をご利用の場合は有料プランへお進みください。` +
+          `<button class="btn btn-primary btn-sm" onclick="openInquiry()" style="margin-left:auto;white-space:nowrap">申し込む</button>`;
+      } else if (s === 'expired') {
+        banner.style.display = 'flex';
+        banner.className = 'trial-banner expired';
+        banner.innerHTML = '🔴 トライアル期間が終了しました。AI要約は停止中です。過去記録の閲覧・エクスポートは引き続きご利用できます。' +
+          `<button class="btn btn-primary btn-sm" onclick="openInquiry()" style="margin-left:auto;white-space:nowrap">申し込む</button>`;
+      }
+
+      // 申込ボタン（expired or trial残り7日以下）
+      if (s === 'expired' || (s === 'trial' && r.daysLeft <= 7)) {
+        document.getElementById('fac-inquiry-btn').style.display = '';
+      }
+
+      // 使用量警告
+      if (pct >= 100) {
+        toast('⚠️ 今月のAI使用時間が上限に達しました。AI要約が停止されています。');
+      } else if (pct >= 80) {
+        toast('📊 今月のAI使用時間が80%に達しました。');
+      }
+
+      // 拠点リスト
+      renderLocations(r.locations);
+
+      window._facilityData = r;
+    } else {
+      // 個人プラン表示
+      document.getElementById('plan-card').style.display = '';
+      document.getElementById('facility-card').style.display = 'none';
+      const planR = await fetch('/api/my-plan').then(r => r.json());
+      const badge = document.getElementById('plan-badge');
+      if (planR.plan === 'paid') {
+        badge.textContent = 'PRO'; badge.className = 'plan-badge paid';
+        document.getElementById('plan-free-content').style.display = 'none';
+        document.getElementById('plan-paid-content').style.display = '';
+      } else {
+        badge.textContent = 'FREE'; badge.className = 'plan-badge free';
+      }
+    }
+  } catch(e) {
+    console.error('facility status error:', e);
+    document.getElementById('plan-card').style.display = '';
+  }
+}
+
+function renderLocations(locs) {
+  const el = document.getElementById('loc-list');
+  if (!locs.length) { el.innerHTML = '<p style="font-size:12px;color:var(--muted)">拠点なし</p>'; return; }
+  el.innerHTML = locs.map(l =>
+    `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-size:13px">${l.name}</span>
+      <button class="btn btn-danger btn-sm" onclick="deleteLocation(${l.id},'${l.name.replace(/'/g,"\\'")}')">削除</button>
+    </div>`
+  ).join('');
+}
+
+async function addLocation() {
+  const input = document.getElementById('new-loc-name');
+  const name = input.value.trim();
+  if (!name) return;
+  const r = await fetch('/api/facility/location', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name }) }).then(r => r.json());
+  if (r.ok) { toast('拠点を追加しました'); input.value = ''; loadFacilityStatus({}); }
+  else toast('エラー: ' + (r.error || ''));
+}
+
+async function deleteLocation(id, name) {
+  if (!confirm(`「${name}」を削除しますか？`)) return;
+  const r = await fetch('/api/facility/location/' + id, { method: 'DELETE' }).then(r => r.json());
+  if (r.ok) { toast('拠点を削除しました'); loadFacilityStatus({}); }
+  else toast('エラー: ' + (r.error || ''));
+}
+
+function openInquiry() { document.getElementById('inquiry-modal').classList.add('show'); }
+function closeInquiry() { document.getElementById('inquiry-modal').classList.remove('show'); }
+async function submitInquiry() {
+  const msg = document.getElementById('inquiry-msg').value;
+  const r = await fetch('/api/facility/inquiry', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ message: msg }) }).then(r => r.json());
+  if (r.ok) { toast('✓ 申込を送信しました。担当者よりご連絡します。'); closeInquiry(); }
+  else toast('送信エラー');
+}
+
+function openRegModal() { document.getElementById('reg-modal').classList.add('show'); }
+function closeRegModal() { document.getElementById('reg-modal').classList.remove('show'); }
+function addRegLoc() {
+  const div = document.createElement('div'); div.className = 'loc-row';
+  div.innerHTML = '<input class="reg-loc-input" placeholder="拠点名">';
+  document.getElementById('reg-loc-list').appendChild(div);
+}
+async function registerFacility() {
+  const name = document.getElementById('reg-fac-name').value.trim();
+  const contact = document.getElementById('reg-contact').value.trim();
+  const phone = document.getElementById('reg-phone').value.trim();
+  const locInputs = document.querySelectorAll('.reg-loc-input');
+  const locations = [...locInputs].map(i => i.value.trim()).filter(Boolean);
+  if (!name || !locations.length) { toast('施設名と拠点名は必須です'); return; }
+  const r = await fetch('/api/facility/register', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ facility_name: name, contact_name: contact, phone, locations })
+  }).then(r => r.json());
+  if (r.ok) { toast('🎉 施設登録完了！30日間のトライアルを開始します。'); closeRegModal(); loadFacilityStatus({}); }
+  else toast('エラー: ' + (r.error || ''));
+}
+
+function printSummaries() {
+  const fd = window._facilityData;
+  if (!fd) return;
+  window.open('/api/facility/export/csv', '_blank');
 }
 
 async function startUpgrade() {
