@@ -1390,78 +1390,30 @@ async function loadSegModel() {
   document.getElementById('loading-model').style.display = 'none';
 }
 
-// --- 美肌フィルター（ブラーなし版）---
-// 肌色をサンプリングして fill+lighten でシミだけ持ち上げる。ブラー不使用なので顔はシャープ。
-// 原理: lighten(fill_color, original) = max(fill, original)
-//   → シミ(original < fill) → fill色に置換（シミ消去）
-//   → 通常肌・ハイライト(original ≥ fill) → original のまま（変化なし）
+// --- 美肌フィルター（暫定：元の実装に戻す）---
 function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
   if (sw == null) sw = src.videoWidth || src.width || w;
   if (sh == null) sh = src.videoHeight || src.height || h;
-
   const strong = beautyLevel === 2;
-  const liftFactor = strong ? 1.20 : 1.10; // fill色を肌色より何%明るくするか
-  const strength   = strong ? 0.82 : 0.68;
-
+  const blurR  = strong ? 3 : 2;
+  const detail = strong ? 0.42 : 0.52;
   if (!beautyCanvas || beautyCanvas.width !== w || beautyCanvas.height !== h) {
     beautyCanvas = document.createElement('canvas');
     beautyCanvas.width = w; beautyCanvas.height = h;
     beautyCtx = beautyCanvas.getContext('2d');
   }
-  if (!beautyBlurCanvas || beautyBlurCanvas.width !== w || beautyBlurCanvas.height !== h) {
-    beautyBlurCanvas = document.createElement('canvas');
-    beautyBlurCanvas.width = w; beautyBlurCanvas.height = h;
-    beautyBlurCtx = beautyBlurCanvas.getContext('2d');
-  }
-
-  // Step A: 元映像をベース（これが最終出力のシャープな土台）
-  beautyCtx.globalCompositeOperation = 'source-over';
-  beautyCtx.globalAlpha = 1;
   beautyCtx.clearRect(0, 0, w, h);
+  beautyCtx.globalCompositeOperation = 'source-over';
+  beautyCtx.globalAlpha = 1.0;
+  beautyCtx.filter = `blur(${blurR}px)`;
   beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
-
-  // Step B: 頬エリアから肌色をサンプリング（ブラーなし）
-  if (!skinSampleCanvas) {
-    skinSampleCanvas = document.createElement('canvas');
-    skinSampleCanvas.width = 8; skinSampleCanvas.height = 8;
-    skinSampleCtx = skinSampleCanvas.getContext('2d', { willReadFrequently: true });
-  }
-  // 左頬(38%,40%) + 右頬(62%,40%) を 8×8 でサンプル
-  const sW = 8, sH = 8;
-  skinSampleCtx.drawImage(src, Math.round(sx + sw*0.34), Math.round(sy + sh*0.38), sW, sH, 0, 0, sW, sH);
-  const px = skinSampleCtx.getImageData(0, 0, sW, sH).data;
-  let rS=0, gS=0, bS=0;
-  for (let i=0; i<px.length; i+=4) { rS+=px[i]; gS+=px[i+1]; bS+=px[i+2]; }
-  const n = px.length/4;
-  // EMAで急激な変化を抑制（照明変化に追随しつつ安定）
-  avgSkinR = avgSkinR*0.85 + (rS/n)*0.15;
-  avgSkinG = avgSkinG*0.85 + (gS/n)*0.15;
-  avgSkinB = avgSkinB*0.85 + (bS/n)*0.15;
-
-  // Step C: サンプル肌色より少し明るいfill色でbeautyBlurCanvasを塗りつぶし
-  const fr = Math.min(255, Math.round(avgSkinR * liftFactor));
-  const fg = Math.min(255, Math.round(avgSkinG * liftFactor));
-  const fb = Math.min(255, Math.round(avgSkinB * liftFactor));
-  beautyBlurCtx.clearRect(0, 0, w, h);
-  beautyBlurCtx.fillStyle = `rgb(${fr},${fg},${fb})`;
-  beautyBlurCtx.fillRect(0, 0, w, h);
-
-  // Step D: lighten で元映像と合成 → シミ(暗い点)だけfill色に置換、明るい肌はそのまま
-  beautyBlurCtx.globalCompositeOperation = 'lighten';
-  beautyBlurCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
-  beautyBlurCtx.globalCompositeOperation = 'source-over';
-
-  // Step E: スキンマスクで肌エリアのみに限定（目・眉・唇・髪はシャープなまま）
-  if (skinMaskCanvas) {
-    beautyBlurCtx.globalCompositeOperation = 'destination-in';
-    beautyBlurCtx.drawImage(skinMaskCanvas, 0, 0, w, h);
-    beautyBlurCtx.globalCompositeOperation = 'source-over';
-  }
-
-  // Step F: シミ除去レイヤーを元映像に重ねる（ブラーなし・完全シャープ）
-  beautyCtx.globalAlpha = strength;
-  beautyCtx.drawImage(beautyBlurCanvas, 0, 0);
-  beautyCtx.globalAlpha = 1;
+  beautyCtx.filter = 'none';
+  beautyCtx.globalCompositeOperation = 'lighten';
+  beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  beautyCtx.globalCompositeOperation = 'source-over';
+  beautyCtx.globalAlpha = detail;
+  beautyCtx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  beautyCtx.globalAlpha = 1.0;
 }
 
 function replaceTracksInPeers() {
