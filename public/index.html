@@ -271,7 +271,6 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
     </div>
     <input type="file" id="bg-upload" accept="image/*" style="display:none" onchange="loadBgImage(this)">
     <div id="bg-history-row"></div>
-    <div id="bg-history-row"></div>
   </div>
 
   <!-- カメラズーム -->
@@ -1275,7 +1274,7 @@ function onMpResults(result) {
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
     const person = Math.min(1.0, d1[i] + d2[i] + d3[i] + (d4 ? d4[i] : 0));
     // 下限0.10に下げて境界ピクセルを広く拾う
-    const t = Math.max(0, Math.min(1, (person - 0.10) / 0.50));
+    const t = Math.max(0, Math.min(1, (person - 0.03) / 0.32));
     const stepped = t * t * (3 - 2 * t);
     const alpha = stepped > prevMaskData[i] ? 0.05 : 0.55;
     prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
@@ -1510,6 +1509,22 @@ async function setZoom(val) {
   if (zoomLevel > 1) await initEffectsStream();
 }
 
+function compressImageDataUrl(dataUrl, maxW, maxH, quality) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const ratio = Math.min(maxW / img.width, maxH / img.height, 1);
+      const w = Math.round(img.width * ratio);
+      const h = Math.round(img.height * ratio);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
 function getBgHistory() {
   const bgKey = myEmail || myName;
   if (!bgKey) return [];
@@ -1561,9 +1576,9 @@ function loadBgImage(input) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const dataUrl = e.target.result;
-    addToBgHistory(dataUrl);
-    await applyBgFromHistory(dataUrl);
+    const compressed = await compressImageDataUrl(e.target.result, 640, 360, 0.78);
+    addToBgHistory(compressed);
+    await applyBgFromHistory(compressed);
     notify('背景画像を設定しました');
   };
   reader.readAsDataURL(file);
