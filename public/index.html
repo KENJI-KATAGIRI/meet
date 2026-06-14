@@ -577,6 +577,11 @@ async function joinRoom() {
     if (caps?.zoom) {
       try { await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }); } catch(e) {}
     }
+    // スマホではエフェクト非対応のため非表示
+    ['btn-effects', 'btn-effects-m'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
   }
   localStream = rawStream;
   myName = name; myRoomId = room;
