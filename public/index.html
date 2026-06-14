@@ -117,6 +117,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 
 /* スマホ用 */
 #btn-flip{display:none}
+#bg-history-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.bg-thumb{width:48px;height:48px;border-radius:6px;cursor:pointer;border:2px solid transparent;background-size:cover;background-position:center;flex-shrink:0;transition:border-color .2s}.bg-thumb.selected{border-color:#7c6fff}.bg-thumb:hover{border-color:#888}
 #btn-more{display:none}
 #more-menu{display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e1e3a;border:1px solid #3a3a5a;border-radius:12px;padding:8px;z-index:150;box-shadow:0 8px 32px rgba(0,0,0,.7);gap:4px}
 #more-menu.open{display:flex}
@@ -269,6 +270,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
       <input type="color" id="custom-color" style="width:32px;height:32px;border-radius:6px;border:2px solid #3a3a5a;cursor:pointer;padding:0" onchange="setBgColor(this.value,null)">
     </div>
     <input type="file" id="bg-upload" accept="image/*" style="display:none" onchange="loadBgImage(this)">
+    <div id="bg-history-row"></div>
+    <div id="bg-history-row"></div>
   </div>
 
   <!-- カメラズーム -->
@@ -1520,26 +1523,61 @@ async function setZoom(val) {
   if (zoomLevel > 1) await initEffectsStream();
 }
 
+function getBgHistory() {
+  const bgKey = myEmail || myName;
+  if (!bgKey) return [];
+  try { return JSON.parse(localStorage.getItem('meet_bg_hist_' + bgKey) || '[]'); } catch(e) { return []; }
+}
+
+function addToBgHistory(dataUrl) {
+  const bgKey = myEmail || myName;
+  if (!bgKey) return;
+  let hist = getBgHistory().filter(u => u !== dataUrl);
+  hist.unshift(dataUrl);
+  hist = hist.slice(0, 8);
+  try { localStorage.setItem('meet_bg_hist_' + bgKey, JSON.stringify(hist)); } catch(e) {}
+}
+
+function renderBgHistory() {
+  const row = document.getElementById('bg-history-row');
+  if (!row) return;
+  const hist = getBgHistory();
+  row.innerHTML = '';
+  hist.forEach(dataUrl => {
+    const d = document.createElement('div');
+    d.className = 'bg-thumb' + (bgImgDataUrl === dataUrl ? ' selected' : '');
+    d.style.backgroundImage = 'url(' + dataUrl + ')';
+    d.title = '背景画像を適用';
+    d.onclick = () => applyBgFromHistory(dataUrl);
+    row.appendChild(d);
+  });
+}
+
+async function applyBgFromHistory(dataUrl) {
+  const img = new Image();
+  img.onload = async () => {
+    bgImg = img;
+    bgImgDataUrl = dataUrl;
+    ['none','blur','color'].forEach(m => document.getElementById('bg-' + m)?.classList.remove('selected'));
+    bgMode = 'image';
+    document.getElementById('color-picker-row').style.display = 'none';
+    renderBgHistory();
+    await loadSegModel();
+    await initEffectsStream();
+    saveBgSettings();
+  };
+  img.src = dataUrl;
+}
+
 function loadBgImage(input) {
   const file = input.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = async (e) => {
     const dataUrl = e.target.result;
-    const img = new Image();
-    img.onload = async () => {
-      bgImg = img;
-      bgImgDataUrl = dataUrl;
-      document.getElementById('bg-image').classList.add('selected');
-      ['none','blur','color'].forEach(m => document.getElementById('bg-' + m).classList.remove('selected'));
-      bgMode = 'image';
-      document.getElementById('color-picker-row').style.display = 'none';
-      await loadSegModel();
-      await initEffectsStream();
-      saveBgSettings();
-      notify('背景画像を設定しました');
-    };
-    img.src = dataUrl;
+    addToBgHistory(dataUrl);
+    await applyBgFromHistory(dataUrl);
+    notify('背景画像を設定しました');
   };
   reader.readAsDataURL(file);
 }
@@ -1553,6 +1591,7 @@ function saveBgSettings() {
 }
 
 function loadBgSettings() {
+  renderBgHistory();
   const bgKey = myEmail || myName;
   if (!bgKey) return;
   const raw = localStorage.getItem('meet_bg_' + bgKey);
@@ -1574,6 +1613,7 @@ function loadBgSettings() {
         bgMode = 'image';
         document.getElementById('bg-image')?.classList.add('selected');
         ['none','blur','color'].forEach(m => document.getElementById('bg-' + m)?.classList.remove('selected'));
+        renderBgHistory();
         await loadSegModel();
         await initEffectsStream();
       };
