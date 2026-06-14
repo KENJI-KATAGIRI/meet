@@ -347,7 +347,7 @@ app.post('/api/b/:slug/book', async (req, res) => {
   if (!user) return res.status(404).json({ error: 'not found' });
 
   const { booker_name, booker_email, start_time, end_time, purpose } = req.body;
-  if (db.prepare('SELECT id FROM bookings WHERE user_id=? AND start_time=?').get(user.id, start_time))
+  if (db.prepare('SELECT id FROM bookings WHERE user_id=? AND start_time=? AND (cancelled IS NULL OR cancelled=0)').get(user.id, start_time))
     return res.status(409).json({ error: 'この時間はすでに予約されています' });
 
   const meetRoom = crypto.randomBytes(4).toString('hex');
