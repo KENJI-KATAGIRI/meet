@@ -1264,11 +1264,11 @@ function onMpResults(result) {
 
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
     const person = 1.0 - bgData[i];
-    // ゆるめのsmoothstep（髪・肌の境界を広めに拾う）
-    const t = Math.max(0, Math.min(1, (person - 0.25) / 0.5));
+    // 境界を広めに拾う（下限0.15、遷移幅0.6）
+    const t = Math.max(0, Math.min(1, (person - 0.15) / 0.6));
     const stepped = t * t * (3 - 2 * t);
-    // 非対称EMA: 上昇は速く、減衰はゆっくり（ちらつき防止）
-    const alpha = stepped > prevMaskData[i] ? 0.5 : 0.75;
+    // 上昇はほぼ即時（alpha=0.05）、減衰はゆっくり（ちらつき防止）
+    const alpha = stepped > prevMaskData[i] ? 0.05 : 0.65;
     prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
     const out = Math.round(prevMaskData[i] * 255);
     maskBuf[j] = maskBuf[j+1] = maskBuf[j+2] = maskBuf[j+3] = out;
@@ -1295,7 +1295,7 @@ function drawWithMask(w, h) {
   // マスクを destination-in で合成：ぼかしで髪の境界をなめらかに
   personCtx.globalCompositeOperation = 'destination-in';
   // マスクを外側に拡張（dilation）してから小さいblurで境界をなめらかに
-  const d = 8;
+  const d = 14;
   personCtx.filter = 'blur(2px)';
   personCtx.drawImage(maskCanvas2, -d, -d, w + d * 2, h + d * 2);
   personCtx.filter = 'none';
