@@ -1352,7 +1352,7 @@ app.get('/api/facility/call-records', requireAuth, (req, res) => {
   if (member) { sql += ' AND member_name LIKE ?'; params.push('%' + member + '%'); }
   sql += ' ORDER BY created_at DESC LIMIT 200';
   const rows = db.prepare(sql).all(...params);
-  res.json(rows);
+  res.json({ records: rows });
 });
 
 // 面談記録の要約CSV
@@ -1394,7 +1394,7 @@ app.get('/api/admin/users', (req, res) => {
   const { secret } = req.query;
   if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
   const rows = db.prepare('SELECT id, name, email, ui_mode, facility_id FROM users ORDER BY id DESC').all();
-  res.json(rows);
+  res.json({ records: rows });
 });
 
 // ─────────────────────────────────────────────────────────────────

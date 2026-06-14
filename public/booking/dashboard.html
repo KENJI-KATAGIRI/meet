@@ -102,6 +102,20 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
 .toast{position:fixed;bottom:24px;right:24px;background:#2a2a4a;border:1px solid #3a3a5a;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 .toast.show{opacity:1}
 @media(max-width:640px){.grid-2{grid-template-columns:1fr}.dow-grid{grid-template-columns:repeat(4,1fr)}.booking-date{display:none}}
+.records-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.records-filter select,.records-filter input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:7px 10px;font-size:13px}
+.records-filter input{width:160px}
+.rec-row{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden}
+.rec-head{padding:11px 14px;cursor:pointer;transition:background .15s}
+.rec-head:hover{background:rgba(255,255,255,.04)}
+.rec-meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px;align-items:center}
+.rec-tag{font-size:11px;background:rgba(255,255,255,.08);border-radius:4px;padding:2px 7px;color:var(--muted)}
+.rec-date{font-size:12px;color:var(--muted)}
+.rec-name{font-size:13px;font-weight:600}
+.rec-preview{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px}
+.rec-body{display:none;padding:0 14px 14px;border-top:1px solid var(--border)}
+.rec-body.open{display:block}
+.rec-full{font-size:13px;line-height:1.75;white-space:pre-wrap;margin-top:10px;background:rgba(255,255,255,.03);border-radius:8px;padding:12px}
 </style>
 </head>
 <body>
@@ -189,6 +203,27 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
           <button class="btn btn-secondary btn-sm" onclick="addLocation()">＋ 追加</button>
         </div>
       </details>
+    </div>
+  </div>
+
+  <!-- 面談記録一覧（welfare mode のみ） -->
+  <div id="call-records-section" style="margin-bottom:20px;display:none">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">&#x1F4CB; 面談記録一覧</div>
+        <a id="records-csv-btn" href="/api/facility/call-records/csv" class="btn btn-secondary btn-sm">&#x1F4E5; CSV</a>
+      </div>
+      <div class="records-filter">
+        <select id="rec-filter-system" onchange="loadCallRecords()">
+          <option value="">全業態</option>
+          <option value="houdei">放課後等デイ</option>
+          <option value="houmon">訪問介護</option>
+          <option value="shuro">就労継続支援</option>
+          <option value="kaigo">介護グループホーム</option>
+        </select>
+        <input id="rec-filter-member" placeholder="対象者名で絞込" oninput="recDebounce()">
+      </div>
+      <div id="records-list"><p style="font-size:13px;color:var(--muted);padding:8px 0">読み込み中…</p></div>
     </div>
   </div>
 
@@ -538,10 +573,13 @@ async function loadFacilityStatus(me) {
       renderLocations(r.locations);
 
       window._facilityData = r;
+      document.getElementById('call-records-section').style.display = '';
+      await loadCallRecords();
     } else {
       // 個人プラン表示
       document.getElementById('plan-card').style.display = '';
       document.getElementById('facility-card').style.display = 'none';
+      document.getElementById('call-records-section').style.display = 'none';
       const planR = await fetch('/api/my-plan').then(r => r.json());
       const badge = document.getElementById('plan-badge');
       if (planR.plan === 'paid') {
@@ -631,6 +669,70 @@ async function startUpgrade() {
     toast('エラー: ' + (r.error || '不明なエラー'));
   } catch(e) { toast('通信エラーが発生しました'); }
   btn.disabled = false; btn.textContent = '🚀 有料プランにアップグレード（¥980/月〜）';
+}
+
+let _recDebounceTimer = null;
+function recDebounce() {
+  clearTimeout(_recDebounceTimer);
+  _recDebounceTimer = setTimeout(loadCallRecords, 400);
+}
+
+async function loadCallRecords() {
+  const sys = document.getElementById('rec-filter-system')?.value || '';
+  const member = (document.getElementById('rec-filter-member')?.value || '').trim();
+  const params = new URLSearchParams();
+  if (sys) params.set('system', sys);
+  if (member) params.set('member', member);
+  const qs = params.toString();
+  const csvBtn = document.getElementById('records-csv-btn');
+  if (csvBtn) csvBtn.href = '/api/facility/call-records/csv' + (qs ? '?' + qs : '');
+  const el = document.getElementById('records-list');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/facility/call-records' + (qs ? '?' + qs : '')).then(r => r.json());
+    renderCallRecords(r.records || []);
+  } catch(e) {
+    el.innerHTML = '<p style="font-size:13px;color:#f87171;padding:8px 0">読み込みエラー</p>';
+  }
+}
+
+const SYS_LABELS = { houdei:'放課後等デイ', houmon:'訪問介護', shuro:'就労継続支援', kaigo:'介護グループホーム' };
+
+function renderCallRecords(records) {
+  const el = document.getElementById('records-list');
+  if (!records.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">&#x1F4C2;</div>面談記録がありません</div>';
+    return;
+  }
+  el.innerHTML = records.map(function(rec, i) {
+    const date = (rec.interview_date || rec.created_at || '').substring(0, 10) || '—';
+    const sysLabel = SYS_LABELS[rec.welfare_system] || rec.welfare_system || '—';
+    const fullText = rec.summary_text || '';
+    const preview = fullText.replace(/\n/g, ' ').substring(0, 80) + (fullText.length > 80 ? '…' : '');
+    return '<div class="rec-row">' +
+      '<div class="rec-head" onclick="toggleRecord(' + i + ')">' +
+        '<div class="rec-meta">' +
+          '<span class="rec-tag">' + escHtml(sysLabel) + '</span>' +
+          '<span class="rec-tag">' + escHtml(rec.record_type || '—') + '</span>' +
+          '<span class="rec-date">' + date + '</span>' +
+        '</div>' +
+        '<div class="rec-name">&#x1F464; ' + escHtml(rec.member_name || '未記入') + '　担当: ' + escHtml(rec.staff_name || '—') + '</div>' +
+        '<div class="rec-preview">' + escHtml(preview) + '</div>' +
+      '</div>' +
+      '<div class="rec-body" id="rec-body-' + i + '">' +
+        '<div class="rec-full">' + escHtml(fullText || '（要約なし）') + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function toggleRecord(i) {
+  var body = document.getElementById('rec-body-' + i);
+  if (body) body.classList.toggle('open');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function toast(msg) {
