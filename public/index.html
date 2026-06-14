@@ -1321,11 +1321,11 @@ async function loadSegModel() {
   try {
     // MediaPipe Tasks Vision（新API）を動的ロード
     const visionModule = await import(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs'
+      '/mediapipe/vision_bundle.mjs'
     );
     const { ImageSegmenter, FilesetResolver } = visionModule;
     const filesetResolver = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm'
+      '/mediapipe/wasm'
     );
     // selfie_multiclass: 髪・顔・肌・服を個別に分類→高精度マスク
     mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, {
