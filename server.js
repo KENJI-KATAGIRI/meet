@@ -615,6 +615,29 @@ ${transcript}
   }
 });
 
+// ---- Public: room info (time check) ----
+app.get('/api/room-info', (req, res) => {
+  const room = req.query.room;
+  if (!room) return res.json({ found: false });
+  const booking = db.prepare(
+    'SELECT b.booker_name, b.start_time, b.end_time, u.name as host_name FROM bookings b JOIN users u ON b.user_id = u.id WHERE b.meet_room=?'
+  ).get(room);
+  if (!booking) return res.json({ found: false });
+  const now = new Date();
+  const start = new Date(booking.start_time);
+  const end = new Date(booking.end_time);
+  res.json({
+    found: true,
+    booker_name: booking.booker_name,
+    host_name: booking.host_name,
+    start_time: booking.start_time,
+    end_time: booking.end_time,
+    is_on_time: now >= start && now <= end,
+    is_too_early: now < start,
+    is_too_late: now > end
+  });
+});
+
 // ---- Pages ----
 app.get('/b/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'book.html')));
 app.get('/booking/dashboard', (req, res) => {
