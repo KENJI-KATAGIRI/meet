@@ -1519,12 +1519,8 @@ function applyBeautyToCanvas(src, w, h, sx=0, sy=0, sw=null, sh=null) {
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   gl.bindVertexArray(null);
 
-  // WebGL出力をbeautyCanvasにコピー（WebGLはY軸が逆なのでY反転して貼る）
-  beautyCtx.save();
-  beautyCtx.translate(0, h);
-  beautyCtx.scale(1, -1);
+  // WebGL出力をbeautyCanvasにコピー（UNPACK_FLIP_Y_WEBGLで既に補正済み・追加flipは不要）
   beautyCtx.drawImage(beautyGlCanvas, 0, 0, w, h);
-  beautyCtx.restore();
 }
 
 function replaceTracksInPeers() {
