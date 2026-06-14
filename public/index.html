@@ -367,7 +367,7 @@ let mpSelfie = null, mpReady = false, mpSending = false, mpModelLoading = false;
 let maskCanvas2 = null, maskCtx2 = null, maskBuf = null;
 let maskReadCtx = null;
 let prevMaskData = null;
-const EMA_ALPHA = 0.4;
+const EMA_ALPHA = 0.15;
 let bgMode = 'none';
 let bgColorVal = '#1a1a3e';
 let bgImg = null;
@@ -1260,7 +1260,7 @@ function onMpResults(results) {
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
     const raw = Math.max(d[j], d[j+3]) / 255;
     prevMaskData[i] = EMA_ALPHA * prevMaskData[i] + (1 - EMA_ALPHA) * raw;
-    const sharpened = 1 / (1 + Math.exp(-14 * (prevMaskData[i] - 0.38)));
+    const sharpened = 1 / (1 + Math.exp(-14 * (prevMaskData[i] - 0.33)));
     const out = Math.round(sharpened * 255);
     maskBuf[j] = maskBuf[j+1] = maskBuf[j+2] = maskBuf[j+3] = out;
   }
