@@ -428,18 +428,20 @@ async function joinRoom() {
     rawStream = await navigator.mediaDevices.getUserMedia({
       video: isMobile
         ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
-        : { width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: 16/9 },
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        sampleRate: 48000,
-        channelCount: 1,
-        latency: 0
-      }
+        : { width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     });
   } catch(e) {
-    errEl.textContent = 'カメラ・マイクへのアクセスを許可してください'; return;
+    if (e.name === 'NotReadableError' || e.name === 'TrackStartError') {
+      errEl.textContent = 'カメラまたはマイクが他のアプリで使用中です。他のアプリを閉じてから再度お試しください。';
+    } else if (e.name === 'NotFoundError') {
+      errEl.textContent = 'カメラまたはマイクが見つかりません。接続を確認してください。';
+    } else if (e.name === 'OverconstrainedError') {
+      errEl.textContent = 'カメラの設定に問題があります。ページを再読み込みしてお試しください。';
+    } else {
+      errEl.textContent = `エラー: ${e.name} — カメラ・マイクの許可を確認してください。`;
+    }
+    return;
   }
   if (isMobile) {
     const track = rawStream.getVideoTracks()[0];
