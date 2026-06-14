@@ -1424,6 +1424,7 @@ app.get('/api/room-info', (req, res) => {
 app.get('/cancel', (req, res) => res.sendFile(path.join(__dirname, 'public', 'cancel.html')));
 app.get('/b/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'book.html')));
 app.get('/record', (req, res) => res.sendFile(path.join(__dirname, 'public', 'record.html')));
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/booking/dashboard', (req, res) => {
   if (!req.session.userId) return res.redirect('/auth/google');
   res.sendFile(path.join(__dirname, 'public', 'booking', 'dashboard.html'));
@@ -1703,6 +1704,23 @@ app.get('/api/admin/users', (req, res) => {
   if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
   const rows = db.prepare('SELECT id, name, email, ui_mode, facility_id FROM users ORDER BY id DESC').all();
   res.json({ records: rows });
+});
+
+app.get('/api/admin/drafts', (req, res) => {
+  const { secret } = req.query;
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
+  const rows = db.prepare("SELECT * FROM nm_call_records WHERE status='draft' ORDER BY created_at DESC").all();
+  res.json({ records: rows });
+});
+
+app.patch('/api/admin/confirm-draft/:id', express.json(), (req, res) => {
+  const { secret } = req.body;
+  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
+  const id = parseInt(req.params.id);
+  const rec = db.prepare("SELECT * FROM nm_call_records WHERE id=? AND status='draft'").get(id);
+  if (!rec) return res.status(404).json({ error: 'draft not found' });
+  db.prepare("UPDATE nm_call_records SET status='confirmed' WHERE id=?").run(id);
+  res.json({ ok: true });
 });
 
 // ─────────────────────────────────────────────────────────────────

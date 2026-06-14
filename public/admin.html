@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NiceMeet 管理者パネル</title>
+  <style>
+    :root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#252540;--accent:#6c63ff;--success:#4ade80;--danger:#f87171;--warn:#fbbf24;--muted:#888;--border:#2a2a4a}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:#fff;min-height:100vh}
+    button,input,select{font-family:inherit;outline:none}
+
+    /* Header */
+    .hdr{background:var(--bg2);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px}
+    .hdr-icon{font-size:20px}
+    .hdr-title{font-size:16px;font-weight:700}
+    .hdr-badge{font-size:11px;background:rgba(239,68,68,.2);color:#f87171;border:1px solid rgba(239,68,68,.4);padding:3px 9px;border-radius:10px;font-weight:600}
+
+    /* Auth screen */
+    #screen-auth{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 53px)}
+    .auth-box{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:32px;width:min(400px,90vw)}
+    .auth-box h2{font-size:17px;margin-bottom:6px}
+    .auth-box p{font-size:13px;color:var(--muted);margin-bottom:20px}
+    .auth-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:9px;color:#fff;padding:12px 14px;font-size:15px;margin-bottom:12px;transition:border .15s}
+    .auth-input:focus{border-color:var(--accent)}
+    .auth-btn{width:100%;padding:13px;background:var(--accent);border:none;border-radius:9px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .15s}
+    .auth-btn:hover{opacity:.85}
+    .auth-err{color:var(--danger);font-size:13px;margin-top:8px;display:none}
+
+    /* Main panel */
+    #screen-main{display:none;padding:24px}
+    .panel-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+    .panel-hdr h2{font-size:17px;font-weight:700}
+    .search-box{background:var(--bg3);border:1px solid var(--border);border-radius:9px;color:#fff;padding:9px 13px;font-size:13px;width:220px}
+    .search-box::placeholder{color:var(--muted)}
+
+    /* Stats bar */
+    .stats-bar{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+    .stat-chip{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:12px;color:var(--muted)}
+    .stat-chip strong{display:block;font-size:20px;color:#fff;font-weight:700;margin-bottom:1px}
+
+    /* Table */
+    .tbl-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+    table{width:100%;border-collapse:collapse}
+    thead th{padding:11px 14px;font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);text-align:left;background:rgba(255,255,255,.02)}
+    tbody tr{border-bottom:1px solid var(--border);transition:background .12s}
+    tbody tr:last-child{border-bottom:none}
+    tbody tr:hover{background:rgba(255,255,255,.03)}
+    td{padding:11px 14px;font-size:13px;vertical-align:middle}
+    .td-email{color:var(--muted);font-size:12px}
+    .td-name{font-weight:600}
+
+    /* Mode badge */
+    .mode-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700}
+    .mode-badge.welfare{background:rgba(108,99,255,.2);color:#a78bfa;border:1px solid rgba(108,99,255,.4)}
+    .mode-badge.simple{background:rgba(136,136,136,.12);color:#888;border:1px solid #333}
+
+    /* Facility badge */
+    .fac-badge{font-size:11px;color:var(--muted)}
+    .fac-badge.has-fac{color:#4ade80}
+
+    /* Toggle button */
+    .btn-toggle{padding:5px 13px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+    .btn-toggle.to-welfare{background:rgba(108,99,255,.2);color:#a78bfa;border:1px solid rgba(108,99,255,.4)}
+    .btn-toggle.to-welfare:hover{background:rgba(108,99,255,.35)}
+    .btn-toggle.to-simple{background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3)}
+    .btn-toggle.to-simple:hover{background:rgba(239,68,68,.25)}
+
+    /* Draft records panel */
+    .section-title{font-size:13px;font-weight:700;margin:28px 0 12px;display:flex;align-items:center;gap:8px}
+    .draft-row{background:var(--bg2);border:1px solid rgba(251,191,36,.3);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .draft-info{font-size:13px}
+    .draft-info strong{display:block;margin-bottom:2px}
+    .draft-info span{font-size:12px;color:var(--muted)}
+    .btn-sm{padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:none}
+    .btn-confirm-sm{background:#4ade80;color:#0f1a0f}
+    .btn-confirm-sm:hover{opacity:.85}
+
+    /* Logout */
+    .btn-logout{padding:7px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer}
+    .btn-logout:hover{color:#fff;border-color:#555}
+
+    /* Toast */
+    .toast{position:fixed;bottom:24px;right:24px;background:#2a2a4a;border:1px solid #3a3a5a;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:opacity .25s;pointer-events:none;z-index:999}
+    .toast.show{opacity:1}
+
+    /* Empty */
+    .empty{padding:32px;text-align:center;color:var(--muted);font-size:13px}
+
+    @media(max-width:640px){
+      #screen-main{padding:14px}
+      .search-box{width:100%}
+      table{font-size:12px}
+      td,thead th{padding:9px 10px}
+    }
+  </style>
+</head>
+<body>
+<div class="hdr">
+  <span class="hdr-icon">&#x1F6E1;&#xFE0F;</span>
+  <span class="hdr-title">NiceMeet 管理者パネル</span>
+  <span class="hdr-badge">ADMIN ONLY</span>
+  <button class="btn-logout" id="btn-logout" onclick="logout()" style="margin-left:auto;display:none">ログアウト</button>
+</div>
+
+<!-- Auth -->
+<div id="screen-auth">
+  <div class="auth-box">
+    <h2>&#x1F510; 管理者認証</h2>
+    <p>このページは管理者専用です。シークレットキーを入力してください。</p>
+    <input class="auth-input" type="password" id="secret-input" placeholder="管理者シークレット" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="auth-btn" onclick="doLogin()">ログイン</button>
+    <div class="auth-err" id="auth-err">シークレットが正しくありません</div>
+  </div>
+</div>
+
+<!-- Main -->
+<div id="screen-main">
+  <div class="panel-hdr">
+    <h2>&#x1F464; ユーザー管理</h2>
+    <input class="search-box" type="text" id="search-input" placeholder="名前・メールで絞込" oninput="renderTable()">
+  </div>
+
+  <div class="stats-bar" id="stats-bar"></div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>名前 / メール</th>
+          <th>モード</th>
+          <th>施設</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="user-tbody"></tbody>
+    </table>
+    <div class="empty" id="tbl-empty" style="display:none">ユーザーがいません</div>
+  </div>
+
+  <div class="section-title" id="drafts-title" style="display:none">&#x26A0;&#xFE0F; 未確定の対面録音記録</div>
+  <div id="drafts-list"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let SECRET = '';
+let allUsers = [];
+
+// ---- Auth ----
+async function doLogin() {
+  const s = document.getElementById('secret-input').value.trim();
+  if (!s) return;
+  const r = await fetch('/api/admin/users?secret=' + encodeURIComponent(s)).then(r => r.json());
+  if (r.error) {
+    document.getElementById('auth-err').style.display = 'block';
+    return;
+  }
+  SECRET = s;
+  sessionStorage.setItem('admin_secret', s);
+  allUsers = r.records || [];
+  showMain();
+}
+
+function logout() {
+  SECRET = '';
+  sessionStorage.removeItem('admin_secret');
+  document.getElementById('screen-auth').style.display = 'flex';
+  document.getElementById('screen-main').style.display = 'none';
+  document.getElementById('btn-logout').style.display = 'none';
+  document.getElementById('secret-input').value = '';
+}
+
+function showMain() {
+  document.getElementById('screen-auth').style.display = 'none';
+  document.getElementById('screen-main').style.display = 'block';
+  document.getElementById('btn-logout').style.display = '';
+  renderStats();
+  renderTable();
+  loadDrafts();
+}
+
+// ---- Stats ----
+function renderStats() {
+  const total = allUsers.length;
+  const welfare = allUsers.filter(u => u.ui_mode === 'welfare').length;
+  const withFac = allUsers.filter(u => u.facility_id).length;
+  document.getElementById('stats-bar').innerHTML =
+    stat('総ユーザー', total) +
+    stat('Welfareモード', welfare, '#a78bfa') +
+    stat('施設登録済み', withFac, '#4ade80');
+}
+function stat(label, val, color) {
+  return `<div class="stat-chip"><strong style="${color?'color:'+color:''}">${val}</strong>${label}</div>`;
+}
+
+// ---- Table ----
+function renderTable() {
+  const q = (document.getElementById('search-input').value || '').toLowerCase();
+  const users = allUsers.filter(u =>
+    !q || (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q)
+  );
+  const tbody = document.getElementById('user-tbody');
+  const empty = document.getElementById('tbl-empty');
+  if (!users.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
+  empty.style.display = 'none';
+  tbody.innerHTML = users.map(u => {
+    const isWelfare = u.ui_mode === 'welfare';
+    const modeBadge = isWelfare
+      ? '<span class="mode-badge welfare">&#x1F3E5; WELFARE</span>'
+      : '<span class="mode-badge simple">&#x1F4BB; SIMPLE</span>';
+    const facBadge = u.facility_id
+      ? `<span class="fac-badge has-fac">&#x2713; 施設ID:${u.facility_id}</span>`
+      : '<span class="fac-badge">未登録</span>';
+    const toggleBtn = isWelfare
+      ? `<button class="btn-toggle to-simple" onclick="setMode(${u.id},'${escHtml(u.email)}','simple',this)">Simpleに変更</button>`
+      : `<button class="btn-toggle to-welfare" onclick="setMode(${u.id},'${escHtml(u.email)}','welfare',this)">Welfareに変更</button>`;
+    return `<tr id="user-row-${u.id}">
+      <td style="color:var(--muted);font-size:12px">#${u.id}</td>
+      <td><div class="td-name">${escHtml(u.name||'（名前なし）')}</div><div class="td-email">${escHtml(u.email||'')}</div></td>
+      <td>${modeBadge}</td>
+      <td>${facBadge}</td>
+      <td>${toggleBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function setMode(userId, email, mode, btn) {
+  btn.disabled = true;
+  btn.textContent = '変更中...';
+  const r = await fetch('/api/admin/set-mode', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ secret: SECRET, email, mode })
+  }).then(r => r.json());
+  if (r.ok) {
+    const u = allUsers.find(u => u.id === userId);
+    if (u) u.ui_mode = mode;
+    renderStats();
+    renderTable();
+    toast(`✓ ${email} を ${mode} に変更しました`);
+  } else {
+    btn.disabled = false;
+    btn.textContent = mode === 'welfare' ? 'Welfareに変更' : 'Simpleに変更';
+    toast('エラー: ' + (r.error || ''));
+  }
+}
+
+// ---- Draft records ----
+async function loadDrafts() {
+  // Check each welfare user's drafts via admin endpoint
+  const r = await fetch('/api/admin/drafts?secret=' + encodeURIComponent(SECRET)).then(r => r.json()).catch(() => null);
+  if (!r || !r.records) return;
+  const drafts = r.records;
+  const titleEl = document.getElementById('drafts-title');
+  const listEl = document.getElementById('drafts-list');
+  if (!drafts.length) { titleEl.style.display = 'none'; return; }
+  titleEl.style.display = '';
+  titleEl.textContent = `⚠️ 未確定の対面録音記録（${drafts.length}件）`;
+  listEl.innerHTML = drafts.map(d => {
+    const date = (d.interview_date || d.created_at || '').substring(0, 10);
+    const sys = {houdei:'放課後等デイ',houmon:'訪問介護',shuro:'就労継続支援',kaigo:'GH'}[d.welfare_system] || d.welfare_system;
+    return `<div class="draft-row">
+      <div class="draft-info">
+        <strong>&#x1F464; ${escHtml(d.member_name||'未記入')} — ${escHtml(d.record_type||'')}</strong>
+        <span>${sys} / ${date} / 担当: ${escHtml(d.staff_name||'—')}</span>
+      </div>
+      <button class="btn-sm btn-confirm-sm" onclick="adminConfirmDraft(${d.id},this)">確定する</button>
+    </div>`;
+  }).join('');
+}
+
+async function adminConfirmDraft(id, btn) {
+  btn.disabled = true; btn.textContent = '処理中...';
+  const r = await fetch('/api/admin/confirm-draft/' + id, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ secret: SECRET })
+  }).then(r => r.json()).catch(() => ({ error: 'network' }));
+  if (r.ok) { toast('✓ 記録を確定しました'); btn.closest('.draft-row').remove(); }
+  else { btn.disabled = false; btn.textContent = '確定する'; toast('エラー: ' + (r.error||'')); }
+}
+
+// ---- Utils ----
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// Auto-restore session
+const saved = sessionStorage.getItem('admin_secret');
+if (saved) {
+  document.getElementById('secret-input').value = saved;
+  doLogin();
+}
+</script>
+</body>
+</html>
