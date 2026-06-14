@@ -1241,12 +1241,12 @@ function runInference() {
 }
 
 function onMpResults(result) {
-  // selfie_multiclass: index 0 = background confidence, 1-5 = person classes
-  const confidenceMask = result.confidenceMasks?.[0];
-  if (!confidenceMask) { result.close?.(); mpSending = false; return; }
+  // selfie_multiclass: 0=bg, 1=hair, 2=body-skin, 3=face-skin, 4=clothes, 5=others
+  const masks = result.confidenceMasks;
+  if (!masks || masks.length < 2) { result.close?.(); mpSending = false; return; }
 
-  const w = confidenceMask.width;
-  const h = confidenceMask.height;
+  const w = masks[0].width;
+  const h = masks[0].height;
 
   if (!maskCanvas2 || maskCanvas2.width !== w || maskCanvas2.height !== h) {
     maskCanvas2 = document.createElement('canvas');
@@ -1259,15 +1259,18 @@ function onMpResults(result) {
     prevMaskData = new Float32Array(w * h);
   }
 
-  // index 0 = background → person = 1 - background
-  const bgData = confidenceMask.getAsFloat32Array();
+  // クラス1-4（髪・肌・服）を合算。5=othersは椅子等の誤検出を含むため除外
+  const d1 = masks[1].getAsFloat32Array(); // hair
+  const d2 = masks[2].getAsFloat32Array(); // body-skin
+  const d3 = masks[3].getAsFloat32Array(); // face-skin
+  const d4 = masks.length > 4 ? masks[4].getAsFloat32Array() : null; // clothes
 
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
-    const person = 1.0 - bgData[i];
-    // 境界を広めに拾う（下限0.15、遷移幅0.6）
-    const t = Math.max(0, Math.min(1, (person - 0.15) / 0.6));
+    const person = Math.min(1.0, d1[i] + d2[i] + d3[i] + (d4 ? d4[i] : 0));
+    // 下限0.20で椅子等の低信頼誤検出を除外、遷移幅0.55
+    const t = Math.max(0, Math.min(1, (person - 0.20) / 0.55));
     const stepped = t * t * (3 - 2 * t);
-    // 上昇はほぼ即時（alpha=0.05）、減衰はゆっくり（ちらつき防止）
+    // 上昇はほぼ即時、減衰はゆっくり（ちらつき防止）
     const alpha = stepped > prevMaskData[i] ? 0.05 : 0.65;
     prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
     const out = Math.round(prevMaskData[i] * 255);
@@ -1295,7 +1298,7 @@ function drawWithMask(w, h) {
   // マスクを destination-in で合成：ぼかしで髪の境界をなめらかに
   personCtx.globalCompositeOperation = 'destination-in';
   // マスクを外側に拡張（dilation）してから小さいblurで境界をなめらかに
-  const d = 14;
+  const d = 30;
   personCtx.filter = 'blur(2px)';
   personCtx.drawImage(maskCanvas2, -d, -d, w + d * 2, h + d * 2);
   personCtx.filter = 'none';
