@@ -746,8 +746,7 @@ function toggleRecord(i) {
 }
 
 async function confirmFromDash(id, i) {
-  if (!confirm('この記録を確定しますか？
-確定後は正式記録として扱われます。')) return;
+  if (!confirm('この記録を確定しますか？確定後は正式記録として扱われます。')) return;
   var fullEl = document.getElementById('rec-full-' + i);
   var summary = fullEl ? fullEl.textContent : '';
   try {
