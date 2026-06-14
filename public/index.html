@@ -607,6 +607,8 @@ let brSetupRooms = [], brAssignments = {}, brParticipants = [], brNumRooms = 2;
 let coHostIds = new Set();
 let audioRecorder = null, audioSessionId = null, audioChunkIndex = 0;
 const pendingUploads = new Set();
+let mixAudioCtx = null, mixDest = null;
+const peerAudioSources = {};
 
 async function joinRoom() {
   const name = document.getElementById('input-name').value.trim();
@@ -822,6 +824,18 @@ function createPeer(peerId, peerName, isInitiator) {
   peers[peerId] = pc; peerNames[peerId] = peerName; peerInitiator[peerId] = isInitiator;
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
   pc.ontrack = event => {
+    if (event.track.kind === 'audio') {
+      // 録音ミックスに追加（録音開始済みの場合）
+      if (mixAudioCtx && mixDest && !peerAudioSources[peerId]) {
+        try {
+          const src = mixAudioCtx.createMediaStreamSource(new MediaStream([event.track]));
+          src.connect(mixDest);
+          peerAudioSources[peerId] = src;
+          console.log('[audio-mix] added peer audio', peerId);
+        } catch(e) { console.error('[audio-mix] ontrack error', e); }
+      }
+      return;
+    }
     if (event.track.kind !== 'video') return;
     const stream = event.streams[0] || new MediaStream([event.track]);
     console.log('[ontrack] peerId=' + peerId + ' streamId=' + stream.id + ' streams=' + event.streams.length);
@@ -842,6 +856,7 @@ function createPeer(peerId, peerName, isInitiator) {
   };
   let disconnectTimer = null;
   function removePeer(id, name) {
+    if (peerAudioSources[id]) { try { peerAudioSources[id].disconnect(); } catch(e) {} delete peerAudioSources[id]; }
     if (peers[id]) { try { peers[id].close(); } catch(e) {} delete peers[id]; }
     const t = document.getElementById('tile-' + id); if (t) t.remove();
     const st = document.getElementById('tile-screen-' + id); if (st) st.remove();
@@ -1509,12 +1524,33 @@ function startAutoAudioRecording() {
   notify('🔴 録音開始：退出時に文字起こし・要約をメールでお届けします', 8000);
   const recEl = document.getElementById('rec-indicator');
   if (recEl) recEl.classList.add('active');
-  const audioTracks = rawStream.getAudioTracks();
-  console.log('[audio] tracks:', audioTracks.length, audioTracks.map(t => t.label + ' enabled=' + t.enabled + ' readyState=' + t.readyState).join(', '));
-  const audioStream = new MediaStream(audioTracks);
+
+  // 全参加者の音声をミックスして録音
+  mixAudioCtx = new AudioContext();
+  mixDest = mixAudioCtx.createMediaStreamDestination();
+  // 自分のマイクを追加
+  const localTracks = rawStream.getAudioTracks();
+  console.log('[audio] local tracks:', localTracks.length, localTracks.map(t => t.label + ' enabled=' + t.enabled).join(', '));
+  if (localTracks.length > 0) {
+    mixAudioCtx.createMediaStreamSource(new MediaStream(localTracks)).connect(mixDest);
+  }
+  // 既に接続中の参加者の音声を追加
+  for (const [pid, pc] of Object.entries(peers)) {
+    for (const receiver of pc.getReceivers()) {
+      if (receiver.track && receiver.track.kind === 'audio' && receiver.track.readyState === 'live') {
+        if (!peerAudioSources[pid]) {
+          const src = mixAudioCtx.createMediaStreamSource(new MediaStream([receiver.track]));
+          src.connect(mixDest);
+          peerAudioSources[pid] = src;
+          console.log('[audio-mix] added existing peer', pid);
+        }
+      }
+    }
+  }
+
   const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg', 'audio/mp4'].find(m => MediaRecorder.isTypeSupported(m)) || '';
   const recOpts = mimeType ? { mimeType, audioBitsPerSecond: 128000 } : { audioBitsPerSecond: 128000 };
-  audioRecorder = new MediaRecorder(audioStream, recOpts);
+  audioRecorder = new MediaRecorder(mixDest.stream, recOpts);
   audioRecorder.ondataavailable = (e) => {
     if (e.data.size < 50) return;
     const actualType = e.data.type || mimeType || 'audio/webm';
@@ -1540,6 +1576,13 @@ async function stopAndFinalizeAudio() {
     await new Promise(resolve => { audioRecorder.onstop = resolve; audioRecorder.stop(); });
   }
   await Promise.race([Promise.all([...pendingUploads]), new Promise(r => setTimeout(r, 5000))]);
+  // AudioContextをクリーンアップ
+  Object.keys(peerAudioSources).forEach(pid => {
+    try { peerAudioSources[pid].disconnect(); } catch(e) {}
+    delete peerAudioSources[pid];
+  });
+  if (mixAudioCtx) { mixAudioCtx.close().catch(() => {}); mixAudioCtx = null; mixDest = null; }
+  audioRecorder = null;
   const form = new FormData();
   form.append('sessionId', audioSessionId);
   form.append('totalChunks', String(audioChunkIndex));
