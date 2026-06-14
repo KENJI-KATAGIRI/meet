@@ -20,7 +20,7 @@ const mailer = nodemailer.createTransport({
 
 async function sendMail(to, subject, text) {
   try {
-    await mailer.sendMail({ from: `"Meet予約システム" <${process.env.GMAIL_USER}>`, to, subject, text });
+    await mailer.sendMail({ from: `"NiceMeet" <${process.env.GMAIL_USER}>`, to, subject, text });
   } catch(e) { console.error('mail error:', e.message); }
 }
 
@@ -585,7 +585,7 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
     fs.unlink(finalPath, () => {});
 
     if (!transcript) {
-      await sendMail(email, '【Meet】会議の文字起こし', '音声が検出されませんでした。');
+      await sendMail(email, '【NiceMeet】会議の文字起こし', '音声が検出されませんでした。');
       return;
     }
 
@@ -598,7 +598,7 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
     });
     const summary = completion.choices[0].message.content;
 
-    await sendMail(email, '【Meet】会議の文字起こし・要約',
+    await sendMail(email, '【NiceMeet】会議の文字起こし・要約',
 `━━━━━━━━━━━━━━━━━━
 【AI要約】
 ━━━━━━━━━━━━━━━━━━
@@ -611,7 +611,7 @@ ${transcript}
 `);
   } catch(e) {
     console.error('audio finalize error:', e.message);
-    sendMail(email, '【Meet】文字起こしエラー', '処理中にエラーが発生しました。').catch(() => {});
+    sendMail(email, '【NiceMeet】文字起こしエラー', '処理中にエラーが発生しました。').catch(() => {});
   }
 });
 
