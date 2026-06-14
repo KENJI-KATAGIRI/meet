@@ -91,6 +91,8 @@ try {
   }
 } catch(e) { console.error('migration error:', e.message); }
 try { db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT'); } catch(e) {}
+try { db.exec('ALTER TABLE bookings ADD COLUMN cancel_token TEXT'); } catch(e) {}
+try { db.exec('ALTER TABLE bookings ADD COLUMN cancelled INTEGER DEFAULT 0'); } catch(e) {}
 
 // パスワードハッシュ
 async function hashPassword(password) {
@@ -350,6 +352,8 @@ app.post('/api/b/:slug/book', async (req, res) => {
 
   const meetRoom = crypto.randomBytes(4).toString('hex');
   const meetUrl = `https://meet.gaiaarts.org/?room=${meetRoom}`;
+  const cancelToken = crypto.randomBytes(16).toString('hex');
+  const cancelUrl = `https://meet.gaiaarts.org/cancel?token=${cancelToken}`;
 
   let googleEventId = null;
   try {
@@ -367,8 +371,8 @@ app.post('/api/b/:slug/book', async (req, res) => {
     googleEventId = event.data.id;
   } catch (e) { console.error('calendar insert error:', e.message); }
 
-  db.prepare('INSERT INTO bookings (user_id, booker_name, booker_email, start_time, end_time, purpose, meet_room, google_event_id) VALUES (?,?,?,?,?,?,?,?)')
-    .run(user.id, booker_name, booker_email, start_time, end_time, purpose || '', meetRoom, googleEventId);
+  db.prepare('INSERT INTO bookings (user_id, booker_name, booker_email, start_time, end_time, purpose, meet_room, google_event_id, cancel_token) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(user.id, booker_name, booker_email, start_time, end_time, purpose || '', meetRoom, googleEventId, cancelToken);
 
   // メール送信
   const startDt = new Date(start_time);
@@ -394,6 +398,9 @@ ${meetUrl}
 
 当日は上記URLをクリックするだけで参加できます。
 （ブラウザのみ対応・アプリ不要）
+
+■ 予約をキャンセルする場合
+${cancelUrl}
 
 よろしくお願いします。
 `);
@@ -615,6 +622,72 @@ ${transcript}
   }
 });
 
+// ---- Public: cancel by token ----
+app.get('/api/cancel-info', (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.json({ found: false });
+  const booking = db.prepare(
+    'SELECT b.booker_name, b.start_time, b.end_time, b.cancelled, u.name as host_name FROM bookings b JOIN users u ON b.user_id = u.id WHERE b.cancel_token=?'
+  ).get(token);
+  if (!booking) return res.json({ found: false });
+  res.json({ found: true, ...booking });
+});
+
+app.post('/api/cancel', async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: '無効なリクエストです' });
+  const booking = db.prepare(
+    'SELECT b.*, u.name as host_name, u.email as host_email, u.slug FROM bookings b JOIN users u ON b.user_id = u.id WHERE b.cancel_token=?'
+  ).get(token);
+  if (!booking) return res.status(404).json({ error: '予約が見つかりません' });
+  if (booking.cancelled) return res.status(409).json({ error: 'すでにキャンセル済みです' });
+
+  db.prepare('UPDATE bookings SET cancelled=1 WHERE cancel_token=?').run(token);
+
+  if (booking.google_event_id) {
+    getCalendarClient().events.delete({
+      calendarId: booking.host_email, eventId: booking.google_event_id, sendUpdates: 'all'
+    }).catch(() => {});
+  }
+
+  const startDt = new Date(booking.start_time);
+  const endDt = new Date(booking.end_time);
+  const fmtDate = startDt.toLocaleDateString('ja-JP', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
+  const fmtTime = `${startDt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})} 〜 ${endDt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}`;
+
+  if (booking.booker_email) {
+    await sendMail(booking.booker_email, `【キャンセル完了】${booking.host_name}さんとのミーティング`,
+`${booking.booker_name} 様
+
+以下のミーティングのキャンセルを受け付けました。
+
+━━━━━━━━━━━━━━━━━━
+日時：${fmtDate} ${fmtTime}
+相手：${booking.host_name}
+━━━━━━━━━━━━━━━━━━
+
+再度のご予約はこちらから：
+https://meet.gaiaarts.org/b/${booking.slug}
+
+よろしくお願いします。
+`);
+  }
+
+  await sendMail(booking.host_email, `【キャンセル】${booking.booker_name}さんが予約をキャンセルしました`,
+`${booking.booker_name}さんが予約をキャンセルしました。
+
+━━━━━━━━━━━━━━━━━━
+日時：${fmtDate} ${fmtTime}
+予約者：${booking.booker_name}${booking.booker_email ? ` (${booking.booker_email})` : ''}
+━━━━━━━━━━━━━━━━━━
+
+■ 予約管理
+https://meet.gaiaarts.org/booking/dashboard
+`);
+
+  res.json({ ok: true });
+});
+
 // ---- Public: room info (time check) ----
 app.get('/api/room-info', (req, res) => {
   const room = req.query.room;
@@ -639,6 +712,7 @@ app.get('/api/room-info', (req, res) => {
 });
 
 // ---- Pages ----
+app.get('/cancel', (req, res) => res.sendFile(path.join(__dirname, 'public', 'cancel.html')));
 app.get('/b/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'book.html')));
 app.get('/booking/dashboard', (req, res) => {
   if (!req.session.userId) return res.redirect('/auth/google');
