@@ -118,6 +118,22 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 @keyframes recblink{0%,100%{opacity:1}50%{opacity:.4}}
 #rec-indicator.active{display:flex}
 #notification{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#2a2a4a;padding:10px 20px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:200}
+#free-timer{font-size:12px;font-family:monospace;padding:2px 8px;border-radius:4px;flex-shrink:0;display:none;font-weight:700}
+#free-timer.ok{color:#4ade80;background:#0d2a18}
+#free-timer.warn{color:#fbbf24;background:#2a2200;animation:timerblink .8s infinite}
+#free-timer.end{color:#f87171;background:#2a0a0a;animation:timerblink .4s infinite}
+@keyframes timerblink{0%,100%{opacity:1}50%{opacity:.5}}
+#time-warning-banner{display:none;position:fixed;top:52px;left:50%;transform:translateX(-50%);background:#7a4f00;border:1px solid #fbbf24;color:#fef3c7;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:250;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+#time-limit-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:400;align-items:center;justify-content:center}
+.tlm-box{background:#1e1e3a;border-radius:16px;padding:36px 32px;max-width:380px;width:90%;text-align:center;border:1px solid #3a3a5a}
+.tlm-icon{font-size:48px;margin-bottom:12px}
+.tlm-title{font-size:20px;font-weight:700;margin-bottom:8px}
+.tlm-desc{font-size:14px;color:#aaa;line-height:1.6;margin-bottom:24px}
+.tlm-btn{display:block;width:100%;padding:13px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;border:none;text-decoration:none;margin-bottom:10px;box-sizing:border-box}
+.tlm-btn-upgrade{background:#6c63ff;color:#fff}
+.tlm-btn-upgrade:hover{background:#7b73ff}
+.tlm-btn-close{background:#2a2a4a;color:#aaa;font-size:13px}
+.tlm-btn-close:hover{background:#3a3a5a;color:#fff}
 #notification.show{opacity:1}
 
 /* スマホ用 */
@@ -246,6 +262,7 @@ function copyInappUrl() {
     <div id="top-bar-left">
       <span id="top-room-name"></span>
       <span id="elapsed-time">00:00</span>
+      <span id="free-timer">残り 45:00</span>
       <div id="br-topbar" style="display:none;align-items:center;gap:8px;padding-left:10px;border-left:1px solid #3a3a5a;margin-left:4px">
         <span id="br-room-label" style="font-size:12px;color:#a78bfa;font-weight:600"></span>
         <span id="br-timer-topbar" style="font-size:12px;color:#fbbf24;font-weight:700"></span>
@@ -691,7 +708,7 @@ async function joinRoom() {
   renderBrNumBtns();
   socket = io();
   socket.on('join-error', msg => { alert(msg); location.reload(); });
-  socket.on('room-joined', ({ existingUsers, transcribeMode, isHost: h, isCoHost: c, source }) => {
+  socket.on('room-joined', ({ existingUsers, transcribeMode, isHost: h, isCoHost: c, source, isFreeRoom, roomStartedAt }) => {
     existingUsers.forEach(({ id, name }) => { peerNames[id] = name; createPeer(id, name, true); });
     updateCount();
     if (source !== 'breakout') {
@@ -700,6 +717,7 @@ async function joinRoom() {
       isCoHost = c || false;
       roomTranscribeMode = transcribeMode || 'host_only';
       updateHostUI();
+      if (isFreeRoom && source !== 'breakout') startFreeTimer(roomStartedAt || Date.now());
       if (isHost && myEmail) startAutoAudioRecording();
       else if (!isHost && roomTranscribeMode === 'all') setTimeout(showTranscribeModal, 800);
     }
@@ -829,6 +847,19 @@ async function joinRoom() {
   });
   socket.on('breakout:ended', ({ mainRoomId }) => {
     brReturnToMain(mainRoomId);
+  });
+  socket.on('time-warning', ({ minutesLeft }) => {
+    const el = document.getElementById('time-warning-banner');
+    if (el) { el.style.display = 'block'; setTimeout(() => { el.style.display = 'none'; }, 30000); }
+    notify('⚠️ 残り' + minutesLeft + '分です。有料プランで無制限に！');
+  });
+  socket.on('time-limit', () => {
+    if (freeTimerInterval) clearInterval(freeTimerInterval);
+    const el = document.getElementById('free-timer');
+    if (el) { el.textContent = '残り 00:00'; el.className = 'end'; }
+    document.getElementById('time-limit-modal').style.display = 'flex';
+    // 5秒後に自動退室
+    setTimeout(() => { if (typeof leaveRoom === 'function') leaveRoom(true); }, 5000);
   });
   socket.on('breakout:broadcast-msg', ({ from, message, time }) => {
     const banner = document.getElementById('br-broadcast-banner');
@@ -1002,6 +1033,28 @@ function startTimer() {
     const el = document.getElementById('elapsed-time');
     if (el) el.textContent = String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(s % 60).padStart(2,'0');
   }, 1000);
+}
+
+// ===== 無料プランタイマー =====
+let freeTimerInterval = null;
+function startFreeTimer(roomStartedAt) {
+  const totalMs = 45 * 60 * 1000;
+  const el = document.getElementById('free-timer');
+  if (!el) return;
+  el.style.display = 'block';
+  function tick() {
+    const elapsed = Date.now() - roomStartedAt;
+    const left = Math.max(0, totalMs - elapsed);
+    const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+    el.textContent = '残り ' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+    el.className = left <= 60000 ? 'end' : left <= 5 * 60000 ? 'warn' : 'ok';
+    if (left <= 0) { clearInterval(freeTimerInterval); el.textContent = '残り 00:00'; }
+  }
+  tick();
+  freeTimerInterval = setInterval(tick, 1000);
+}
+function closeTlModal() {
+  document.getElementById('time-limit-modal').style.display = 'none';
 }
 
 // ===== 全画面 =====
@@ -2511,5 +2564,17 @@ function loadBgSettings() {
   } catch(e) {}
 }
 </script>
+<div id="time-warning-banner">⚠️ 残り5分です。有料プランなら時間無制限で通話できます。</div>
+
+<div id="time-limit-modal">
+  <div class="tlm-box">
+    <div class="tlm-icon">⏰</div>
+    <div class="tlm-title">通話時間が終了しました</div>
+    <div class="tlm-desc">無料プランの通話時間（45分）が経過しました。<br>有料プラン（¥980/月）にアップグレードすると<br>時間無制限 + AI文字起こし・要約が使えます。</div>
+    <a id="tlm-upgrade-btn" href="https://meet.gaiaarts.org/booking" class="tlm-btn tlm-btn-upgrade" target="_blank">🚀 有料プランにアップグレード</a>
+    <button class="tlm-btn tlm-btn-close" onclick="closeTlModal()">閉じる（通話は終了しました）</button>
+  </div>
+</div>
+
 </body>
 </html>

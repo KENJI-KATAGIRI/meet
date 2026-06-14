@@ -12,6 +12,8 @@ const multer = require('multer');
 const fs = require('fs');
 const OpenAI = require('openai');
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const Stripe = (() => { try { return require('stripe'); } catch(e) { return null; } })();
+const stripe = (Stripe && process.env.STRIPE_SECRET_KEY) ? Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const mailer = nodemailer.createTransport({
   service: 'gmail',
@@ -93,6 +95,9 @@ try {
 try { db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT'); } catch(e) {}
 try { db.exec('ALTER TABLE bookings ADD COLUMN cancel_token TEXT'); } catch(e) {}
 try { db.exec('ALTER TABLE bookings ADD COLUMN cancelled INTEGER DEFAULT 0'); } catch(e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'"); } catch(e) {}
+try { db.exec('ALTER TABLE users ADD COLUMN plan_expires TEXT'); } catch(e) {}
+try { db.exec('ALTER TABLE users ADD COLUMN stripe_customer_id TEXT'); } catch(e) {}
 
 // パスワードハッシュ
 async function hashPassword(password) {
@@ -111,14 +116,20 @@ async function verifyPassword(password, stored) {
 }
 
 app.set('trust proxy', 1);
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => { if (req.path === '/api/stripe/webhook') req.rawBody = buf; }
+}));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(session({
+const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: { secure: 'auto', httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }
-}));
+});
+app.use(sessionMiddleware);
+io.use((socket, next) => {
+  sessionMiddleware(socket.request, socket.request.res || {}, next);
+});
 
 const REDIRECT_URI = 'https://meet.gaiaarts.org/auth/google/callback';
 
@@ -263,6 +274,110 @@ function requireAuth(req, res, next) {
 app.get('/api/me', requireAuth, (req, res) => {
   const u = db.prepare('SELECT id, name, email, slug, slot_duration FROM users WHERE id=?').get(req.session.userId);
   res.json(u);
+});
+
+// ---- API: my-plan ----
+app.get('/api/my-plan', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT plan, plan_expires FROM users WHERE id=?').get(req.session.userId);
+  res.json({ plan: u?.plan || 'free', plan_expires: u?.plan_expires || null });
+});
+
+// ---- UTAGE/UnivaPay Webhook ----
+app.post('/api/utage-webhook', async (req, res) => {
+  res.json({ ok: true });
+  try {
+    const data = req.body;
+    const inner = data.data || {};
+    const email = (
+      (inner.metadata || {}).email ||
+      (inner.metadata || {}).mail ||
+      (inner.transaction_token || {}).email ||
+      ((inner.subscription || {}).metadata || {}).email ||
+      inner.email || data.mail || data.email || ''
+    );
+    if (!email) { console.log('[utage-webhook] no email found'); return; }
+    const eventType = data.type || '';
+    const status = inner.status || '';
+    const body = JSON.stringify(data);
+    const isDeactivate = /fail|suspend|cancel/.test(eventType) || /failed|suspended|cancelled|terminated/.test(status) || /停止|失敗/.test(body);
+    if (isDeactivate) {
+      db.prepare("UPDATE users SET plan='free', plan_expires=NULL WHERE email=?").run(email);
+      console.log('[utage-webhook] plan deactivated:', email);
+    } else {
+      db.prepare("UPDATE users SET plan='paid', plan_expires=NULL WHERE email=?").run(email);
+      console.log('[utage-webhook] plan activated paid:', email);
+    }
+  } catch(e) { console.error('utage-webhook error:', e.message); }
+});
+
+// ---- Stripe 決済 ----
+app.post('/api/stripe/checkout', requireAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.session.userId);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
+  try {
+    let customerId = user.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: user.email, name: user.name,
+        metadata: { user_id: String(user.id) }
+      });
+      customerId = customer.id;
+      db.prepare('UPDATE users SET stripe_customer_id=? WHERE id=?').run(customerId, user.id);
+    }
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      mode: 'subscription',
+      success_url: 'https://meet.gaiaarts.org/booking/dashboard?plan=success',
+      cancel_url: 'https://meet.gaiaarts.org/booking/dashboard',
+      locale: 'ja'
+    });
+    res.json({ url: session.url });
+  } catch(e) { console.error('stripe checkout error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/stripe/portal', requireAuth, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+  const user = db.prepare('SELECT stripe_customer_id FROM users WHERE id=?').get(req.session.userId);
+  if (!user?.stripe_customer_id) return res.status(400).json({ error: 'no subscription' });
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripe_customer_id,
+      return_url: 'https://meet.gaiaarts.org/booking/dashboard'
+    });
+    res.redirect(session.url);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/stripe/webhook', async (req, res) => {
+  if (!stripe) return res.status(503).send('Stripe not configured');
+  const sig = req.headers['stripe-signature'];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch(e) { return res.status(400).send('Webhook Error: ' + e.message); }
+  res.json({ received: true });
+  try {
+    const obj = event.data.object;
+    const customerId = obj.customer;
+    if (!customerId) return;
+    const user = db.prepare('SELECT id FROM users WHERE stripe_customer_id=?').get(customerId);
+    if (!user) return;
+    if (['customer.subscription.created','customer.subscription.updated','invoice.payment_succeeded'].includes(event.type)) {
+      const subStatus = obj.status;
+      if (!subStatus || subStatus === 'active' || subStatus === 'trialing') {
+        db.prepare("UPDATE users SET plan='paid' WHERE id=?").run(user.id);
+        console.log('[stripe-webhook] plan=paid:', user.id);
+      }
+    } else if (['customer.subscription.deleted','customer.subscription.paused'].includes(event.type)) {
+      db.prepare("UPDATE users SET plan='free' WHERE id=?").run(user.id);
+      console.log('[stripe-webhook] plan=free:', user.id);
+    } else if (event.type === 'invoice.payment_failed') {
+      console.log('[stripe-webhook] payment failed, customer:', customerId);
+    }
+  } catch(e) { console.error('stripe webhook error:', e.message); }
 });
 
 // ---- API: availability ----
@@ -610,6 +725,11 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
   const { sessionId, email } = req.body;
   console.log(`[audio-finalize] session=${sessionId} email=${email} openai=${!!openai}`);
   if (!email || !sessionId || !openai) return;
+  const fUser = db.prepare('SELECT plan FROM users WHERE email=?').get(email);
+  if (!fUser || fUser.plan !== 'paid') {
+    console.log('[audio-finalize] free plan, skipping transcription for:', email);
+    return;
+  }
   try {
     const chunkFiles = fs.readdirSync(recDir)
       .filter(f => f.startsWith(`audio-${sessionId}-`) && /\.(webm|mp4|ogg|m4a)$/.test(f) && !f.includes('-final'))
@@ -836,7 +956,20 @@ io.on('connection', (socket) => {
     if (room && room.password && room.password !== password) {
       socket.emit('join-error', 'パスワードが違います'); return;
     }
-    if (!room) rooms.set(roomId, { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set() });
+    if (!room) {
+      const userId = socket.request.session?.userId;
+      let hostPlan = 'free';
+      if (userId) {
+        const hu = db.prepare('SELECT plan FROM users WHERE id=?').get(userId);
+        hostPlan = hu?.plan || 'free';
+      }
+      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now() };
+      rooms.set(roomId, newRoom);
+      if (hostPlan === 'free') {
+        newRoom.warnTimer = setTimeout(() => { io.to(roomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
+        newRoom.endTimer = setTimeout(() => { io.to(roomId).emit('time-limit', {}); }, 45 * 60 * 1000);
+      }
+    }
     const cur = rooms.get(roomId);
     for (const [id] of cur.users) {
       if (!io.sockets.sockets.get(id)) cur.users.delete(id);
@@ -851,7 +984,7 @@ io.on('connection', (socket) => {
     socket.mainRoomId = null;
     socket.userName = userName;
     const existing = [...cur.users.entries()].filter(([id]) => id !== socket.id).map(([id, d]) => ({ id, name: d.name }));
-    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main' });
+    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main', isFreeRoom: cur.hostPlan === 'free', roomStartedAt: cur.startedAt || Date.now() });
     socket.to(roomId).emit('user-joined', { id: socket.id, name: userName });
   });
   socket.on('offer', ({ to, offer }) => io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }));
@@ -883,7 +1016,11 @@ io.on('connection', (socket) => {
           io.to(mainId).emit('host-changed', { newHostId, newHostName: mainRoom.users.get(newHostId)?.name });
         }
       }
-      if (room.users.size === 0) rooms.delete(curRoomId);
+      if (room.users.size === 0) {
+        if (room.warnTimer) clearTimeout(room.warnTimer);
+        if (room.endTimer) clearTimeout(room.endTimer);
+        rooms.delete(curRoomId);
+      }
     }
     socket.to(curRoomId).emit('user-left', { id: socket.id, name: socket.userName });
     const bsRoomId = socket.mainRoomId || curRoomId;

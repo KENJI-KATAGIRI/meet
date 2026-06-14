@@ -64,6 +64,11 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
 .meet-link:hover{text-decoration:underline}
 .empty{color:var(--muted);font-size:14px;text-align:center;padding:32px;display:flex;flex-direction:column;align-items:center;gap:8px}
 .empty-icon{font-size:36px;opacity:.4}
+.plan-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700}
+.plan-badge.free{background:rgba(136,136,136,.15);color:#888;border:1px solid #444}
+.plan-badge.paid{background:rgba(108,99,255,.15);color:#a78bfa;border:1px solid #6c63ff}
+.plan-upgrade-btn{display:inline-block;padding:10px 20px;background:linear-gradient(135deg,#6c63ff,#8b82ff);color:#fff;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none;transition:opacity .2s}
+.plan-upgrade-btn:hover{opacity:.85}
 .toast{position:fixed;bottom:24px;right:24px;background:#2a2a4a;border:1px solid #3a3a5a;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 .toast.show{opacity:1}
 @media(max-width:640px){.grid-2{grid-template-columns:1fr}.dow-grid{grid-template-columns:repeat(4,1fr)}.booking-date{display:none}}
@@ -93,6 +98,22 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
         <button class="btn btn-primary btn-sm" onclick="copyUrl()">コピー</button>
         <a class="btn btn-secondary btn-sm" id="preview-link" href="#" target="_blank">確認する →</a>
       </div>
+    </div>
+  </div>
+
+  <!-- プランステータス -->
+  <div class="card" id="plan-card" style="margin-bottom:20px;display:none">
+    <div class="card-header">
+      <div class="card-title">💎 プランステータス</div>
+      <span id="plan-badge" class="plan-badge free">FREE</span>
+    </div>
+    <div id="plan-free-content">
+      <p class="card-desc" style="margin-bottom:16px">現在は<strong>無料プラン</strong>です。通話時間は45分まで、文字起こしは利用できません。<br>有料プランにアップグレードすると<strong>通話時間無制限 + AI文字起こし・要約</strong>が使えます（¥980/月〜）。</p>
+      <button id="plan-upgrade-btn" class="plan-upgrade-btn" onclick="startUpgrade()" style="width:100%;border:none;cursor:pointer">🚀 有料プランにアップグレード（¥980/月〜）</button>
+    </div>
+    <div id="plan-paid-content" style="display:none">
+      <p class="card-desc">現在は<strong>有料プラン</strong>です。通話時間無制限・AI文字起こし・要約がご利用いただけます。</p>
+      <a href="/api/stripe/portal" class="btn btn-secondary btn-sm" style="margin-top:8px;display:inline-flex">⚙️ 解約・カード変更</a>
     </div>
   </div>
 
@@ -163,14 +184,28 @@ async function init() {
     fetch('/api/bookings').then(r=>r.json())
   ]);
   me = meRes;
+  const planRes = await fetch('/api/my-plan').then(r=>r.json()).catch(()=>({plan:'free'}));
   const initial = (me.name||'?')[0].toUpperCase();
   document.getElementById('hdr-avatar').textContent = initial;
   document.getElementById('hdr-name').textContent = me.name;
+  // プランカード表示
+  const planCard = document.getElementById('plan-card');
+  planCard.style.display = 'block';
+  if (planRes.plan === 'paid') {
+    document.getElementById('plan-badge').className = 'plan-badge paid';
+    document.getElementById('plan-badge').textContent = 'PRO';
+    document.getElementById('plan-free-content').style.display = 'none';
+    document.getElementById('plan-paid-content').style.display = 'block';
+  }
   document.getElementById('booking-url').textContent = `https://meet.gaiaarts.org/b/${me.slug}`;
   document.getElementById('preview-link').href = `/b/${me.slug}`;
   document.getElementById('slot-duration').value = me.slot_duration || 30;
 
   for (const a of availRes) activeAvail[a.day_of_week] = {start:a.start_time,end:a.end_time};
+  if (new URLSearchParams(location.search).get('plan') === 'success') {
+    toast('🎉 有料プランが有効になりました！');
+    history.replaceState({}, '', '/booking/dashboard');
+  }
 
   renderDow();
   renderBookings(bookRes);
@@ -295,6 +330,17 @@ function copyInstant() {}
 function copyUrl() {
   navigator.clipboard.writeText(`https://meet.gaiaarts.org/b/${me.slug}`);
   toast('✓ URLをコピーしました');
+}
+
+async function startUpgrade() {
+  const btn = document.getElementById('plan-upgrade-btn');
+  btn.disabled = true; btn.textContent = '処理中...';
+  try {
+    const r = await fetch('/api/stripe/checkout', { method: 'POST' }).then(r => r.json());
+    if (r.url) { window.location.href = r.url; return; }
+    toast('エラー: ' + (r.error || '不明なエラー'));
+  } catch(e) { toast('通信エラーが発生しました'); }
+  btn.disabled = false; btn.textContent = '🚀 有料プランにアップグレード（¥980/月〜）';
 }
 
 function toast(msg) {
