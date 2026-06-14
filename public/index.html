@@ -749,8 +749,9 @@ function createPeer(peerId, peerName, isInitiator) {
   peers[peerId] = pc; peerNames[peerId] = peerName; peerInitiator[peerId] = isInitiator;
   localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
   pc.ontrack = event => {
-    const stream = event.streams[0];
-    if (!stream || event.track.kind !== 'video') return;
+    if (event.track.kind !== 'video') return;
+    const stream = event.streams[0] || new MediaStream([event.track]);
+    console.log('[ontrack] peerId=' + peerId + ' streamId=' + stream.id + ' streams=' + event.streams.length);
     if (!peerStreams[peerId]) peerStreams[peerId] = new Set();
     if (peerStreams[peerId].has(stream.id)) return;
     peerStreams[peerId].add(stream.id);
@@ -774,6 +775,26 @@ function createPeer(peerId, peerName, isInitiator) {
     }
     if (pc.connectionState === 'connected') {
       console.log('[WebRTC] ' + peerId + ' CONNECTED OK');
+      // 画面共有中なら接続確立後に新参加者にも送信
+      if (screenStream && !screenSenders[peerId]) {
+        const screenTrack = screenStream.getVideoTracks()[0];
+        if (screenTrack) {
+          (async () => {
+            const savedNeg = pc.onnegotiationneeded;
+            pc.onnegotiationneeded = null;
+            try {
+              screenSenders[peerId] = pc.addTrack(screenTrack, screenStream);
+              const offer = await pc.createOffer();
+              offer.sdp = applyOpusParams(offer.sdp);
+              await pc.setLocalDescription(offer);
+              socket.emit('offer', { to: peerId, offer });
+              notify(peerName + ' に画面共有を送信しました');
+              console.log('[screen] sent to late-join peer', peerId);
+            } catch(e) { console.error('[screen] late-join failed', e); }
+            pc.onnegotiationneeded = savedNeg;
+          })();
+        }
+      }
     }
   };
   pc.oniceconnectionstatechange = () => {
@@ -992,7 +1013,10 @@ async function toggleScreen() {
       btn.classList.add('active'); btn.querySelector('span').textContent = '共有中';
       const screenTrack = screenStream.getVideoTracks()[0];
       // addTrack + 手動リオファーで相手のontrackを確実に発火させる
+      const peerCount = Object.keys(peers).length;
+      notify('[共有] ピア数:' + peerCount);
       for (const [peerId, pc] of Object.entries(peers)) {
+        notify('[共有] 状態:' + pc.connectionState);
         const savedNeg = pc.onnegotiationneeded;
         pc.onnegotiationneeded = null;
         try {
@@ -1001,8 +1025,12 @@ async function toggleScreen() {
           offer.sdp = applyOpusParams(offer.sdp);
           await pc.setLocalDescription(offer);
           socket.emit('offer', { to: peerId, offer });
+          notify('[共有] offer送信OK');
           console.log('[screen] offer sent to', peerId);
-        } catch(e) { console.error('[screen] peer', peerId, e); }
+        } catch(e) {
+          notify('[共有] ERR:' + e.message);
+          console.error('[screen] peer', peerId, e);
+        }
         pc.onnegotiationneeded = savedNeg;
       }
       addVideoTile('screen', '🖥️ 画面共有', screenStream, false, 'screen-tile');
