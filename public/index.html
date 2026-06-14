@@ -1573,6 +1573,11 @@ window.addEventListener('beforeunload', () => {
   form.append('totalChunks', String(audioChunkIndex));
   form.append('email', myEmail);
   form.append('roomId', myRoomId);
+  form.append('recordMode', welfareSettings.mode);
+  form.append('welfareSystem', welfareSettings.system);
+  form.append('welfareRecordType', welfareSettings.recordType);
+  form.append('memberName', welfareSettings.memberName);
+  form.append('staffName', welfareSettings.staffName);
   navigator.sendBeacon('/api/audio-finalize', form);
 });
 
@@ -1666,6 +1671,11 @@ async function stopAndFinalizeAudio() {
   form.append('totalChunks', String(audioChunkIndex));
   form.append('email', myEmail);
   form.append('roomId', myRoomId);
+  form.append('recordMode', welfareSettings.mode);
+  form.append('welfareSystem', welfareSettings.system);
+  form.append('welfareRecordType', welfareSettings.recordType);
+  form.append('memberName', welfareSettings.memberName);
+  form.append('staffName', welfareSettings.staffName);
   fetch('/api/audio-finalize', { method: 'POST', body: form }).catch(() => {});
 }
 

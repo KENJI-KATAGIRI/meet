@@ -136,6 +136,19 @@ db.exec(`
     ai_summary_used INTEGER DEFAULT 0,
     summary_text TEXT
   );
+  CREATE TABLE IF NOT EXISTS nm_call_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    facility_id INTEGER,
+    room_id TEXT,
+    welfare_system TEXT,
+    record_type TEXT,
+    member_name TEXT,
+    staff_name TEXT,
+    interview_date TEXT DEFAULT (date('now')),
+    summary_text TEXT,
+    raw_transcript TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
   CREATE TABLE IF NOT EXISTS nm_inquiries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     facility_id INTEGER,
@@ -173,6 +186,153 @@ function getTrialDaysLeft(facility) {
   const daysSince = (Date.now() - new Date(facility.trial_started_at).getTime()) / 86400000;
   return Math.max(0, Math.ceil(30 - daysSince));
 }
+// ─────────────────────────────────────────────────────────────────
+
+// ── 福祉記録プロンプトテンプレート ───────────────────────────────
+const WELFARE_RECORD_TYPES = {
+  houdei: {
+    label: '放課後等デイサービス',
+    types: ['個別支援計画モニタリング記録', '保護者面談記録', 'サービス担当者会議記録']
+  },
+  houmon: {
+    label: '訪問介護',
+    types: ['モニタリング記録', 'サービス担当者会議記録']
+  },
+  shuro: {
+    label: '就労継続支援',
+    types: ['個別支援計画モニタリング記録', 'サービス担当者会議記録', '就労移行支援会議記録']
+  },
+  kaigo: {
+    label: '介護グループホーム',
+    types: ['モニタリング記録', '家族面談記録', '運営推進会議記録', 'サービス担当者会議記録']
+  }
+};
+
+const WELFARE_PROMPTS = {
+  houdei: {
+    '個別支援計画モニタリング記録': `以下は放課後等デイサービスにおける個別支援計画モニタリング面談の文字起こしです。「個別支援計画モニタリング記録」として業務記録文体（〜が見られた／〜に取り組んだ／〜が確認された）で作成してください。
+禁止表現：「問題行動」→「気になる行動」「支援が必要な場面」に言い換え。「できない」ではなく「〜に向けて支援中」。
+以下の見出しで記述してください：
+【本人の様子・心身の状態】
+【5領域別の現況】健康・生活 / 運動・感覚 / 認知・行動 / 言語・コミュニケーション / 人間関係・社会性
+【短期目標の達成状況】目標ごとに「達成／概ね達成／取組中」で評価
+【保護者からの意見・要望】「保護者より〜との申し出あり」形式で
+【今後の支援方針】
+【計画変更の要否と内容】
+【次回モニタリング予定】`,
+
+    '保護者面談記録': `以下は放課後等デイサービスにおける保護者面談の文字起こしです。「保護者面談記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【面談目的・経緯】
+【家庭での様子（保護者報告）】「保護者より〜との報告あり」形式で
+【本人の状態・変化】
+【保護者の主な意見・要望】
+【合意事項・決定内容】
+【次回連絡・面談予定】`,
+
+    'サービス担当者会議記録': `以下は放課後等デイサービスにおけるサービス担当者会議の文字起こしです。「サービス担当者会議記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【開催目的・参加者】（職種・続柄で記載）
+【各担当者からの情報共有】
+【本人・家族の意向】
+【支援方針の合意内容】
+【役割分担・対応事項】
+【次回開催予定】`
+  },
+
+  houmon: {
+    'モニタリング記録': `以下は訪問介護におけるモニタリング面談の文字起こしです。「モニタリング記録」として介護保険事業所の業務記録文体（〜を実施した／〜が見られた／〜の申し出があった）で作成してください。
+禁止表現：「いつものように」「特に問題なし」だけの記録は避け、具体的な内容を記述すること。「〜させた」という強制表現は使わない。
+以下の見出しで記述してください：
+【利用者の現状（身体・生活状況の変化）】
+【訪問介護サービスの実施状況】
+【本人・家族の意向・要望】「ご本人より〜との意向が示された」「ご家族より〜との申し出があった」形式で
+【問題点・特記事項】
+【ケアプランとの整合性・変更の要否】
+【次回モニタリング予定・対応事項】`,
+
+    'サービス担当者会議記録': `以下は訪問介護におけるサービス担当者会議の文字起こしです。「サービス担当者会議記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【開催目的・参加者】（職種・事業所名を記載）
+【利用者・家族の状況報告】
+【各サービス事業所からの情報共有】
+【課題・検討事項】
+【ケアプランの変更内容・合意事項】
+【役割分担・次回確認事項】`
+  },
+
+  shuro: {
+    '個別支援計画モニタリング記録': `以下は就労継続支援におけるモニタリング面談の文字起こしです。「個別支援計画モニタリング記録」としてサービス管理責任者（サビ管）が作成する業務記録文体（〜に取り組んだ／〜の意向が示された／〜が確認された）で作成してください。
+禁止表現：「就労が困難な利用者」「問題利用者」等の否定的・差別的表現は使わない。自己決定を尊重する表現を使用。
+以下の見出しで記述してください：
+【利用者の現状（作業・生活状況・健康状態）】
+【就労意欲・将来の目標（本人の言葉を中心に）】「ご本人より〜との意向が示された」形式で
+【作業能力・対人関係の変化】
+【短期目標・長期目標の達成状況】
+【課題と支援内容】
+【今後の支援方針・計画変更の要否】
+【関係機関との連携事項】
+【次回面談予定】`,
+
+    'サービス担当者会議記録': `以下は就労継続支援におけるサービス担当者会議の文字起こしです。「サービス担当者会議記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【開催目的・参加者】（職種・関係機関を記載）
+【利用者の現状報告】
+【各担当者からの意見・情報提供】
+【本人・家族の意向】
+【支援方針の決定・合意内容】
+【次回開催予定・対応事項】`,
+
+    '就労移行支援会議記録': `以下は就労継続支援における就労移行・関係機関との会議の文字起こしです。「就労移行支援会議記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【開催目的・参加者】（ハローワーク・就労支援センター等の外部機関も明記）
+【就労状況・職場環境の報告】
+【本人の状態・意向】
+【職場・支援機関からのフィードバック】
+【今後の支援方針・役割分担】
+【次回確認事項・予定】`
+  },
+
+  kaigo: {
+    'モニタリング記録': `以下は介護グループホームにおけるモニタリング面談の文字起こしです。「モニタリング記録」として介護事業所の業務記録文体（〜の様子であった／〜が確認された／〜が見られた）で作成してください。
+禁止表現：「徘徊」→「ひとり歩き」、「問題行動」→「BPSD」「気になる言動」、「意思疎通困難」→「本人なりのコミュニケーションが見られる」に言い換え。
+以下の見出しで記述してください：
+【入居者の様子・心身状態の変化】（ADL・認知機能・BPSD含む）
+【日常生活・活動への参加状況】
+【ケアプランの目標達成状況】
+【家族の意向・来訪時の様子】「ご家族より〜の申し出あり」形式で
+【医療・看護との連携状況】
+【課題と今後のケア方針】
+【計画変更の要否と内容】
+【次回モニタリング予定】`,
+
+    '家族面談記録': `以下は介護グループホームにおける家族面談の文字起こしです。「家族面談記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【面談目的・参加者】（続柄を記載）
+【入居者の近況報告】
+【家族からの意見・要望・確認事項】
+【共有した事項・説明内容】
+【合意事項・今後の対応】
+【次回連絡・面談予定】`,
+
+    '運営推進会議記録': `以下は介護グループホームにおける運営推進会議の文字起こしです。「運営推進会議記録」として業務記録文体で作成してください。地域住民等への開示を前提とした表現を使用してください。
+以下の見出しで記述してください：
+【開催日時・場所・参加者】（地域住民・行政担当者・家族代表等の立場を明記）
+【事業所の活動状況報告】
+【利用者の状況（個人が特定されない形で）】
+【地域との連携・意見交換内容】
+【決定事項・対応事項】
+【次回開催予定】`,
+
+    'サービス担当者会議記録': `以下は介護グループホームにおけるサービス担当者会議の文字起こしです。「サービス担当者会議記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【開催目的・参加者】（職種・事業所を記載）
+【入居者の現状・各職種からの評価】
+【家族の意向】
+【ケアプランの変更内容・合意事項】
+【役割分担・次回確認事項】`
+  }
+};
 // ─────────────────────────────────────────────────────────────────
 
 // パスワードハッシュ
@@ -802,6 +962,13 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
   console.log(`[audio-finalize] session=${sessionId} email=${email} openai=${!!openai}`);
   if (!email || !sessionId || !openai) return;
   const fUser = db.prepare('SELECT plan, facility_id FROM users WHERE email=?').get(email);
+  const recordMode = req.body.recordMode || '';
+  const welfareSystem = req.body.welfareSystem || '';
+  const welfareRecordType = req.body.welfareRecordType || '';
+  const memberName = req.body.memberName || '';
+  const staffName = req.body.staffName || '';
+  const isWelfareRecord = recordMode === 'welfare' && welfareSystem && welfareRecordType;
+  if (recordMode === 'none') { console.log('[audio-finalize] mode=none, skip'); return; }
   let canUseAI = false;
   if (fUser?.facility_id) {
     const fac = db.prepare('SELECT * FROM nm_facilities WHERE id=?').get(fUser.facility_id);
@@ -915,10 +1082,16 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
       return;
     }
 
+    const welfarePrompt = isWelfareRecord ? (WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null) : null;
+    const systemPrompt = welfarePrompt
+      ? `${welfarePrompt}
+
+対象者: ${memberName || '（記載なし）'} / 担当: ${staffName || '（記載なし）'}`
+      : '以下はビデオ会議の文字起こしです（話者A・話者Bは異なる参加者です）。日本語で要約してください。箇条書きで主要な議題、決定事項、アクションアイテムをまとめてください。';
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: '以下はビデオ会議の文字起こしです（話者A・話者Bは異なる参加者です）。日本語で要約してください。箇条書きで主要な議題、決定事項、アクションアイテムをまとめてください。' },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: transcript }
       ]
     });
@@ -926,14 +1099,29 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
 
     if (fUser?.facility_id) {
       const durMin = chunkFiles.length * 2;
-      db.prepare(
-        'INSERT INTO nm_meetings (facility_id, room_id, host_email, started_at, ended_at, duration_minutes, ai_summary_used, summary_text) VALUES (?,?,?,datetime(\'now\',?),datetime(\'now\'),?,1,?)'
-      ).run(fUser.facility_id, sessionId, email, `-${durMin} minutes`, durMin, summary);
+      if (isWelfareRecord) {
+        db.prepare(
+          'INSERT INTO nm_call_records (facility_id, room_id, welfare_system, record_type, member_name, staff_name, summary_text, raw_transcript) VALUES (?,?,?,?,?,?,?,?)'
+        ).run(fUser.facility_id, sessionId, welfareSystem, welfareRecordType, memberName, staffName, summary, transcript);
+        console.log(`[audio-finalize] saved to nm_call_records: ${welfareSystem}/${welfareRecordType} member=${memberName}`);
+      } else {
+        db.prepare(
+          'INSERT INTO nm_meetings (facility_id, room_id, host_email, started_at, ended_at, duration_minutes, ai_summary_used, summary_text) VALUES (?,?,?,datetime(\'now\',?),datetime(\'now\'),?,1,?)'
+        ).run(fUser.facility_id, sessionId, email, `-${durMin} minutes`, durMin, summary);
+      }
     }
 
-    await sendMail(email, '【NiceMeet】会議の文字起こし・要約',
+    const mailSubject = isWelfareRecord
+      ? `【NiceMeet】${welfareRecordType}${memberName ? '（' + memberName + '）' : ''}`
+      : '【NiceMeet】会議の文字起こし・要約';
+    const mailHeader = isWelfareRecord
+      ? `【${welfareRecordType}】
+対象: ${memberName || '（記載なし）'} / 担当: ${staffName || '（記載なし）'} / 面談日: ${new Date().toLocaleDateString('ja-JP')}`
+      : '【AI要約】';
+
+    await sendMail(email, mailSubject,
 `━━━━━━━━━━━━━━━━━━
-【AI要約】
+${mailHeader}
 ━━━━━━━━━━━━━━━━━━
 ${summary}
 
@@ -1153,6 +1341,40 @@ app.get('/api/facility/export/csv', requireAuth, (req, res) => {
   res.send('\ufeff' + header + body);
 });
 
+// 面談記録一覧
+app.get('/api/facility/call-records', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
+  if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
+  const { system, member } = req.query;
+  let sql = 'SELECT * FROM nm_call_records WHERE facility_id=?';
+  const params = [u.facility_id];
+  if (system) { sql += ' AND welfare_system=?'; params.push(system); }
+  if (member) { sql += ' AND member_name LIKE ?'; params.push('%' + member + '%'); }
+  sql += ' ORDER BY created_at DESC LIMIT 200';
+  const rows = db.prepare(sql).all(...params);
+  res.json(rows);
+});
+
+// 面談記録の要約CSV
+app.get('/api/facility/call-records/csv', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
+  if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
+  const rows = db.prepare('SELECT * FROM nm_call_records WHERE facility_id=? ORDER BY created_at DESC').all(u.facility_id);
+  const header = '記録ID,業態,記録種別,対象者,担当職員,面談日,要約内容\n';
+  const body = rows.map(r => [
+    r.id,
+    WELFARE_RECORD_TYPES[r.welfare_system]?.label || r.welfare_system,
+    r.record_type || '',
+    r.member_name || '',
+    r.staff_name || '',
+    r.interview_date || '',
+    '"' + (r.summary_text || '').replace(/"/g, '""'). replace(/\n/g, ' ') + '"'
+  ].join(',')).join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="call_records.csv"');
+  res.send('﻿' + header + body);
+});
+
 // ─────────────────────────────────────────────────────────────────
 // ── 管理者用エンドポイント ────────────────────────────────────────
 const ADMIN_SECRET = process.env.ADMIN_SECRET || 'nicemeet-admin-2026';
@@ -1190,13 +1412,15 @@ io.on('connection', (socket) => {
       let hostPlan = 'free';
       let hostFacilityId = null;
       let hostEmail = null;
+      let hostUiMode = 'simple';
       if (userId) {
-        const hu = db.prepare('SELECT plan, facility_id, email FROM users WHERE id=?').get(userId);
+        const hu = db.prepare('SELECT plan, facility_id, email, ui_mode FROM users WHERE id=?').get(userId);
         hostPlan = hu?.plan || 'free';
         hostFacilityId = hu?.facility_id || null;
         hostEmail = hu?.email || null;
+        hostUiMode = hu?.ui_mode || 'simple';
       }
-      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail };
+      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode };
       rooms.set(roomId, newRoom);
       if (hostPlan === 'free') {
         newRoom.warnTimer = setTimeout(() => { io.to(roomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
@@ -1217,7 +1441,7 @@ io.on('connection', (socket) => {
     socket.mainRoomId = null;
     socket.userName = userName;
     const existing = [...cur.users.entries()].filter(([id]) => id !== socket.id).map(([id, d]) => ({ id, name: d.name }));
-    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main', isFreeRoom: cur.hostPlan === 'free', roomStartedAt: cur.startedAt || Date.now() });
+    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main', isFreeRoom: cur.hostPlan === 'free', roomStartedAt: cur.startedAt || Date.now(), hostUiMode: cur.hostUiMode || 'simple' });
     socket.to(roomId).emit('user-joined', { id: socket.id, name: userName });
   });
   socket.on('offer', ({ to, offer }) => io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }));
