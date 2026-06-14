@@ -1294,8 +1294,10 @@ function drawWithMask(w, h) {
   }
   // マスクを destination-in で合成：ぼかしで髪の境界をなめらかに
   personCtx.globalCompositeOperation = 'destination-in';
-  personCtx.filter = 'blur(5px)';
-  personCtx.drawImage(maskCanvas2, 0, 0, w, h);
+  // マスクを外側に拡張（dilation）してから小さいblurで境界をなめらかに
+  const d = 8;
+  personCtx.filter = 'blur(2px)';
+  personCtx.drawImage(maskCanvas2, -d, -d, w + d * 2, h + d * 2);
   personCtx.filter = 'none';
   personCtx.globalCompositeOperation = 'source-over';
 
@@ -1309,7 +1311,11 @@ function drawWithMask(w, h) {
     effectsCtx.fillStyle = bgColorVal;
     effectsCtx.fillRect(0, 0, w, h);
   } else if (bgMode === 'image' && bgImg) {
-    effectsCtx.drawImage(bgImg, 0, 0, w, h);
+    // CSS scaleX(-1) でローカルプレビューが反転するためカウンターflip
+    effectsCtx.save();
+    effectsCtx.scale(-1, 1);
+    effectsCtx.drawImage(bgImg, -w, 0, w, h);
+    effectsCtx.restore();
   }
   effectsCtx.drawImage(personCanvas, 0, 0);
 }
