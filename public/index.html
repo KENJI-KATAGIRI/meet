@@ -162,6 +162,61 @@ select.br-room-select{padding:4px 8px;background:#1e1e3a;border:1px solid #3a3a5
 </head>
 <body>
 
+<!-- インアプリブラウザ検出・外部ブラウザ誘導 -->
+<div id="inapp-overlay" style="display:none;position:fixed;inset:0;background:#0d0d1a;z-index:99999;align-items:center;justify-content:center;padding:24px">
+  <div style="max-width:360px;width:100%;text-align:center">
+    <div style="font-size:56px;margin-bottom:16px">🌐</div>
+    <h2 style="color:#fff;font-size:20px;margin:0 0 8px">外部ブラウザで開いてください</h2>
+    <p style="color:#aaa;font-size:14px;margin:0 0 24px;line-height:1.6" id="inapp-msg">NiceMeetはMessengerの内蔵ブラウザでは動作しません。<br>カメラ・マイクが使えないためです。</p>
+    <div style="background:#1e1e3a;border-radius:8px;padding:12px 16px;margin-bottom:16px;word-break:break-all;color:#7cb8ff;font-size:13px" id="inapp-url"></div>
+    <button id="inapp-copy-btn" onclick="copyInappUrl()" style="width:100%;padding:14px;border-radius:8px;border:none;background:#4a9eff;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px">URLをコピー</button>
+    <div id="inapp-chrome-link" style="display:none;margin-bottom:12px">
+      <a id="inapp-chrome-a" style="display:block;width:100%;padding:14px;border-radius:8px;background:#34a853;color:#fff;font-size:15px;font-weight:600;text-decoration:none;box-sizing:border-box">Chromeで開く</a>
+    </div>
+    <p style="color:#666;font-size:12px">iPhoneの場合：右下の「…」→「Safariで開く」</p>
+  </div>
+</div>
+<script>
+(function(){
+  var ua = navigator.userAgent || '';
+  var isInApp = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Line\/|MicroMessenger|TwitterAndroid|TwitteriPhone|Snapchat|TikTok|Pinterest\/|LinkedIn/.test(ua);
+  if (!isInApp) return;
+  var url = location.href;
+  document.getElementById('inapp-url').textContent = url;
+  // アプリ名判定
+  var appName = 'このアプリ';
+  if (/FBAN|FBAV|FB_IAB|FBIOS/.test(ua)) appName = 'Facebook';
+  if (/Messenger/.test(ua)) appName = 'Messenger';
+  if (/Instagram/.test(ua)) appName = 'Instagram';
+  if (/Line\//.test(ua)) appName = 'LINE';
+  document.getElementById('inapp-msg').innerHTML = 'NiceMeetは' + appName + 'の内蔵ブラウザでは<br>カメラ・マイクが使えません。<br>ChromeまたはSafariで開いてください。';
+  // Android: Chromeインテントリンク
+  var isAndroid = /Android/.test(ua);
+  if (isAndroid) {
+    var intentUrl = url.replace(/^https:\/\//, 'intent://').replace(/^http:\/\//, 'intent://') + '#Intent;scheme=https;package=com.android.chrome;end';
+    var el = document.getElementById('inapp-chrome-link');
+    document.getElementById('inapp-chrome-a').href = intentUrl;
+    el.style.display = 'block';
+  }
+  var overlay = document.getElementById('inapp-overlay');
+  overlay.style.display = 'flex';
+})();
+function copyInappUrl() {
+  var url = document.getElementById('inapp-url').textContent;
+  navigator.clipboard.writeText(url).then(function(){
+    var btn = document.getElementById('inapp-copy-btn');
+    btn.textContent = 'コピーしました ✓';
+    btn.style.background = '#27ae60';
+    setTimeout(function(){ btn.textContent = 'URLをコピー'; btn.style.background = '#4a9eff'; }, 2000);
+  }).catch(function(){
+    // clipboard API不可時はselect
+    var el = document.getElementById('inapp-url');
+    var range = document.createRange(); range.selectNode(el);
+    window.getSelection().removeAllRanges(); window.getSelection().addRange(range);
+  });
+}
+</script>
+
 <div id="lobby">
   <div class="lobby-box">
     <h1>NiceMeet</h1>
