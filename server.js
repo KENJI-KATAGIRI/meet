@@ -142,6 +142,17 @@ function getCalendarClient() {
 }
 
 // ---- Auth ----
+// Whisperハルシネーション検出（同じ単語の繰り返しを除外）
+function isWhisperHallucination(text) {
+  if (!text || text.length < 3) return true;
+  const words = text.split(/[\s、。！？]+/).filter(w => w.length > 0);
+  if (words.length < 4) return false;
+  const unique = new Set(words);
+  // ユニーク率が20%未満なら幻覚とみなす
+  if (unique.size / words.length < 0.2) return true;
+  return false;
+}
+
 app.get('/auth/google', (req, res) => {
   const url = getOAuthClient().generateAuthUrl({
     access_type: 'offline',
@@ -583,21 +594,62 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
       await sendMail(email, '【NiceMeet】会議終了（音声データなし）', '会議が終了しましたが、音声データが検出されませんでした。\n無音や短時間の場合は録音されないことがあります。');
       return;
     }
-    const chunkExt = require('path').extname(chunkFiles[0]) || '.webm';
-    const combined = Buffer.concat(chunkFiles.map(f => fs.readFileSync(path.join(recDir, f))));
-    const finalPath = path.join(recDir, `audio-${sessionId}-final${chunkExt}`);
-    fs.writeFileSync(finalPath, combined);
-    console.log(`[audio-finalize] final: ${require('path').basename(finalPath)} (${combined.length} bytes)`);
+    // WebMはMediaRecorder.start(timeslice)でchunk-0000だけ完全なヘッダーを持ち、
+    // chunk-0001以降はClusterデータのみ（ヘッダーなし）なのでWhisper用にヘッダーを付与する
+    const firstChunkBuf = fs.readFileSync(path.join(recDir, chunkFiles[0]));
+    let webmHeader = null;
+    if (firstChunkBuf[0] === 0x1a && firstChunkBuf[1] === 0x45 && firstChunkBuf[2] === 0xdf && firstChunkBuf[3] === 0xa3) {
+      // 最初のCluster(1f43b675)の位置を検索してヘッダー部を切り出す
+      for (let i = 0; i < firstChunkBuf.length - 3; i++) {
+        if (firstChunkBuf[i] === 0x1f && firstChunkBuf[i+1] === 0x43 && firstChunkBuf[i+2] === 0xb6 && firstChunkBuf[i+3] === 0x75) {
+          webmHeader = firstChunkBuf.slice(0, i);
+          console.log(`[audio-finalize] webmHeader extracted: ${webmHeader.length} bytes`);
+          break;
+        }
+      }
+    }
 
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(finalPath),
-      model: 'whisper-1',
-      language: 'ja',
-    });
-    const transcript = transcription.text?.trim();
+    const tmpDir = require('os').tmpdir();
+    console.log(`[audio-finalize] transcribing ${chunkFiles.length} chunks individually...`);
+    const transcriptParts = [];
+    for (const f of chunkFiles) {
+      const fpath = path.join(recDir, f);
+      const fsize = fs.statSync(fpath).size;
+      if (fsize < 1000) { console.log(`[audio-finalize] skip tiny chunk ${f} (${fsize}bytes)`); continue; }
+      let sendPath = fpath;
+      let tmpFile = null;
+      try {
+        const buf = fs.readFileSync(fpath);
+        const isComplete = buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3;
+        if (!isComplete && webmHeader) {
+          // ヘッダーを先頭に付けた一時ファイルを作成
+          tmpFile = path.join(tmpDir, 'nicemeet-' + Date.now() + '-' + f);
+          fs.writeFileSync(tmpFile, Buffer.concat([webmHeader, buf]));
+          sendPath = tmpFile;
+          console.log(`[audio-finalize] fixed chunk ${f}: ${buf.length} -> ${buf.length + webmHeader.length} bytes`);
+        }
+        const result = await openai.audio.transcriptions.create({
+          file: fs.createReadStream(sendPath),
+          model: 'whisper-1',
+          language: 'ja',
+          prompt: '以下は日本語のビデオ会議の音声です。',
+        });
+        const text = result.text?.trim();
+        if (text && !isWhisperHallucination(text)) {
+          transcriptParts.push(text);
+          console.log(`[audio-finalize] chunk ${f}: ${text.slice(0,40)}...`);
+        } else {
+          console.log(`[audio-finalize] chunk ${f}: skipped (empty or hallucination)`);
+        }
+      } catch(e) {
+        console.error(`[audio-finalize] chunk ${f} failed:`, e.message);
+      } finally {
+        if (tmpFile) fs.unlink(tmpFile, () => {});
+      }
+    }
+    const transcript = transcriptParts.join('\n');
 
     chunkFiles.forEach(f => fs.unlink(path.join(recDir, f), () => {}));
-    fs.unlink(finalPath, () => {});
 
     if (!transcript) {
       await sendMail(email, '【NiceMeet】会議の文字起こし', '音声が検出されませんでした。');

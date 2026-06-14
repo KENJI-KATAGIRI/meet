@@ -1407,9 +1407,12 @@ function startAutoAudioRecording() {
   notify('🔴 録音開始：退出時に文字起こし・要約をメールでお届けします', 8000);
   const recEl = document.getElementById('rec-indicator');
   if (recEl) recEl.classList.add('active');
-  const audioStream = new MediaStream(rawStream.getAudioTracks());
+  const audioTracks = rawStream.getAudioTracks();
+  console.log('[audio] tracks:', audioTracks.length, audioTracks.map(t => t.label + ' enabled=' + t.enabled + ' readyState=' + t.readyState).join(', '));
+  const audioStream = new MediaStream(audioTracks);
   const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg', 'audio/mp4'].find(m => MediaRecorder.isTypeSupported(m)) || '';
-  audioRecorder = new MediaRecorder(audioStream, mimeType ? { mimeType } : {});
+  const recOpts = mimeType ? { mimeType, audioBitsPerSecond: 128000 } : { audioBitsPerSecond: 128000 };
+  audioRecorder = new MediaRecorder(audioStream, recOpts);
   audioRecorder.ondataavailable = (e) => {
     if (e.data.size < 50) return;
     const actualType = e.data.type || mimeType || 'audio/webm';
