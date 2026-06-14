@@ -1273,8 +1273,7 @@ function onMpResults(result) {
 
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
     const person = Math.min(1.0, d1[i] + d2[i] + d3[i] + (d4 ? d4[i] : 0));
-    // 下限0.10に下げて境界ピクセルを広く拾う
-    const t = Math.max(0, Math.min(1, (person - 0.03) / 0.32));
+    const t = Math.max(0, Math.min(1, (person - 0.10) / 0.50));
     const stepped = t * t * (3 - 2 * t);
     const alpha = stepped > prevMaskData[i] ? 0.05 : 0.55;
     prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
@@ -1531,13 +1530,27 @@ function getBgHistory() {
   try { return JSON.parse(localStorage.getItem('meet_bg_hist_' + bgKey) || '[]'); } catch(e) { return []; }
 }
 
+function safeLsSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch(e) {
+    // QuotaExceeded: 古い meet_bg_* データを全削除してリトライ
+    for (const k of [...Object.keys(localStorage)].filter(k => k.startsWith('meet_bg_'))) {
+      localStorage.removeItem(k);
+    }
+    try { localStorage.setItem(key, value); } catch(e2) {
+      console.warn('bg save failed even after cleanup:', e2);
+    }
+  }
+}
+
 function addToBgHistory(dataUrl) {
   const bgKey = myEmail || myName;
-  if (!bgKey) return;
+  if (!bgKey) { console.warn('addToBgHistory: no bgKey'); return; }
   let hist = getBgHistory().filter(u => u !== dataUrl);
   hist.unshift(dataUrl);
-  hist = hist.slice(0, 8);
-  try { localStorage.setItem('meet_bg_hist_' + bgKey, JSON.stringify(hist)); } catch(e) {}
+  hist = hist.slice(0, 6);
+  safeLsSet('meet_bg_hist_' + bgKey, JSON.stringify(hist));
 }
 
 function renderBgHistory() {
@@ -1586,10 +1599,10 @@ function loadBgImage(input) {
 
 function saveBgSettings() {
   const bgKey = myEmail || myName;
-  if (!bgKey) return;
+  if (!bgKey) { console.warn('saveBgSettings: no bgKey'); return; }
   const settings = { mode: bgMode, color: bgColorVal };
   if (bgMode === 'image' && bgImgDataUrl) settings.imgDataUrl = bgImgDataUrl;
-  try { localStorage.setItem('meet_bg_' + bgKey, JSON.stringify(settings)); } catch(e) {}
+  safeLsSet('meet_bg_' + bgKey, JSON.stringify(settings));
 }
 
 function loadBgSettings() {
