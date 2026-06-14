@@ -572,6 +572,31 @@ let rafId = null;
 let beautyCanvas = null, beautyCtx = null;
 
 const urlParams = new URLSearchParams(location.search);
+// 福祉SaaS連携: ?name=xxx&system=shuro&room=yyy で名前・ルーム自動入力
+const systemParam = urlParams.get('system');
+const systemLabels = {
+  shuro: '就労継続支援Manager',
+  kaigo: '介護グループホームManager',
+  houmon: '訪問介護Manager',
+  houdei: '放課後等デイサービスManager',
+  roukin: '老人ホームManager',
+  beauty: 'Beauty Manager',
+  bni: 'BNI Manager',
+};
+if (systemParam && systemLabels[systemParam]) {
+  // システムバッジを表示
+  const badge = document.createElement('div');
+  badge.style.cssText = 'background:#1a3a2a;border:1px solid #2d6a4f;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#74c69d;text-align:center';
+  badge.textContent = '🔗 ' + systemLabels[systemParam] + ' から接続';
+  document.querySelector('.lobby-box h1').after(badge);
+  // ルームIDフィールドを隠す（URLに含まれている場合）
+  if (urlParams.get('room')) {
+    document.getElementById('input-room').closest('input') && (document.getElementById('input-room').style.display = 'none');
+  }
+}
+if (urlParams.get('name')) {
+  document.getElementById('input-name').value = urlParams.get('name');
+}
 if (urlParams.get('room')) {
   document.getElementById('input-room').value = urlParams.get('room');
   (async () => {
