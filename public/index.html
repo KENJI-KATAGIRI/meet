@@ -259,6 +259,19 @@ select.br-room-select{padding:4px 8px;background:#1e1e3a;border:1px solid #3a3a5
 
 </div><!-- /meeting -->
 
+<!-- 退出確認モーダル -->
+<div id="leave-confirm-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#1e1e3a;border-radius:12px;padding:28px 32px;text-align:center;min-width:260px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+    <div style="font-size:36px;margin-bottom:12px">📴</div>
+    <div style="color:#fff;font-size:16px;font-weight:600;margin-bottom:8px">会議を退出しますか？</div>
+    <div style="color:#aaa;font-size:13px;margin-bottom:24px">退出すると接続が切断されます</div>
+    <div style="display:flex;gap:12px;justify-content:center">
+      <button onclick="document.getElementById('leave-confirm-modal').style.display='none'" style="padding:10px 24px;border-radius:8px;border:1px solid #555;background:transparent;color:#fff;cursor:pointer;font-size:14px">キャンセル</button>
+      <button onclick="doLeaveRoom()" style="padding:10px 24px;border-radius:8px;border:none;background:#e74c3c;color:#fff;cursor:pointer;font-size:14px;font-weight:600">退出する</button>
+    </div>
+  </div>
+</div>
+
 <!-- エフェクトパネル -->
 <div id="effects-panel">
   <div id="effects-header">
@@ -772,11 +785,41 @@ function createPeer(peerId, peerName, isInitiator) {
   pc.onicecandidate = event => {
     if (event.candidate) socket.emit('ice-candidate', { to: peerId, candidate: event.candidate });
   };
+  let disconnectTimer = null;
+  function removePeer(id, name) {
+    if (peers[id]) { try { peers[id].close(); } catch(e) {} delete peers[id]; }
+    const t = document.getElementById('tile-' + id); if (t) t.remove();
+    const st = document.getElementById('tile-screen-' + id); if (st) st.remove();
+    delete peerNames[id]; delete peerStreams[id]; delete peerInitiator[id];
+    notify((name || id) + ' が退出しました'); updateCount(); updateGrid();
+  }
   pc.onconnectionstatechange = () => {
     console.log('[WebRTC] ' + peerId + ' state: ' + pc.connectionState);
+    if (pc.connectionState === 'disconnected') {
+      // 一時的な切断の可能性があるので15秒待ってから削除
+      disconnectTimer = setTimeout(() => {
+        if (peers[peerId] && peers[peerId].connectionState !== 'connected') {
+          removePeer(peerId, peerName);
+        }
+      }, 15000);
+    }
+    if (pc.connectionState === 'connected' && disconnectTimer) {
+      clearTimeout(disconnectTimer); disconnectTimer = null;
+    }
+    if (pc.connectionState === 'closed') {
+      if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
+      removePeer(peerId, peerName);
+    }
     if (pc.connectionState === 'failed') {
+      if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = null; }
       notify(peerName + ' との接続に失敗しました。再接続中...');
       pc.restartIce();
+      // ICE再起動後も10秒で回復しなければ削除
+      setTimeout(() => {
+        if (peers[peerId] && peers[peerId].connectionState === 'failed') {
+          removePeer(peerId, peerName);
+        }
+      }, 10000);
     }
     if (pc.connectionState === 'connected') {
       console.log('[WebRTC] ' + peerId + ' CONNECTED OK');
@@ -1385,7 +1428,11 @@ window.addEventListener('beforeunload', () => {
   navigator.sendBeacon('/api/audio-finalize', form);
 });
 
-async function leaveRoom() {
+function leaveRoom() {
+  document.getElementById('leave-confirm-modal').style.display = 'flex';
+}
+async function doLeaveRoom() {
+  document.getElementById('leave-confirm-modal').style.display = 'none';
   if (timerInterval) clearInterval(timerInterval);
   if (speakerInterval) clearInterval(speakerInterval);
   await stopAndFinalizeAudio();
