@@ -1261,8 +1261,11 @@ function onMpResults(results) {
   }
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
     const raw = Math.max(d[j], d[j+3]) / 255;
-    const sig = 1 / (1 + Math.exp(-12 * (raw - 0.28)));
-    prevMaskData[i] = EMA_ALPHA * prevMaskData[i] + (1 - EMA_ALPHA) * sig;
+    const sig = 1 / (1 + Math.exp(-14 * (raw - 0.3)));
+    // 新しい検出が強ければ即追従、弱ければゆっくり減衰
+    prevMaskData[i] = sig > prevMaskData[i]
+      ? 0.6 * prevMaskData[i] + 0.4 * sig
+      : 0.85 * prevMaskData[i] + 0.15 * sig;
     const out = Math.round(prevMaskData[i] * 255);
     maskBuf[j] = maskBuf[j+1] = maskBuf[j+2] = maskBuf[j+3] = out;
   }
