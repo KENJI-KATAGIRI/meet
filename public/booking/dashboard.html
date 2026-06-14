@@ -96,6 +96,20 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
     </div>
   </div>
 
+  <!-- インスタント通話 -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div class="card-title">🎥 インスタント通話</div>
+      <button class="btn btn-secondary btn-sm" onclick="genRoom()">新しいURLを生成</button>
+    </div>
+    <p class="card-desc">予約なしですぐにビデオ通話を始めたいときに使えます。URLを相手に共有するだけで入室できます。</p>
+    <div class="url-display">
+      <span class="url-text" id="instant-url">—</span>
+      <button class="btn btn-primary btn-sm" id="instant-copy" onclick="copyInstant()" disabled>コピー</button>
+      <a class="btn btn-secondary btn-sm" id="instant-open" href="#" target="_blank" style="pointer-events:none;opacity:.4">今すぐ開く</a>
+    </div>
+  </div>
+
   <!-- 空き時間設定 -->
   <div class="section-card">
     <div class="section-head">
@@ -262,6 +276,21 @@ function showTab(name, btn) {
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('show'));
   document.getElementById('tab-'+name).classList.add('show');
 }
+
+function genRoom() {
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const url = `https://meet.gaiaarts.org/?room=${id}`;
+  document.getElementById('instant-url').textContent = url;
+  const copyBtn = document.getElementById('instant-copy');
+  const openBtn = document.getElementById('instant-open');
+  copyBtn.disabled = false;
+  openBtn.href = url;
+  openBtn.style.pointerEvents = '';
+  openBtn.style.opacity = '';
+  copyBtn.onclick = () => { navigator.clipboard.writeText(url); toast('✓ 通話URLをコピーしました'); };
+}
+
+function copyInstant() {}
 
 function copyUrl() {
   navigator.clipboard.writeText(`https://meet.gaiaarts.org/b/${me.slug}`);
