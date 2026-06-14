@@ -59,7 +59,7 @@ async function load() {
       <div class="detail-row"><div class="ico">🙋</div><div><div class="lbl">予約者</div><div class="val">${info.booker_name}</div></div></div>
     </div>
     <button class="btn-cancel" id="btn" onclick="doCancel()">この予約をキャンセルする</button>
-    <a class="btn-back" onclick="history.back()">← 戻る</a>
+    <a class="btn-back" id="back-link" href="/b/${info.slug}">← 予約ページに戻る</a>
   `;
 }
 

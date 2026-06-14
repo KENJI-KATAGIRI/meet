@@ -626,7 +626,7 @@ app.get('/api/cancel-info', (req, res) => {
   const token = req.query.token;
   if (!token) return res.json({ found: false });
   const booking = db.prepare(
-    'SELECT b.booker_name, b.start_time, b.end_time, b.cancelled, u.name as host_name FROM bookings b JOIN users u ON b.user_id = u.id WHERE b.cancel_token=?'
+    'SELECT b.booker_name, b.start_time, b.end_time, b.cancelled, u.name as host_name, u.slug FROM bookings b JOIN users u ON b.user_id = u.id WHERE b.cancel_token=?'
   ).get(token);
   if (!booking) return res.json({ found: false });
   res.json({ found: true, ...booking });
