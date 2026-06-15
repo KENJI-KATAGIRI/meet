@@ -3,33 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NiceMeet</title>
+<title>121Manager｜BNI会員専用 1-2-1ツール</title>
 <style>
 :root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#2a2a4a;--accent:#6c63ff;--accent2:#8b82ff;--text:#fff;--muted:#888;--border:#2a2a4a}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
-.left{flex:1;display:flex;flex-direction:column;justify-content:center;padding:60px;background:linear-gradient(135deg,#0f0f1a 0%,#1a1a3e 100%)}
+body{font-family:'Hiragino Sans','Noto Sans JP','Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
+.left{flex:1;display:flex;flex-direction:column;justify-content:center;padding:60px;background:linear-gradient(135deg,#0f0f1a 0%,#1a1a3e 100%);position:relative;overflow:hidden}
+.left::before{content:'';position:absolute;top:-40%;left:-20%;width:600px;height:600px;background:radial-gradient(circle,rgba(108,99,255,.12) 0%,transparent 70%);pointer-events:none}
 .right{width:480px;display:flex;align-items:center;justify-content:center;padding:40px;border-left:1px solid var(--border)}
 .brand{display:flex;align-items:center;gap:12px;margin-bottom:48px}
-.brand-icon{width:44px;height:44px;background:var(--accent);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
-.brand-name{font-size:20px;font-weight:700;letter-spacing:-.3px}
-.left h1{font-size:36px;font-weight:800;line-height:1.2;margin-bottom:16px;letter-spacing:-.5px}
-.left h1 span{color:var(--accent)}
-.left p{color:var(--muted);font-size:16px;line-height:1.7;max-width:420px;margin-bottom:48px}
-.features{display:flex;flex-direction:column;gap:16px}
-.feature{display:flex;align-items:center;gap:14px}
+.brand-icon{font-size:28px}
+.brand-name{font-size:20px;font-weight:800;letter-spacing:-.3px;background:linear-gradient(135deg,#a5b4fc,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.left h1{font-size:32px;font-weight:900;line-height:1.25;margin-bottom:12px;letter-spacing:-.5px}
+.left h1 span{background:linear-gradient(135deg,#a5b4fc,#8b5cf6,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.left>p{color:var(--muted);font-size:15px;line-height:1.7;max-width:420px;margin-bottom:36px}
+.price-note{display:inline-flex;align-items:center;gap:10px;background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.25);border-radius:12px;padding:10px 16px;margin-bottom:36px;font-size:13px}
+.price-note .p{font-size:20px;font-weight:900;color:#a5b4fc}
+.price-note .zoom{color:var(--muted);text-decoration:line-through;font-size:12px}
+.features{display:flex;flex-direction:column;gap:14px}
+.feature{display:flex;align-items:flex-start;gap:14px}
 .feature-icon{width:36px;height:36px;background:#1e1e3a;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;border:1px solid var(--border)}
-.feature p{font-size:14px;color:var(--muted)}
-.feature p strong{color:var(--text);display:block;margin-bottom:2px}
+.feature p{font-size:13px;color:var(--muted);line-height:1.5}
+.feature p strong{color:var(--text);display:block;margin-bottom:2px;font-size:14px}
+.flow-mini{display:flex;align-items:center;gap:6px;margin-bottom:36px;flex-wrap:wrap}
+.flow-mini span{font-size:11px;background:rgba(108,99,255,.15);color:#a5b4fc;padding:4px 10px;border-radius:999px;font-weight:700}
+.flow-mini .arr{color:#334155;font-size:12px}
+/* Right side */
 .box{width:100%;max-width:400px}
-.box h2{font-size:24px;font-weight:700;margin-bottom:6px}
-.box>p{color:var(--muted);font-size:14px;margin-bottom:28px}
-.btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px;background:#fff;border:none;border-radius:10px;color:#1a1a1a;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.box h2{font-size:22px;font-weight:800;margin-bottom:4px}
+.box>p{color:var(--muted);font-size:13px;margin-bottom:24px}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px;background:#fff;border:none;border-radius:10px;color:#1a1a1a;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;transition:all .2s;box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .btn-google:hover{background:#f5f5f5;transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,.4)}
-.divider{display:flex;align-items:center;gap:12px;margin:20px 0}
+.divider{display:flex;align-items:center;gap:12px;margin:18px 0}
 .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
 .divider span{color:#444;font-size:12px}
-.tabs{display:flex;background:var(--bg3);border-radius:10px;padding:3px;margin-bottom:20px}
+.tabs{display:flex;background:var(--bg3);border-radius:10px;padding:3px;margin-bottom:18px}
 .tab{flex:1;padding:9px;text-align:center;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted);transition:all .2s}
 .tab.active{background:var(--accent);color:#fff}
 .form-group{margin-bottom:12px}
@@ -42,7 +50,8 @@ input::placeholder{color:#444}
 .form-section{display:none}
 .form-section.active{display:block}
 .error{color:#ff6b6b;font-size:13px;margin-top:12px;text-align:center;min-height:18px}
-.hint{font-size:12px;color:#444;text-align:center;margin-top:14px}
+.hint{font-size:11px;color:#444;text-align:center;margin-top:14px;line-height:1.6}
+.trial-badge{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:12px;color:#4ade80;text-align:center;font-weight:600}
 @media(max-width:768px){
   body{flex-direction:column}
   .left{display:none}
@@ -53,56 +62,66 @@ input::placeholder{color:#444}
 <body>
 <div class="left">
   <div class="brand">
-    <div class="brand-icon">📅</div>
-    <span class="brand-name">NiceMeet</span>
+    <div class="brand-icon">🤝</div>
+    <span class="brand-name">121Manager</span>
   </div>
-  <h1>オンライン面談を<br><span>もっとスムーズに。</span></h1>
-  <p>予約URLを共有するだけ。相手が空いている時間を選んで予約してくれます。Googleカレンダーへの自動登録と確認メールの送信まで全部自動です。</p>
+  <h1>BNIの1-2-1を、<br><span>AIが記憶する。</span></h1>
+  <p>予約から通話・AI文字起こし・GAINS保存まで全自動。1-2-1の質が、紹介の数を変えます。</p>
+
+  <div class="flow-mini">
+    <span>📅 予約</span><div class="arr">→</div>
+    <span>🎥 通話</span><div class="arr">→</div>
+    <span>🎙️ AI文字起こし</span><div class="arr">→</div>
+    <span>🧠 GAINS保存</span>
+  </div>
+
+  <div class="price-note">
+    <div>
+      <div class="p">¥1,980<small style="font-size:12px;font-weight:600;color:#6366f1">/月</small></div>
+      <div class="zoom">Zoom Proだけで ¥2,200/月</div>
+    </div>
+    <div style="font-size:12px;color:#94a3b8;border-left:1px solid #334155;padding-left:12px;line-height:1.6">全機能込み<br>いつでも解約OK</div>
+  </div>
+
   <div class="features">
     <div class="feature">
-      <div class="feature-icon">🔗</div>
-      <p><strong>予約URLを共有するだけ</strong>メール・LINE・サイトに貼り付けてすぐ使えます</p>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">📧</div>
-      <p><strong>確認メールを自動送信</strong>予約者とあなた両方に内容とビデオ通話URLをお届け</p>
-    </div>
-    <div class="feature">
       <div class="feature-icon">📅</div>
-      <p><strong>Googleカレンダーと同期</strong>既存の予定と重複しないように自動でチェック</p>
+      <p><strong>スマート予約システム</strong>あなた専用URLを発行。相手が24時間いつでも予約できます</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🎥</div>
+      <p><strong>入室前情報収集つきビデオ通話</strong>相手の名前・会社・チャプターを入室前に自動収集</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🎙️</div>
+      <p><strong>AI自動文字起こし・要約</strong>1時間の1-2-1をまるごと記録。メールで届きます</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🧠</div>
+      <p><strong>GAINS自動抽出・CRM保存</strong>会話からGoals・Interests・Networksを自動で121Managerへ</p>
     </div>
   </div>
 </div>
 <div class="right">
   <div class="box">
-    <h2>ログイン</h2>
-    <p>アカウントにログインして予約ページを管理しましょう</p>
+    <h2>アカウント登録</h2>
+    <p>30日間無料トライアル・クレジットカード不要</p>
+
+    <div class="trial-badge">✓ 30日間完全無料 → その後 ¥1,980/月</div>
 
     <a href="/auth/google" class="btn-google">
       <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-      Googleアカウントでログイン
+      Googleアカウントで登録
     </a>
 
-    <div class="divider"><span>またはメールアドレスでログイン</span></div>
+    <div class="divider"><span>またはメールアドレスで</span></div>
 
     <div class="tabs">
-      <div class="tab active" id="tab-login" onclick="switchTab('login')">ログイン</div>
-      <div class="tab" id="tab-register" onclick="switchTab('register')">新規登録</div>
+      <div class="tab active" id="tab-register" onclick="switchTab('register')">新規登録</div>
+      <div class="tab" id="tab-login" onclick="switchTab('login')">ログイン</div>
     </div>
 
-    <div class="form-section active" id="form-login">
-      <div class="form-group">
-        <label>メールアドレス</label>
-        <input type="email" id="login-email" placeholder="your@email.com" autocomplete="email">
-      </div>
-      <div class="form-group">
-        <label>パスワード</label>
-        <input type="password" id="login-pass" placeholder="パスワードを入力" autocomplete="current-password">
-      </div>
-      <button class="btn-primary" onclick="doLogin()">ログイン</button>
-    </div>
-
-    <div class="form-section" id="form-register">
+    <div class="form-section active" id="form-register">
       <div class="form-group">
         <label>お名前</label>
         <input type="text" id="reg-name" placeholder="山田 太郎" autocomplete="name">
@@ -115,7 +134,19 @@ input::placeholder{color:#444}
         <label>パスワード <span style="color:#444;font-size:11px">（8文字以上）</span></label>
         <input type="password" id="reg-pass" placeholder="パスワードを設定" autocomplete="new-password">
       </div>
-      <button class="btn-primary" onclick="doRegister()">アカウントを作成</button>
+      <button class="btn-primary" onclick="doRegister()">無料トライアルを始める</button>
+    </div>
+
+    <div class="form-section" id="form-login">
+      <div class="form-group">
+        <label>メールアドレス</label>
+        <input type="email" id="login-email" placeholder="your@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>パスワード</label>
+        <input type="password" id="login-pass" placeholder="パスワードを入力" autocomplete="current-password">
+      </div>
+      <button class="btn-primary" onclick="doLogin()">ログイン</button>
     </div>
 
     <div class="error" id="err"></div>
@@ -123,6 +154,7 @@ input::placeholder{color:#444}
   </div>
 </div>
 <script>
+if (new URLSearchParams(location.search).get('tab') === 'login') switchTab('login');
 if (new URLSearchParams(location.search).get('error')) {
   document.getElementById('err').textContent = 'ログインに失敗しました。もう一度お試しください。';
 }

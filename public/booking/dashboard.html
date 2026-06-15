@@ -120,6 +120,14 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
 .rec-badge-face{background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.35);color:#4ade80;font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700}
 .btn-confirm-rec{margin-top:10px;width:100%;padding:11px;background:#4ade80;border:none;border-radius:9px;color:#0f1a0f;font-size:13px;font-weight:700;cursor:pointer}
 .btn-confirm-rec:hover{opacity:.85}
+
+/* BNI card */
+.bni-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:13px;outline:none}
+.bni-input:focus{border-color:var(--accent)}
+.bni-input::placeholder{color:var(--muted)}
+.mode-badge{font-size:10px;font-weight:700;letter-spacing:.8px;padding:3px 8px;border-radius:20px;border:1px solid}
+.mode-badge.bni{background:rgba(108,99,255,.15);color:var(--accent);border-color:rgba(108,99,255,.3)}
+.mode-badge.welfare{background:rgba(74,222,128,.1);color:#4ade80;border-color:rgba(74,222,128,.25)}
 </style>
 </head>
 <body>
@@ -127,7 +135,7 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
   <div class="brand"><div class="brand-icon">📅</div>NiceMeet</div>
   <div class="header-right">
     <div class="avatar-sm" id="hdr-avatar">?</div>
-    <span class="user-name" id="hdr-name">読み込み中...</span>
+    <span class="mode-badge bni" id="hdr-mode-badge" style="margin-right:4px"></span><span class="user-name" id="hdr-name">読み込み中...</span>
     <a href="/" class="btn btn-secondary btn-sm">🎥 通話</a>
     <a href="/auth/logout" class="btn btn-secondary btn-sm">ログアウト</a>
   </div>
@@ -301,6 +309,25 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
     </div>
   </div>
 
+
+  <!-- BNI 1-2-1（非welfareユーザー専用・JSで表示制御） -->
+  <div class="card" id="bni-card" style="margin-bottom:20px;display:none">
+    <div class="card-header">
+      <div class="card-title">🤝 BNI 1-2-1</div>
+      <button class="btn btn-secondary btn-sm" onclick="genBniRoom()">🔄 新しいルーム</button>
+    </div>
+    <p class="card-desc">1-2-1ミーティング専用モードです。通話終了後にGAINS情報が自動抽出され、1to1 Managerに保存されます。</p>
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+      <input id="bni-contact-name" class="bni-input" placeholder="相手の名前（例：山田 太郎）" oninput="genBniUrl()">
+    </div>
+    <div class="url-display">
+      <span class="url-text" id="bni-guest-url" style="color:var(--muted);font-style:italic">相手の名前を入力するとURLが生成されます</span>
+      <button class="btn btn-primary btn-sm" id="bni-copy-btn" onclick="copyBniUrl()" disabled>コピー</button>
+      <a class="btn btn-secondary btn-sm" id="bni-open-btn" href="#" target="_blank" style="pointer-events:none;opacity:.4">参加する</a>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6">※ URLをコピーして相手に共有してください。相手は入室前に名前・連絡先を入力します。</p>
+  </div>
+
   <!-- 空き時間設定 -->
   <div class="section-card">
     <div class="section-head">
@@ -377,24 +404,36 @@ async function init() {
     history.replaceState({}, '', '/booking/dashboard');
   }
 
-  // ui_mode に応じてプランカードを表示
+  // ui_mode に応じて表示切替
   if (me.ui_mode === 'welfare') {
+    // 施設モード: BNIカード非表示、施設プラン表示
+    document.getElementById('plan-card').style.display = 'none';
+    document.getElementById('bni-card').style.display = 'none';
+    document.getElementById('hdr-mode-badge').textContent = '🏥 施設モード';
+    document.getElementById('hdr-mode-badge').className = 'mode-badge welfare';
     await loadFacilityStatus(me);
   } else {
-    // シンプルモード: 個人プランカードのみ表示
-    document.getElementById('plan-card').style.display = '';
+    // BNIモード: 施設カード非表示、BNI 1-2-1カード表示
+    document.getElementById('plan-card').style.display = 'none';
     document.getElementById('facility-card').style.display = 'none';
-    const planR = await fetch('/api/my-plan').then(r => r.json());
-    const badge = document.getElementById('plan-badge');
-    if (planR.plan === 'paid') {
-      badge.textContent = 'PRO'; badge.className = 'plan-badge paid';
-      document.getElementById('plan-free-content').style.display = 'none';
-      document.getElementById('plan-paid-content').style.display = '';
-    } else {
-      badge.textContent = 'FREE'; badge.className = 'plan-badge free';
+    document.getElementById('bni-card').style.display = '';
+    document.getElementById('hdr-mode-badge').textContent = '🤝 BNIモード';
+    document.getElementById('hdr-mode-badge').className = 'mode-badge bni';
+    genBniRoom();
+    // ?mode=welfare で来た場合は施設登録モーダルを自動表示
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.get('mode') === 'welfare') {
+      history.replaceState({}, '', '/booking/dashboard');
+      setTimeout(() => openRegModal(), 600);
+    }
+    // ?preview=welfare で開発者向け施設ダッシュボードプレビュー
+    if (urlParams.get('preview') === 'welfare') {
+      document.getElementById('bni-card').style.display = 'none';
+      document.getElementById('hdr-mode-badge').textContent = '🏥 施設モード（プレビュー）';
+      document.getElementById('hdr-mode-badge').className = 'mode-badge welfare';
+      await loadFacilityStatus(me);
     }
   }
-
   renderDow();
   renderBookings(bookRes);
 }
@@ -514,6 +553,51 @@ function genRoom() {
 }
 
 function copyInstant() {}
+
+// ── BNI 1-2-1 mode ──
+let bniRoomId = null;
+
+function genBniRoom() {
+  bniRoomId = '121-' + Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  genBniUrl();
+}
+
+function genBniUrl() {
+  if (!bniRoomId || !me) return;
+  const contactName = document.getElementById('bni-contact-name').value.trim();
+  const url = new URL('https://meet.gaiaarts.org/');
+  url.searchParams.set('system', 'bni');
+  url.searchParams.set('bni_user', me.name || '');
+  url.searchParams.set('room', bniRoomId);
+  const urlEl = document.getElementById('bni-guest-url');
+  const copyBtn = document.getElementById('bni-copy-btn');
+  const openBtn = document.getElementById('bni-open-btn');
+  if (contactName) {
+    url.searchParams.set('bni_contact_name', contactName);
+    url.searchParams.set('name', contactName);
+    const urlStr = url.toString();
+    urlEl.textContent = urlStr;
+    urlEl.style.color = 'var(--accent)';
+    urlEl.style.fontStyle = 'normal';
+    copyBtn.disabled = false;
+    openBtn.href = urlStr;
+    openBtn.style.pointerEvents = '';
+    openBtn.style.opacity = '';
+  } else {
+    urlEl.textContent = '相手の名前を入力するとURLが生成されます';
+    urlEl.style.color = 'var(--muted)';
+    urlEl.style.fontStyle = 'italic';
+    copyBtn.disabled = true;
+    openBtn.style.pointerEvents = 'none';
+    openBtn.style.opacity = '.4';
+  }
+}
+
+function copyBniUrl() {
+  navigator.clipboard.writeText(document.getElementById('bni-guest-url').textContent);
+  toast('✓ BNI 1-2-1 URLをコピーしました');
+}
+
 
 function copyUrl() {
   navigator.clipboard.writeText(`https://meet.gaiaarts.org/b/${me.slug}`);

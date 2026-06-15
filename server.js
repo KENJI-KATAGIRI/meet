@@ -12,6 +12,8 @@ const multer = require('multer');
 const fs = require('fs');
 const OpenAI = require('openai');
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const groqWhisper = process.env.GROQ_API_KEY ? new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: "https://api.groq.com/openai/v1" }) : null;
+const whisperClient = groqWhisper || openai;
 const Stripe = (() => { try { return require('stripe'); } catch(e) { return null; } })();
 const stripe = (Stripe && process.env.STRIPE_SECRET_KEY) ? Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -1045,9 +1047,9 @@ const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 * 1024 } })
 async function transcribeAndSummarize(filepath, filename, roomId) {
   try {
     if (roomId) io.to(roomId).emit('transcription-status', { status: 'transcribing' });
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await whisperClient.audio.transcriptions.create({
       file: fs.createReadStream(filepath),
-      model: 'whisper-1',
+      model: 'whisper-large-v3',
       language: 'ja',
     });
     const transcript = transcription.text;
@@ -1257,9 +1259,9 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
           fs.writeFileSync(tmpFile, Buffer.concat([webmHeader, buf]));
           sendPath = tmpFile;
         }
-        const result = await openai.audio.transcriptions.create({
+        const result = await whisperClient.audio.transcriptions.create({
           file: fs.createReadStream(sendPath),
-          model: 'whisper-1',
+          model: 'whisper-large-v3',
           language: 'ja',
           prompt: 'はい。',
           response_format: 'verbose_json',
@@ -1345,6 +1347,26 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
           })
         });
         console.log(`[audio-finalize] BNI 1-2-1 sent to BNI app user=${staffName} contact=${memberName}`);
+        // R2にも保存
+        const driveUrl = process.env.DRIVE_INTERNAL_URL || 'http://localhost:8309/api/internal/upload-json';
+        const driveSecret = process.env.DRIVE_INTERNAL_SECRET || 'gaia-internal-2026';
+        const r2Date = new Date().toISOString().slice(0, 10);
+        const r2Name = (memberName || 'unknown').replace(/[^\w぀-鿿]/g, '_');
+        const r2Key = `nicemeet/bni/${r2Date}/${sessionId}-${r2Name}.json`;
+        const r2Body = JSON.stringify({
+          date: r2Date, bni_user: staffName, contact_name: memberName,
+          duration_minutes: durMin, transcript,
+          summary: bniData.summary || summary,
+          gains: bniData.gains || {},
+          referral_hints: bniData.referral_hints || '',
+          follow_up: bniData.follow_up || ''
+        }, null, 2);
+        fetch(driveUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-internal-secret': driveSecret },
+          body: JSON.stringify({ key: r2Key, content: r2Body })
+        }).then(() => console.log('[audio-finalize] R2 saved:', r2Key))
+          .catch(e => console.error('[audio-finalize] R2 error:', e.message));
       } catch(e) { console.error('[audio-finalize] BNI webhook error:', e.message); }
     } else if (fUser?.facility_id) {
       if (isWelfareRecord) {
@@ -1687,9 +1709,9 @@ app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'
   }
   try {
     // Whisper transcription
-    const result = await openai.audio.transcriptions.create({
+    const result = await whisperClient.audio.transcriptions.create({
       file: fs.createReadStream(req.file.path),
-      model: 'whisper-1',
+      model: 'whisper-large-v3',
       language: 'ja',
       prompt: 'はい。',
       response_format: 'verbose_json',
