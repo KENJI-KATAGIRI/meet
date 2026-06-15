@@ -2060,9 +2060,14 @@ async function initEffectsStream() {
 }
 
 function startEffectsLoop() {
-  const loop = () => {
-    renderFrame();            // 同期描画（await しない）
+  let lastTime = 0;
+  const TARGET_FPS = 20;
+  const INTERVAL = 1000 / TARGET_FPS;
+  const loop = (now) => {
     rafId = requestAnimationFrame(loop);
+    if (now - lastTime < INTERVAL) return;
+    lastTime = now;
+    renderFrame();
   };
   rafId = requestAnimationFrame(loop);
 }
@@ -2233,27 +2238,23 @@ function updatePreviewCanvas(w, h, sx, sy, sw, sh) {
   previewCtx.clearRect(0, 0, w, h);
 
   if (bgMode !== 'none' && maskCanvas2 && bgCanvas) {
-    // 背景あり: 背景をミラー描画 → CSSのscaleX(-1)で二重反転=正向き
-    //           人物は正向き描画 → CSSで自然なミラー表示
+    // 背景・人物ともに正向きで描画、CSSのscaleX(-1)でミラー統一
     const bp = 30;
-    previewCtx.save();
-    previewCtx.scale(-1, 1);
     if (bgMode === 'blur') {
       previewCtx.filter = 'blur(24px) brightness(0.7)';
-      previewCtx.drawImage(effectsVideo, sx, sy, sw, sh, -(w + bp), -bp, w + bp * 2, h + bp * 2);
+      previewCtx.drawImage(effectsVideo, sx, sy, sw, sh, -bp, -bp, w + bp * 2, h + bp * 2);
       previewCtx.filter = 'none';
     } else if (bgMode === 'color') {
       previewCtx.fillStyle = bgColorVal;
-      previewCtx.fillRect(-w, 0, w, h);
+      previewCtx.fillRect(0, 0, w, h);
     } else if (bgMode === 'image' && bgImg) {
-      previewCtx.drawImage(bgImg, -w, 0, w, h);
+      previewCtx.drawImage(bgImg, 0, 0, w, h);
     }
-    previewCtx.restore();
     // 人物エリアを透明化
     previewCtx.globalCompositeOperation = 'destination-out';
     previewCtx.drawImage(maskCanvas2, 0, 0, w, h);
     previewCtx.globalCompositeOperation = 'source-over';
-    // 正向き人物を後ろに重ねる
+    // 人物を後ろに重ねる
     previewCtx.globalCompositeOperation = 'destination-over';
     if (beautyLevel > 0) {
       previewCtx.drawImage(beautyCanvas, 0, 0, w, h);
