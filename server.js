@@ -383,13 +383,11 @@ function getOAuthClient(tokens) {
   return client;
 }
 
-// サービスアカウントでカレンダー操作
-const serviceAuth = new google.auth.GoogleAuth({
-  keyFile: path.join(__dirname, 'service-account.json'),
-  scopes: ['https://www.googleapis.com/auth/calendar']
-});
-function getCalendarClient() {
-  return google.calendar({ version: 'v3', auth: serviceAuth });
+function getUserCalendarClient(user) {
+  if (!user || !user.refresh_token) return null;
+  const auth = getOAuthClient();
+  auth.setCredentials({ access_token: user.access_token, refresh_token: user.refresh_token });
+  return google.calendar({ version: 'v3', auth });
 }
 
 // ---- Auth ----
@@ -434,7 +432,8 @@ app.get('/auth/google', (req, res) => {
     access_type: 'offline',
     scope: [
       'https://www.googleapis.com/auth/userinfo.profile',
-      'https://www.googleapis.com/auth/userinfo.email'
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/calendar'
     ],
     prompt: 'consent'
   });
@@ -649,9 +648,8 @@ app.delete('/api/bookings/:id', requireAuth, async (req, res) => {
   if (!booking) return res.status(404).json({ error: 'not found' });
   const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.session.userId);
   if (booking.google_event_id) {
-    getCalendarClient().events.delete({
-      calendarId: user.email, eventId: booking.google_event_id, sendUpdates: 'all'
-    }).catch(() => {});
+    const cal = getUserCalendarClient(user);
+    if (cal) cal.events.delete({ calendarId: user.email, eventId: booking.google_event_id, sendUpdates: 'all' }).catch(() => {});
   }
   db.prepare('DELETE FROM bookings WHERE id=?').run(req.params.id);
 
@@ -721,7 +719,9 @@ app.get('/api/b/:slug/slots', async (req, res) => {
   try {
     const tMin = `${date}T00:00:00+09:00`;
     const tMax = `${date}T23:59:59+09:00`;
-    const fb = await getCalendarClient().freebusy.query({
+    const cal = getUserCalendarClient(user);
+    if (!cal) throw new Error('no calendar client');
+    const fb = await cal.freebusy.query({
       requestBody: { timeMin: tMin, timeMax: tMax, timeZone: 'Asia/Tokyo', items: [{ id: user.email }] }
     });
     const busy = (fb.data.calendars[user.email] || fb.data.calendars.primary || {}).busy || [];
@@ -750,7 +750,9 @@ app.post('/api/b/:slug/book', async (req, res) => {
 
   let googleEventId = null;
   try {
-    const event = await getCalendarClient().events.insert({
+    const calClient = getUserCalendarClient(user);
+    if (!calClient) throw new Error('no calendar client');
+    const event = await calClient.events.insert({
       calendarId: user.email,
       sendUpdates: 'all',
       requestBody: {
@@ -1433,9 +1435,9 @@ app.post('/api/cancel', async (req, res) => {
   db.prepare('UPDATE bookings SET cancelled=1 WHERE cancel_token=?').run(token);
 
   if (booking.google_event_id) {
-    getCalendarClient().events.delete({
-      calendarId: booking.host_email, eventId: booking.google_event_id, sendUpdates: 'all'
-    }).catch(() => {});
+    const host = db.prepare('SELECT * FROM users WHERE email=?').get(booking.host_email);
+    const cal = getUserCalendarClient(host);
+    if (cal) cal.events.delete({ calendarId: booking.host_email, eventId: booking.google_event_id, sendUpdates: 'all' }).catch(() => {});
   }
 
   const startDt = new Date(booking.start_time);
