@@ -163,6 +163,7 @@ db.exec(`
 `);
 try { db.exec('ALTER TABLE users ADD COLUMN facility_id INTEGER'); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN ui_mode TEXT DEFAULT 'simple'"); } catch(e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN registered_at TEXT DEFAULT (datetime('now'))"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN status TEXT DEFAULT 'confirmed'"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN source TEXT DEFAULT 'video'"); } catch(e) {}
 
@@ -462,7 +463,7 @@ app.get('/auth/google/callback', async (req, res) => {
       let slug = data.name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
       let base = slug, i = 1;
       while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
-      const r = db.prepare('INSERT INTO users (google_id, name, email, access_token, refresh_token, slug) VALUES (?,?,?,?,?,?)')
+      const r = db.prepare("INSERT INTO users (google_id, name, email, access_token, refresh_token, slug, registered_at) VALUES (?,?,?,?,?,?,datetime('now'))")
         .run(data.id, data.name, data.email, tokens.access_token, tokens.refresh_token, slug);
       req.session.userId = r.lastInsertRowid;
       req.session.slug = slug;
@@ -487,7 +488,7 @@ app.post('/auth/register', async (req, res) => {
   let base = slug, i = 1;
   while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
   const password_hash = await hashPassword(password);
-  const r = db.prepare('INSERT INTO users (name, email, password_hash, slug) VALUES (?,?,?,?)')
+  const r = db.prepare("INSERT INTO users (name, email, password_hash, slug, registered_at) VALUES (?,?,?,?,datetime('now'))")
     .run(name, email, password_hash, slug);
   req.session.userId = r.lastInsertRowid;
   req.session.slug = slug;
@@ -515,7 +516,7 @@ function requireAuth(req, res, next) {
 
 // ---- API: me ----
 app.get('/api/me', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
+  const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode, registered_at, stripe_customer_id, plan, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
   res.json(u);
 });
 

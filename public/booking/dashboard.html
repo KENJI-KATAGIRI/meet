@@ -394,6 +394,23 @@ async function init() {
     document.getElementById('plan-free-content').style.display = 'none';
     document.getElementById('plan-paid-content').style.display = 'block';
   }
+  // 支払い状況チェック
+  const trialBanner = document.createElement('div');
+  const regDate = me.registered_at ? new Date(me.registered_at) : null;
+  const daysSinceReg = regDate ? (Date.now() - regDate.getTime()) / 86400000 : 999;
+  const hasStripeCustomer = !!me.stripe_customer_id;
+  const isPaid = me.plan === 'paid';
+
+  if (!isPaid && (hasStripeCustomer || daysSinceReg > 30)) {
+    // カード未登録 or 30日超過
+    const isExpired = daysSinceReg > 30;
+    trialBanner.style.cssText = 'background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;color:#fca5a5;line-height:1.8';
+    trialBanner.innerHTML = isExpired
+      ? '⚠️ <strong style="color:#f87171">トライアル期間が終了しました</strong><br><span style="color:#94a3b8">引き続き全機能をご利用いただくにはお支払いが必要です（¥1,980/月）。</span><br><button onclick="startUpgrade()" style="margin-top:8px;padding:8px 20px;background:#6c63ff;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">→ 支払いに進む</button>'
+      : '💳 <strong style="color:#f87171">クレジットカードが未登録です</strong><br><span style="color:#94a3b8">30日間の無料トライアル中です。期間終了前にカードを登録してください。</span><br><button onclick="startUpgrade()" style="margin-top:8px;padding:8px 20px;background:#6c63ff;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">→ カードを登録する（30日間無料）</button>';
+    document.querySelector('.container').prepend(trialBanner);
+  }
+
   if (!me.has_google) {
     const banner = document.createElement('div');
     banner.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#fca5a5;line-height:1.7';
