@@ -652,12 +652,27 @@ async function registerFacility() {
   const locInputs = document.querySelectorAll('.reg-loc-input');
   const locations = [...locInputs].map(i => i.value.trim()).filter(Boolean);
   if (!name || !locations.length) { toast('施設名と拠点名は必須です'); return; }
-  const r = await fetch('/api/facility/register', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ facility_name: name, contact_name: contact, phone, locations })
-  }).then(r => r.json());
-  if (r.ok) { toast('🎉 施設登録完了！30日間のトライアルを開始します。'); closeRegModal(); loadFacilityStatus({}); }
-  else toast('エラー: ' + (r.error || ''));
+  try {
+    const res = await fetch('/api/facility/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ facility_name: name, contact_name: contact, phone, locations })
+    });
+    const r = await res.json();
+    if (r.ok) {
+      toast('🎉 施設登録完了！30日間のトライアルを開始します。');
+      closeRegModal();
+      await loadFacilityStatus({});
+    } else if (r.error === 'already registered') {
+      toast('施設はすでに登録されています。');
+      closeRegModal();
+      await loadFacilityStatus({});
+    } else {
+      toast('エラー: ' + (r.error || '登録できませんでした'));
+    }
+  } catch(e) {
+    toast('通信エラーが発生しました。再度お試しください。');
+    console.error('registerFacility error:', e);
+  }
 }
 
 function printSummaries() {

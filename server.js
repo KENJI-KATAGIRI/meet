@@ -829,6 +829,30 @@ const FACE_RECORD_TYPES = {
 };
 
 // ---- 対面録音モード専用：GPTプロンプト ----
+const BNI_PROMPT = `あなたはBNI（Business Network International）の1-2-1ミーティング専門の記録アシスタントです。
+以下の会話からGAINS情報と紹介機会を抽出してください。
+
+GAINS:
+G - Goals（目標）: ビジネス目標・人生の夢・達成したいこと
+A - Accomplishments（実績）: 最近の成功・受賞・成果・誤れること
+I - Interests（趣味・関心）: 趣味・プライベートの関心・ライフスタイル
+N - Networks（人脈）: 所属団体・コミュニティ・業界つながり
+S - Skills（スキル）: 専門スキル・資格・得意分野
+
+必ずJSON形式のみで出力すること（他のテキストは一切含めない）:
+{
+  "summary": "1-2-1全体の要約（3-4文）",
+  "gains": {
+    "goals": "目標に関する情報",
+    "accomplishments": "実績に関する情報",
+    "interests": "趣味・関心に関する情報",
+    "networks": "人脈に関する情報",
+    "skills": "スキルに関する情報"
+  },
+  "referral_hints": "紹介につながりそうなキーワード・ニーズ・状況",
+  "follow_up": "次回までのフォローアップ・約束事項"
+}`;
+
 const FACE_PROMPTS = {
   houmon: {
     '訪問記録（サービス提供記録）': `以下は訪問介護のヘルパーと利用者・家族の対面会話の文字起こしです。介護保険法指定基準第19条に基づく「サービス提供記録（実施記録）」として業務記録文体（〜が見られた／〜を実施した／〜が確認された）で作成してください。
@@ -1163,9 +1187,13 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
   const memberName = req.body.memberName || '';
   const staffName = req.body.staffName || '';
   const isWelfareRecord = recordMode === 'welfare' && welfareSystem && welfareRecordType;
+  const isBniRecord = recordMode === 'bni';
+  const bniContactId = req.body.bniContactId ? parseInt(req.body.bniContactId) || null : null;
   if (recordMode === 'none') { console.log('[audio-finalize] mode=none, skip'); return; }
   let canUseAI = false;
-  if (fUser?.facility_id) {
+  if (isBniRecord) {
+    canUseAI = true;
+  } else if (fUser?.facility_id) {
     const fac = db.prepare('SELECT * FROM nm_facilities WHERE id=?').get(fUser.facility_id);
     const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(fUser.facility_id)?.cnt || 0;
     const facStatus = getFacilityStatus(fac);
@@ -1278,11 +1306,13 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
     }
 
     const welfarePrompt = isWelfareRecord ? (WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null) : null;
-    const systemPrompt = welfarePrompt
-      ? `${welfarePrompt}
+    const systemPrompt = isBniRecord
+      ? BNI_PROMPT
+      : welfarePrompt
+        ? `${welfarePrompt}
 
 対象者: ${memberName || '（記載なし）'} / 担当: ${staffName || '（記載なし）'}`
-      : '以下はビデオ会議の文字起こしです（話者A・話者Bは異なる参加者です）。日本語で要約してください。箇条書きで主要な議題、決定事項、アクションアイテムをまとめてください。';
+        : '以下はビデオ会議の文字起こしです（話者A・話者Bは異なる参加者です）。日本語で要約してください。箇条書きで主要な議題、決定事項、アクションアイテムをまとめてください。';
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -1292,8 +1322,31 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
     });
     const summary = completion.choices[0].message.content;
 
-    if (fUser?.facility_id) {
-      const durMin = chunkFiles.length * 2;
+    const durMin = chunkFiles.length * 2;
+    if (isBniRecord) {
+      let bniData = { summary, gains: {}, referral_hints: '', follow_up: '' };
+      try { bniData = Object.assign(bniData, JSON.parse(summary)); } catch(e) {}
+      const bniWebhookUrl = process.env.BNI_WEBHOOK_URL || 'http://localhost:8300/api/nicemeet-webhook';
+      const bniSecret = process.env.BNI_WEBHOOK_SECRET || 'nicemeet-bni-2026';
+      try {
+        await fetch(bniWebhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-nicemeet-secret': bniSecret },
+          body: JSON.stringify({
+            bni_user: staffName,
+            contact_id: bniContactId,
+            contact_name: memberName,
+            duration_minutes: durMin,
+            transcript,
+            summary: bniData.summary || summary,
+            gains: bniData.gains || {},
+            referral_hints: bniData.referral_hints || '',
+            follow_up: bniData.follow_up || ''
+          })
+        });
+        console.log(`[audio-finalize] BNI 1-2-1 sent to BNI app user=${staffName} contact=${memberName}`);
+      } catch(e) { console.error('[audio-finalize] BNI webhook error:', e.message); }
+    } else if (fUser?.facility_id) {
       if (isWelfareRecord) {
         db.prepare(
           'INSERT INTO nm_call_records (facility_id, room_id, welfare_system, record_type, member_name, staff_name, summary_text, raw_transcript) VALUES (?,?,?,?,?,?,?,?)'
@@ -1306,7 +1359,9 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
       }
     }
 
-    const mailSubject = isWelfareRecord
+    const mailSubject = isBniRecord
+      ? `【NiceMeet BNI】1-2-1ミーティング記録${memberName ? '（' + memberName + 'さん）' : ''}`
+      : isWelfareRecord
       ? `【NiceMeet】${welfareRecordType}${memberName ? '（' + memberName + '）' : ''}`
       : '【NiceMeet】会議の文字起こし・要約';
     const mailHeader = isWelfareRecord

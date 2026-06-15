@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>予約管理ダッシュボード</title>
+<style>
+:root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#2a2a4a;--accent:#6c63ff;--text:#fff;--muted:#888;--border:#2a2a4a;--success:#4ade80;--danger:#e94560}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+header{background:#16162a;padding:0 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);height:60px;position:sticky;top:0;z-index:10}
+.brand{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700}
+.brand-icon{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.header-right{display:flex;align-items:center;gap:10px}
+.avatar-sm{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b82ff);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+.user-name{font-size:14px;color:var(--muted)}
+.btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#7b73ff}
+.btn-secondary{background:var(--bg3);color:var(--muted)}.btn-secondary:hover{color:var(--text)}
+.btn-danger{background:rgba(233,69,96,.15);color:var(--danger);border:1px solid rgba(233,69,96,.3)}.btn-danger:hover{background:var(--danger);color:#fff}
+.btn-sm{padding:5px 12px;font-size:12px}
+main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+.card{background:var(--bg2);border-radius:16px;padding:24px;border:1px solid var(--border)}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.card-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:flex;align-items:center;gap:6px}
+.card-desc{font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.5}
+.url-display{background:var(--bg3);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:10px;border:1px solid var(--border)}
+.url-text{flex:1;color:var(--accent);font-size:13px;word-break:break-all;font-weight:500}
+.stat{text-align:center}
+.stat .num{font-size:32px;font-weight:800;color:var(--accent)}
+.stat .label{font-size:12px;color:var(--muted);margin-top:4px}
+.section-card{background:var(--bg2);border-radius:16px;border:1px solid var(--border);margin-bottom:20px;overflow:hidden}
+.section-head{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.section-head h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.section-body{padding:20px 24px}
+.dow-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:16px}
+.dow-btn{padding:10px 4px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;text-align:center;transition:all .2s}
+.dow-btn.active{background:rgba(108,99,255,.2);border-color:var(--accent);color:var(--accent)}
+.time-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;background:var(--bg3);border-radius:10px;padding:10px 14px}
+.time-label{font-size:13px;font-weight:600;min-width:48px}
+.time-row select{background:#1e1e3a;border:1.5px solid var(--border);border-radius:8px;color:var(--text);padding:7px 10px;font-size:13px;outline:none;transition:border .2s;flex:1;cursor:pointer}
+.time-row select:focus{border-color:var(--accent)}
+.time-sep{color:var(--muted);font-size:13px}
+.slot-select{background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--text);padding:10px 14px;font-size:14px;outline:none;transition:border .2s;cursor:pointer}
+.slot-select:focus{border-color:var(--accent)}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 24px}
+.tab-btn{padding:14px 16px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;background:none;border-top:none;border-left:none;border-right:none;margin-bottom:-1px}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-content{display:none;padding:20px 24px}
+.tab-content.show{display:block}
+.booking-card{background:var(--bg3);border-radius:12px;padding:16px 18px;margin-bottom:10px;display:flex;align-items:flex-start;gap:16px;border:1px solid transparent;transition:border .2s}
+.booking-card:hover{border-color:var(--border)}
+.booking-date{background:#1a1a3a;border-radius:10px;padding:10px 12px;text-align:center;min-width:64px;flex-shrink:0}
+.booking-date .month{font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:600}
+.booking-date .day{font-size:22px;font-weight:800;line-height:1;color:var(--accent)}
+.booking-date .dow{font-size:10px;color:var(--muted);margin-top:2px}
+.booking-info{flex:1;min-width:0}
+.booking-name{font-size:15px;font-weight:700;margin-bottom:4px}
+.booking-time{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:4px}
+.booking-email{font-size:12px;color:var(--muted)}
+.booking-purpose{font-size:12px;color:var(--muted);margin-top:4px;background:#1e1e3a;border-radius:6px;padding:4px 8px;display:inline-block}
+.meet-link{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--success);text-decoration:none;margin-top:6px;font-weight:600}
+.meet-link:hover{text-decoration:underline}
+.empty{color:var(--muted);font-size:14px;text-align:center;padding:32px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.empty-icon{font-size:36px;opacity:.4}
+.toast{position:fixed;bottom:24px;right:24px;background:#2a2a4a;border:1px solid #3a3a5a;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.show{opacity:1}
+@media(max-width:640px){.grid-2{grid-template-columns:1fr}.dow-grid{grid-template-columns:repeat(4,1fr)}.booking-date{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="brand-icon">📅</div>NiceMeet</div>
+  <div class="header-right">
+    <div class="avatar-sm" id="hdr-avatar">?</div>
+    <span class="user-name" id="hdr-name">読み込み中...</span>
+    <a href="/" class="btn btn-secondary btn-sm">🎥 通話</a>
+    <a href="/auth/logout" class="btn btn-secondary btn-sm">ログアウト</a>
+  </div>
+</header>
+
+<main>
+  <!-- 予約URL + 統計 -->
+  <div class="grid-2">
+    <div class="card" style="grid-column:1/-1">
+      <div class="card-header">
+        <div class="card-title">🔗 あなたの予約URL</div>
+      </div>
+      <p class="card-desc">このURLを LINE・メール・ウェブサイトなどでお客様に共有してください。お客様が自分で空いている時間を選んで予約できます。</p>
+      <div class="url-display">
+        <span class="url-text" id="booking-url">読み込み中...</span>
+        <button class="btn btn-primary btn-sm" onclick="copyUrl()">コピー</button>
+        <a class="btn btn-secondary btn-sm" id="preview-link" href="#" target="_blank">確認する →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- インスタント通話 -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div class="card-title">🎥 インスタント通話</div>
+      <button class="btn btn-secondary btn-sm" onclick="genRoom()">新しいURLを生成</button>
+    </div>
+    <p class="card-desc">予約なしですぐにビデオ通話を始めたいときに使えます。URLを相手に共有するだけで入室できます。</p>
+    <div class="url-display">
+      <span class="url-text" id="instant-url">—</span>
+      <button class="btn btn-primary btn-sm" id="instant-copy" onclick="copyInstant()" disabled>コピー</button>
+      <a class="btn btn-secondary btn-sm" id="instant-open" href="#" target="_blank" style="pointer-events:none;opacity:.4">今すぐ開く</a>
+    </div>
+  </div>
+
+  <!-- 空き時間設定 -->
+  <div class="section-card">
+    <div class="section-head">
+      <h2>📆 空き時間の設定</h2>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;color:var(--muted)">1コマ</span>
+        <select class="slot-select" id="slot-duration">
+          <option value="15">15分</option>
+          <option value="30" selected>30分</option>
+          <option value="45">45分</option>
+          <option value="60">1時間</option>
+        </select>
+      </div>
+    </div>
+    <div class="section-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">受け付ける曜日をタップして、対応可能な時間帯を設定してください。Googleカレンダーと照合して、実際に空いている時間のみ予約可能になります。</p>
+      <div class="dow-grid" id="dow-buttons"></div>
+      <div id="time-settings"></div>
+      <button class="btn btn-primary" onclick="saveAvailability()" style="width:100%;padding:13px;font-size:14px;border-radius:10px">設定を保存する</button>
+    </div>
+  </div>
+
+  <!-- 予約一覧 -->
+  <div class="section-card">
+    <div class="section-head">
+      <h2>📋 予約一覧</h2>
+      <span id="booking-count" style="font-size:13px;color:var(--muted)"></span>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="showTab('upcoming',this)">今後の予約</button>
+      <button class="tab-btn" onclick="showTab('past',this)">過去の予約</button>
+    </div>
+    <div class="tab-content show" id="tab-upcoming"></div>
+    <div class="tab-content" id="tab-past"></div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DAYS = ['日','月','火','水','木','金','土'];
+const TIMES = [];
+for (let h=0;h<24;h++) for (let m of [0,30]) TIMES.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+
+let activeAvail = {}, me = null;
+
+async function init() {
+  const [meRes, availRes, bookRes] = await Promise.all([
+    fetch('/api/me').then(r=>r.json()),
+    fetch('/api/availability').then(r=>r.json()),
+    fetch('/api/bookings').then(r=>r.json())
+  ]);
+  me = meRes;
+  const initial = (me.name||'?')[0].toUpperCase();
+  document.getElementById('hdr-avatar').textContent = initial;
+  document.getElementById('hdr-name').textContent = me.name;
+  document.getElementById('booking-url').textContent = `https://meet.gaiaarts.org/b/${me.slug}`;
+  document.getElementById('preview-link').href = `/b/${me.slug}`;
+  document.getElementById('slot-duration').value = me.slot_duration || 30;
+
+  for (const a of availRes) activeAvail[a.day_of_week] = {start:a.start_time,end:a.end_time};
+
+  renderDow();
+  renderBookings(bookRes);
+}
+
+function renderDow() {
+  const el = document.getElementById('dow-buttons');
+  el.innerHTML = '';
+  DAYS.forEach((d,i) => {
+    const btn = document.createElement('div');
+    btn.className = 'dow-btn'+(activeAvail[i]?' active':'');
+    btn.textContent = d;
+    btn.onclick = () => { if(activeAvail[i]) delete activeAvail[i]; else activeAvail[i]={start:'09:00',end:'18:00'}; renderDow(); };
+    el.appendChild(btn);
+  });
+  renderTimeSettings();
+}
+
+function renderTimeSettings() {
+  const el = document.getElementById('time-settings');
+  el.innerHTML = '';
+  DAYS.forEach((d,i) => {
+    if (!activeAvail[i]) return;
+    const row = document.createElement('div');
+    row.className = 'time-row';
+    const label = document.createElement('span');
+    label.className = 'time-label'; label.textContent = d+'曜日';
+    const makeSelect = (val, cb) => {
+      const sel = document.createElement('select');
+      TIMES.forEach(t => { const o=document.createElement('option'); o.value=t; o.textContent=t; if(t===val)o.selected=true; sel.appendChild(o); });
+      sel.onchange = cb; return sel;
+    };
+    const sep = document.createElement('span'); sep.className='time-sep'; sep.textContent='〜';
+    row.appendChild(label);
+    row.appendChild(makeSelect(activeAvail[i].start, e=>{activeAvail[i].start=e.target.value;}));
+    row.appendChild(sep);
+    row.appendChild(makeSelect(activeAvail[i].end, e=>{activeAvail[i].end=e.target.value;}));
+    el.appendChild(row);
+  });
+}
+
+async function saveAvailability() {
+  const availability = Object.entries(activeAvail).map(([dow,v])=>({day_of_week:parseInt(dow),start_time:v.start,end_time:v.end}));
+  const slot_duration = parseInt(document.getElementById('slot-duration').value);
+  await fetch('/api/availability',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({availability,slot_duration})});
+  toast('✓ 設定を保存しました');
+}
+
+function renderBookings(bookings) {
+  const now = new Date();
+  const upcoming = bookings.filter(b=>new Date(b.start_time)>=now);
+  const past = bookings.filter(b=>new Date(b.start_time)<now);
+  document.getElementById('booking-count').textContent = `今後 ${upcoming.length}件`;
+  renderList('tab-upcoming', upcoming, true);
+  renderList('tab-past', past, false);
+}
+
+function renderList(id, items, canDelete) {
+  const el = document.getElementById(id);
+  if (!items.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${canDelete?'📭':'🗂️'}</div>${canDelete?'まだ予約はありません':'過去の予約はありません'}</div>`;
+    return;
+  }
+  el.innerHTML = '';
+  items.forEach(b => {
+    const s = new Date(b.start_time), e = new Date(b.end_time);
+    const month = s.toLocaleDateString('ja-JP',{month:'short'}).replace('月','');
+    const day = s.getDate();
+    const dow = DAYS[s.getDay()];
+    const timeStr = `${s.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})} 〜 ${e.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}`;
+    const div = document.createElement('div');
+    div.className = 'booking-card';
+    div.innerHTML = `
+      <div class="booking-date">
+        <div class="month">${month}月</div>
+        <div class="day">${day}</div>
+        <div class="dow">${dow}</div>
+      </div>
+      <div class="booking-info">
+        <div class="booking-name">${b.booker_name}</div>
+        <div class="booking-time">🕐 ${timeStr}</div>
+        <div class="booking-email">📧 ${b.booker_email||'メールなし'}</div>
+        ${b.purpose?`<div class="booking-purpose">💬 ${b.purpose}</div>`:''}
+        <a class="meet-link" href="https://meet.gaiaarts.org/?room=${b.meet_room}" target="_blank">🎥 ビデオ通話を開く</a>
+      </div>
+      ${canDelete?`<button class="btn btn-danger btn-sm" onclick="deleteBooking(${b.id},this)">キャンセル</button>`:''}
+    `;
+    el.appendChild(div);
+  });
+}
+
+async function deleteBooking(id, btn) {
+  if (!confirm('この予約をキャンセルしますか？\n予約者にキャンセルメールが送信されます。')) return;
+  btn.disabled = true; btn.textContent = '処理中...';
+  await fetch('/api/bookings/'+id,{method:'DELETE'});
+  toast('予約をキャンセルしました');
+  setTimeout(()=>location.reload(), 1200);
+}
+
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('show'));
+  document.getElementById('tab-'+name).classList.add('show');
+}
+
+function genRoom() {
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const url = `https://meet.gaiaarts.org/?room=${id}`;
+  document.getElementById('instant-url').textContent = url;
+  const copyBtn = document.getElementById('instant-copy');
+  const openBtn = document.getElementById('instant-open');
+  copyBtn.disabled = false;
+  openBtn.href = url;
+  openBtn.style.pointerEvents = '';
+  openBtn.style.opacity = '';
+  copyBtn.onclick = () => { navigator.clipboard.writeText(url); toast('✓ 通話URLをコピーしました'); };
+}
+
+function copyInstant() {}
+
+function copyUrl() {
+  navigator.clipboard.writeText(`https://meet.gaiaarts.org/b/${me.slug}`);
+  toast('✓ URLをコピーしました');
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 2500);
+}
+
+init();
+</script>
+</body>
+</html>
