@@ -13,6 +13,20 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 .lobby-box p{color:#888;text-align:center;margin-bottom:32px;font-size:14px}
 .lobby-box input{width:100%;padding:12px 16px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:15px;margin-bottom:12px;outline:none;transition:border .2s}
 .lobby-box input:focus{border-color:#6c63ff}
+#bni-prejoin{position:fixed;inset:0;background:linear-gradient(135deg,#0f0f1a,#1a1a3e);display:flex;align-items:center;justify-content:center;z-index:9999}
+.prejoin-box{background:#1e1e3a;padding:32px;border-radius:16px;width:min(440px,calc(100vw - 32px));box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.prejoin-box h2{font-size:20px;font-weight:700;margin-bottom:4px;text-align:center}
+.prejoin-box .sub{color:#888;font-size:13px;text-align:center;margin-bottom:24px}
+.prejoin-input{width:100%;padding:12px 16px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:15px;margin-bottom:12px;outline:none}
+.prejoin-input:focus{border-color:#9c63ff}
+.prejoin-label{font-size:12px;color:#aaa;margin-bottom:4px;display:block}
+.prejoin-toggle{display:flex;gap:8px;margin-bottom:14px}
+.prejoin-toggle button{flex:1;padding:10px;border-radius:8px;border:1px solid #3a3a5a;background:#2a2a4a;color:#aaa;font-size:13px;cursor:pointer;transition:all .2s}
+.prejoin-toggle button.active{background:#6c2fb5;border-color:#9c63ff;color:#fff;font-weight:600}
+.prejoin-btn{width:100%;padding:13px;background:#6c2fb5;border:none;border-radius:8px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-top:4px}
+.prejoin-btn:hover{background:#7c3fc5}
+.prejoin-skip{text-align:center;margin-top:12px;font-size:12px;color:#666}
+.prejoin-skip a{color:#9c63ff;cursor:pointer;text-decoration:underline}
 .lobby-box input::placeholder{color:#555}
 .btn-primary{width:100%;padding:14px;background:#6c63ff;border:none;border-radius:8px;color:#fff;font-size:16px;font-weight:600;cursor:pointer;transition:background .2s;margin-top:8px}
 .btn-primary:hover{background:#5a52e0}
@@ -232,6 +246,32 @@ function copyInappUrl() {
   });
 }
 </script>
+
+<!-- BNI事前情報入力フォーム -->
+<div id="bni-prejoin" style="display:none">
+  <div class="prejoin-box">
+    <div style="text-align:center;font-size:28px;margin-bottom:8px">🤝</div>
+    <h2>BNI 1-2-1 入室前</h2>
+    <div class="sub">ミーティングに参加する前に<br>簡単な情報をご入力ください</div>
+    <span class="prejoin-label">お名前 *</span>
+    <input id="pj-name" class="prejoin-input" placeholder="山田 太郎" maxlength="30">
+    <span class="prejoin-label">メールアドレス *</span>
+    <input id="pj-email" class="prejoin-input" type="email" placeholder="your@email.com">
+    <span class="prejoin-label">BNIメンバーですか？</span>
+    <div class="prejoin-toggle">
+      <button id="pj-btn-bni" class="active" onclick="setPjType('bni')">BNIメンバー</button>
+      <button id="pj-btn-other" onclick="setPjType('other')">メンバー外</button>
+    </div>
+    <span class="prejoin-label" id="pj-cat-label">カテゴリー（業種）</span>
+    <input id="pj-category" class="prejoin-input" placeholder="例：税理士、不動産、整体師...">
+    <div id="pj-chapter-wrap">
+      <span class="prejoin-label">チャプター名</span>
+      <input id="pj-chapter" class="prejoin-input" placeholder="例：BNI Liberta">
+    </div>
+    <button class="prejoin-btn" onclick="submitPrejoin()">入室する</button>
+    <div class="prejoin-skip"><a onclick="skipPrejoin()">スキップ（すでに登録済みの方）</a></div>
+  </div>
+</div>
 
 <div id="lobby">
   <div class="lobby-box">
@@ -636,6 +676,46 @@ if (systemParam === 'bni') {
     nameBadge.textContent = '🤝 ' + bniContactName + ' さんとの1-2-1';
     document.querySelector('.lobby-box h1').after(nameBadge);
   }
+  // 事前情報フォームを表示（bni_user がある = ホスト発行URLを他者が開いた）
+  if (urlParams.get('bni_user')) {
+    document.getElementById('bni-prejoin').style.display = 'flex';
+    document.getElementById('lobby').style.display = 'none';
+  }
+}
+
+let pjType = 'bni';
+function setPjType(t) {
+  pjType = t;
+  document.getElementById('pj-btn-bni').classList.toggle('active', t==='bni');
+  document.getElementById('pj-btn-other').classList.toggle('active', t==='other');
+  document.getElementById('pj-cat-label').textContent = t==='bni' ? 'カテゴリー（業種）' : '職業';
+  document.getElementById('pj-category').placeholder = t==='bni' ? '例：税理士、不動産、整体師...' : '例：エンジニア、デザイナー...';
+  document.getElementById('pj-chapter-wrap').style.display = t==='bni' ? '' : 'none';
+}
+async function submitPrejoin() {
+  const name = document.getElementById('pj-name').value.trim();
+  const email = document.getElementById('pj-email').value.trim();
+  const category = document.getElementById('pj-category').value.trim();
+  if (!name || !email) { alert('お名前とメールアドレスは必須です'); return; }
+  try {
+    await fetch('/api/bni/contact-capture', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        bni_user: urlParams.get('bni_user'),
+        name, email,
+        is_bni_member: pjType === 'bni',
+        category,
+        chapter: pjType === 'bni' ? document.getElementById('pj-chapter').value.trim() : ''
+      })
+    });
+  } catch(e) {}
+  document.getElementById('input-name').value = name;
+  welfareSettings.memberName = name;
+  skipPrejoin();
+}
+function skipPrejoin() {
+  document.getElementById('bni-prejoin').style.display = 'none';
+  document.getElementById('lobby').style.display = 'flex';
 }
 if (urlParams.get('room')) {
   document.getElementById('input-room').value = urlParams.get('room');

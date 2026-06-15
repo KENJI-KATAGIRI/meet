@@ -1478,6 +1478,24 @@ app.get('/api/room-info', (req, res) => {
 // ---- Pages ----
 app.get('/cancel', (req, res) => res.sendFile(path.join(__dirname, 'public', 'cancel.html')));
 app.get('/b/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'book.html')));
+// BNI事前情報キャプチャ → BNIアプリに連絡先登録
+app.post('/api/bni/contact-capture', async (req, res) => {
+  res.json({ ok: true });
+  const { bni_user, name, email, is_bni_member, category, chapter } = req.body;
+  if (!bni_user || !name || !email) return;
+  const bniWebhookUrl = process.env.BNI_WEBHOOK_URL?.replace('/api/nicemeet-webhook', '/api/nicemeet-contact')
+    || 'http://localhost:8300/api/nicemeet-contact';
+  const bniSecret = process.env.BNI_WEBHOOK_SECRET || 'nicemeet-bni-2026';
+  try {
+    await fetch(bniWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-nicemeet-secret': bniSecret },
+      body: JSON.stringify({ bni_user, name, email, is_bni_member, category, chapter })
+    });
+    console.log(`[bni-contact-capture] user=${bni_user} contact=${name} bni=${is_bni_member}`);
+  } catch(e) { console.error('[bni-contact-capture] error:', e.message); }
+});
+
 app.get('/record', (req, res) => res.sendFile(path.join(__dirname, 'public', 'record.html')));
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/booking/dashboard', (req, res) => {
