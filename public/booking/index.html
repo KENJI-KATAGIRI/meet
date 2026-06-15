@@ -206,5 +206,41 @@ document.addEventListener('keydown', e => {
   else doRegister();
 });
 </script>
+
+<div id="inapp-overlay" style="display:none;position:fixed;inset:0;background:#0d0d1a;z-index:99999;align-items:center;justify-content:center;padding:24px">
+  <div style="max-width:360px;width:100%;text-align:center">
+    <div style="font-size:56px;margin-bottom:16px">🌐</div>
+    <h2 style="color:#fff;font-size:20px;margin:0 0 8px">外部ブラウザで開いてください</h2>
+    <p style="color:#aaa;font-size:14px;margin:0 0 24px;line-height:1.6" id="inapp-msg">Googleログインはこのブラウザでは使えません。<br>ChromeまたはSafariで開いてください。</p>
+    <div style="background:#1e1e3a;border-radius:8px;padding:12px 16px;margin-bottom:16px;word-break:break-all;color:#7cb8ff;font-size:13px" id="inapp-url"></div>
+    <button onclick="navigator.clipboard.writeText(document.getElementById('inapp-url').textContent).then(()=>alert('コピーしました'))" style="width:100%;padding:14px;border-radius:8px;border:none;background:#4a9eff;color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:12px">URLをコピー</button>
+    <div id="inapp-chrome-link" style="display:none;margin-bottom:12px">
+      <a id="inapp-chrome-a" style="display:block;width:100%;padding:14px;border-radius:8px;background:#34a853;color:#fff;font-size:15px;font-weight:600;text-decoration:none;box-sizing:border-box">Chromeで開く</a>
+    </div>
+    <p style="color:#666;font-size:12px">iPhoneの場合：右下の「…」→「Safariで開く」</p>
+  </div>
+</div>
+<script>
+(function(){
+  var ua = navigator.userAgent || '';
+  var isInApp = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Line\/|MicroMessenger|TwitterAndroid|TwitteriPhone|Snapchat|TikTok|Pinterest\/|LinkedIn/.test(ua);
+  if (!isInApp) return;
+  var url = location.href;
+  document.getElementById('inapp-url').textContent = url;
+  var appName = 'このアプリ';
+  if (/FBAN|FBAV|FB_IAB|FBIOS/.test(ua)) appName = 'Facebook';
+  if (/Messenger/.test(ua)) appName = 'Messenger';
+  if (/Instagram/.test(ua)) appName = 'Instagram';
+  if (/Line\//.test(ua)) appName = 'LINE';
+  document.getElementById('inapp-msg').innerHTML = 'Googleログインは' + appName + 'の内蔵ブラウザでは使えません。<br>ChromeまたはSafariで開いてください。';
+  var isAndroid = /Android/.test(ua);
+  if (isAndroid) {
+    var intentUrl = url.replace(/^https:\/\//, 'intent://') + '#Intent;scheme=https;package=com.android.chrome;end';
+    document.getElementById('inapp-chrome-a').href = intentUrl;
+    document.getElementById('inapp-chrome-link').style.display = 'block';
+  }
+  document.getElementById('inapp-overlay').style.display = 'flex';
+})();
+</script>
 </body>
 </html>
