@@ -1528,6 +1528,7 @@ app.get('/booking/dashboard', (req, res) => {
   if (!req.session.userId) return res.redirect('/auth/google');
   res.sendFile(path.join(__dirname, 'public', 'booking', 'dashboard.html'));
 });
+app.get('/', (req, res) => res.redirect('/bni.html'));
 app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'index.html')));
 
 // ── 施設サブスク API ─────────────────────────────────────────────
