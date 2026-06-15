@@ -54,8 +54,15 @@ input::placeholder{color:#444}
 .trial-badge{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:12px;color:#4ade80;text-align:center;font-weight:600}
 @media(max-width:768px){
   body{flex-direction:column}
-  .left{display:none}
-  .right{width:100%;border:none;padding:32px 20px;min-height:100vh}
+  .left{display:block;padding:24px 20px;min-height:unset}
+  .left::before{display:none}
+  .left h1{font-size:22px;margin-bottom:8px}
+  .left>p{display:none}
+  .features{display:none}
+  .price-note{margin-bottom:0}
+  .flow-mini{display:none}
+  .brand{margin-bottom:16px}
+  .right{width:100%;border:none;padding:24px 20px;min-height:unset}
 }
 </style>
 </head>
@@ -105,7 +112,7 @@ input::placeholder{color:#444}
 <div class="right">
   <div class="box">
     <h2>アカウント登録</h2>
-    <p>30日間無料トライアル・クレジットカード不要</p>
+    <p>カードを登録して30日間無料、その後¥1,980/月</p>
 
     <div class="trial-badge">✓ 30日間完全無料 → その後 ¥1,980/月</div>
 
