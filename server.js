@@ -570,6 +570,8 @@ app.post('/api/stripe/checkout', requireAuth, async (req, res) => {
       payment_method_types: ['card'],
       line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
       mode: 'subscription',
+      subscription_data: { trial_period_days: 30 },
+      payment_method_collection: 'always',
       success_url: 'https://meet.gaiaarts.org/booking/dashboard?plan=success',
       cancel_url: 'https://meet.gaiaarts.org/booking/dashboard',
       locale: 'ja'
