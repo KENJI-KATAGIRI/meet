@@ -512,7 +512,7 @@ function requireAuth(req, res, next) {
 
 // ---- API: me ----
 app.get('/api/me', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode FROM users WHERE id=?').get(req.session.userId);
+  const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
   res.json(u);
 });
 

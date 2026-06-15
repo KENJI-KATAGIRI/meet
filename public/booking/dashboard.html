@@ -394,6 +394,12 @@ async function init() {
     document.getElementById('plan-free-content').style.display = 'none';
     document.getElementById('plan-paid-content').style.display = 'block';
   }
+  if (!me.has_google) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#fca5a5;line-height:1.7';
+    banner.innerHTML = '📅 <strong style="color:#f87171">Googleカレンダー未連携</strong><br><span style="color:#94a3b8">予約カレンダー機能を使うにはGoogleログインが必須です。</span><br><a href="/auth/google" style="color:#6ee7b7;font-weight:700">→ Googleアカウントを連携する</a>';
+    document.querySelector('.container').prepend(banner);
+  }
   document.getElementById('booking-url').textContent = `https://meet.gaiaarts.org/b/${me.slug}`;
   document.getElementById('preview-link').href = `/b/${me.slug}`;
   document.getElementById('slot-duration').value = me.slot_duration || 30;
