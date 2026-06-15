@@ -1806,10 +1806,10 @@ app.get('/api/admin/users', (req, res) => {
 app.get('/api/admin/users.csv', (req, res) => {
   const { secret } = req.query;
   if (secret !== ADMIN_SECRET) return res.status(403).send('forbidden');
-  const rows = db.prepare('SELECT id, name, email, plan, plan_expires, stripe_customer_id, created_at FROM users ORDER BY id DESC').all();
-  const header = 'ID,名前,メール,プラン,プラン期限,Stripe顧客ID,登録日時';
+  const rows = db.prepare('SELECT id, name, email, plan, plan_expires, stripe_customer_id FROM users ORDER BY id DESC').all();
+  const header = 'ID,名前,メール,プラン,プラン期限,Stripe顧客ID';
   const csv = [header, ...rows.map(r =>
-    [r.id, r.name, r.email, r.plan||'free', r.plan_expires||'', r.stripe_customer_id||'', r.created_at||'']
+    [r.id, r.name, r.email, r.plan||'free', r.plan_expires||'', r.stripe_customer_id||'']
       .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
   )].join('\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
