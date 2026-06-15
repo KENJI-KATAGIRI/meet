@@ -359,6 +359,10 @@ app.set('trust proxy', 1);
 app.use(express.json({
   verify: (req, res, buf) => { if (req.path === '/api/stripe/webhook') req.rawBody = buf; }
 }));
+app.get('/', (req, res, next) => {
+  if (!req.query.room) return res.redirect('/bni.html');
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET,
