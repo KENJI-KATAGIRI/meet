@@ -9,6 +9,7 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 .container{max-width:800px;margin:0 auto;padding:28px 16px 60px}
+@media(max-width:540px){.promo-grid{grid-template-columns:1fr!important}}
 
 /* ホストカード */
 .host-card{background:var(--bg2);border-radius:16px;padding:22px 24px;margin-bottom:16px;border:1px solid var(--border);display:flex;align-items:center;gap:18px}
@@ -85,6 +86,58 @@ textarea{resize:vertical;min-height:80px}
 <body>
 <div class="container">
   <div id="app"><div style="text-align:center;padding:80px;color:var(--muted)">読み込み中...</div></div>
+</div>
+
+<!-- プロモーションLP -->
+<div style="background:#0d0d1a;border-top:1px solid #1e1e3a;padding:48px 16px 60px">
+  <div style="max-width:720px;margin:0 auto">
+
+    <!-- セクションタイトル -->
+    <p style="text-align:center;font-size:12px;font-weight:700;letter-spacing:2px;color:#6c63ff;margin-bottom:10px">POWERED BY</p>
+    <h2 style="text-align:center;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px">NiceMeet × 1to1 Manager</h2>
+    <p style="text-align:center;font-size:13px;color:#888;margin-bottom:32px">BNI会員のための AI搭載ビデオ通話 ＋ 人脈管理ツール</p>
+
+    <!-- 2カラムプランカード -->
+    <div class="promo-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px">
+
+      <!-- NiceMeet フルプラン -->
+      <div style="background:#1a1a2e;border:2px solid #6c63ff;border-radius:16px;padding:24px 20px;position:relative">
+        <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#6c63ff;color:#fff;font-size:11px;font-weight:800;padding:3px 14px;border-radius:20px;white-space:nowrap">おすすめ</div>
+        <div style="font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:8px">🤝 NiceMeet フルプラン</div>
+        <div style="font-size:28px;font-weight:800;color:#fff;margin-bottom:4px">¥1,980<span style="font-size:14px;font-weight:400;color:#888">/月</span></div>
+        <p style="font-size:11px;color:#888;margin-bottom:16px">30日間無料トライアル付き</p>
+        <ul style="list-style:none;font-size:12px;color:#ccc;line-height:2;margin-bottom:20px">
+          <li>✅ AI文字起こし・GAINS自動抽出</li>
+          <li>✅ 1to1 Manager 自動連携</li>
+          <li>✅ Googleカレンダー予約連携</li>
+          <li>✅ 通話時間・回数 無制限</li>
+        </ul>
+        <a href="https://meet.gaiaarts.org/booking/?tab=register" style="display:block;text-align:center;background:#6c63ff;color:#fff;font-weight:700;font-size:13px;padding:11px;border-radius:10px;text-decoration:none">30日間無料で始める →</a>
+      </div>
+
+      <!-- 1to1Manager 単独プラン -->
+      <div style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:16px;padding:24px 20px">
+        <div style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:8px">📋 1to1 Manager のみ</div>
+        <div style="font-size:28px;font-weight:800;color:#fff;margin-bottom:4px">¥500<span style="font-size:14px;font-weight:400;color:#888">/月</span></div>
+        <p style="font-size:11px;color:#888;margin-bottom:16px">1ヶ月無料トライアル付き</p>
+        <ul style="list-style:none;font-size:12px;color:#ccc;line-height:2;margin-bottom:20px">
+          <li>✅ 人脈・GAINS情報を手入力管理</li>
+          <li>✅ AI紹介文生成</li>
+          <li>✅ リマインダー・メモ機能</li>
+          <li>☑️ AI文字起こし・ビデオ通話なし</li>
+        </ul>
+        <a href="https://gaiaarts.org/bni/" style="display:block;text-align:center;background:#2a2a4a;color:#a78bfa;font-weight:700;font-size:13px;padding:11px;border-radius:10px;text-decoration:none;border:1px solid rgba(108,99,255,.3)">1ヶ月無料で試す →</a>
+      </div>
+
+    </div>
+
+    <!-- 比較表 スマホ用テキスト -->
+    <p style="text-align:center;font-size:11px;color:#555;margin-bottom:0">
+      NiceMeet フルプランなら、このページの予約システムも使えます。BNI会員の方はフルプランがおすすめです。<br>
+      1to1 Managerはビデオ通話なしで人脈管理だけ使いたい方向けです。
+    </p>
+
+  </div>
 </div>
 <script>
 const slug = location.pathname.split('/').pop();
