@@ -163,7 +163,7 @@ db.exec(`
 `);
 try { db.exec('ALTER TABLE users ADD COLUMN facility_id INTEGER'); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN ui_mode TEXT DEFAULT 'simple'"); } catch(e) {}
-try { db.exec("ALTER TABLE users ADD COLUMN registered_at TEXT DEFAULT (datetime('now'))"); } catch(e) {}
+try { db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT'); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN status TEXT DEFAULT 'confirmed'"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN source TEXT DEFAULT 'video'"); } catch(e) {}
 
