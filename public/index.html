@@ -62,7 +62,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 #videos{flex:1;display:grid;gap:4px;padding:4px;background:#0a0a12;overflow:hidden;align-content:center}
 .video-tile{position:relative;background:#1a1a2e;border-radius:8px;overflow:hidden;aspect-ratio:16/9}
 .video-tile video{width:100%;height:100%;object-fit:cover}
-
+#tile-local video{transform:scaleX(-1)}
+#tile-local video.bg-active{transform:none}
 .video-tile .name-tag{position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.6);padding:3px 10px;border-radius:20px;font-size:13px;font-weight:500}
 .video-tile .muted-icon{position:absolute;top:8px;right:8px;background:rgba(220,50,50,.8);width:28px;height:28px;border-radius:50%;display:none;align-items:center;justify-content:center;font-size:13px}
 .video-tile.muted .muted-icon{display:flex}
@@ -2520,6 +2521,7 @@ async function setBg(mode) {
     document.getElementById('bg-' + m)?.classList.toggle('selected', m === mode);
   });
   document.getElementById('color-picker-row').style.display = mode === 'color' ? 'flex' : 'none';
+  document.getElementById('tile-local').querySelector('video').classList.toggle('bg-active', mode !== 'none');
 
   if (mode === 'none') {
     if (beautyLevel === 0 && effectsInited) {
@@ -2717,6 +2719,7 @@ function loadBgSettings() {
         bgMode = 'image';
         document.getElementById('bg-image')?.classList.add('selected');
         ['none','blur','color'].forEach(m => document.getElementById('bg-' + m)?.classList.remove('selected'));
+        document.getElementById('tile-local').querySelector('video').classList.add('bg-active');
         renderBgHistory();
         await loadSegModel();
         await initEffectsStream();
