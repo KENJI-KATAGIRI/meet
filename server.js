@@ -97,6 +97,7 @@ try {
 try { db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT'); } catch(e) {}
 try { db.exec('ALTER TABLE bookings ADD COLUMN cancel_token TEXT'); } catch(e) {}
 try { db.exec('ALTER TABLE bookings ADD COLUMN cancelled INTEGER DEFAULT 0'); } catch(e) {}
+try { db.exec("ALTER TABLE bookings ADD COLUMN meet_system TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'"); } catch(e) {}
 try { db.exec('ALTER TABLE users ADD COLUMN plan_expires TEXT'); } catch(e) {}
 try { db.exec('ALTER TABLE users ADD COLUMN stripe_customer_id TEXT'); } catch(e) {}
@@ -659,6 +660,15 @@ app.get('/api/bookings', requireAuth, (req, res) => {
   res.json(rows);
 });
 
+app.patch('/api/bookings/:id/system', requireAuth, (req, res) => {
+  const { system } = req.body;
+  if (!['bni', ''].includes(system)) return res.status(400).json({ error: 'invalid system' });
+  const booking = db.prepare('SELECT id FROM bookings WHERE id=? AND user_id=?').get(req.params.id, req.session.userId);
+  if (!booking) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE bookings SET meet_system=? WHERE id=?').run(system, req.params.id);
+  res.json({ ok: true });
+});
+
 app.delete('/api/bookings/:id', requireAuth, async (req, res) => {
   const booking = db.prepare('SELECT * FROM bookings WHERE id=? AND user_id=?').get(req.params.id, req.session.userId);
   if (!booking) return res.status(404).json({ error: 'not found' });
@@ -781,8 +791,8 @@ app.post('/api/b/:slug/book', async (req, res) => {
     googleEventId = event.data.id;
   } catch (e) { console.error('calendar insert error:', e.message); }
 
-  db.prepare('INSERT INTO bookings (user_id, booker_name, booker_email, start_time, end_time, purpose, meet_room, google_event_id, cancel_token) VALUES (?,?,?,?,?,?,?,?,?)')
-    .run(user.id, booker_name, booker_email, start_time, end_time, purpose || '', meetRoom, googleEventId, cancelToken);
+  db.prepare('INSERT INTO bookings (user_id, booker_name, booker_email, start_time, end_time, purpose, meet_room, google_event_id, cancel_token, meet_system) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(user.id, booker_name, booker_email, start_time, end_time, purpose || '', meetRoom, googleEventId, cancelToken, 'bni');
 
   // メール送信
   const startDt = new Date(start_time);
