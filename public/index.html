@@ -2341,7 +2341,6 @@ async function loadSegModel() {
     mpReady = true;
     prevMaskData = null;
     mpTimestamp = 0;
-    notify('背景分離 準備完了');
   } catch(e) {
     console.error('loadSegModel:', e);
     notify('読込失敗: ' + (e?.message || '').slice(0, 60));
