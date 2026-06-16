@@ -283,12 +283,8 @@ function copyInappUrl() {
     <input id="input-pass" type="password" placeholder="パスワード">
     <div class="time-banner" id="time-banner"></div>
     <button class="btn-primary" onclick="joinRoom()">参加する</button>
-    <div style="border-top:1px solid #2a2a4a;margin-top:20px;padding-top:16px">
-      <div style="font-size:11px;color:#555;margin-bottom:10px;letter-spacing:.5px">📝 文字起こし設定</div>
-      <span class="optional-label">メールアドレス（省略可）<br><span style="font-size:11px;color:#4a4a6a">会議終了後に要約を送信します</span></span>
-      <input id="input-email" type="email" placeholder="example@email.com">
-      <input type="checkbox" id="input-allow-all" style="display:none">
-    </div>
+    <input id="input-email" type="email" style="display:none">
+    <input type="checkbox" id="input-allow-all" style="display:none">
     <div class="error-msg" id="error-msg"></div>
     <div style="border-top:1px solid #2a2a4a;margin-top:18px;padding-top:16px">
       <div style="font-size:11px;color:#555;margin-bottom:10px;letter-spacing:.5px;text-align:center">または</div>
@@ -565,8 +561,8 @@ function copyInappUrl() {
 <!-- 文字起こしモーダル（クライアント向け） -->
 <div id="transcribe-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:300;align-items:center;justify-content:center">
   <div style="background:#1e1e3a;border-radius:16px;padding:28px;width:min(360px,90vw);box-shadow:0 20px 60px rgba(0,0,0,.5)">
-    <div style="font-size:16px;font-weight:600;margin-bottom:8px">📝 文字起こし機能が有効です</div>
-    <div style="font-size:13px;color:#888;margin-bottom:16px">会議終了後、内容の要約をメールでお届けします。</div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:8px" id="modal-title">📝 文字起こし機能が有効です</div>
+    <div style="font-size:13px;color:#888;margin-bottom:16px" id="modal-desc">会議終了後、内容の要約をメールでお届けします。</div>
     <input id="modal-email" type="email" placeholder="メールアドレス（省略可）"
       style="width:100%;padding:12px;background:#2a2a4a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:14px;margin-bottom:12px;outline:none;box-sizing:border-box">
     <div style="display:flex;gap:8px">
@@ -822,6 +818,7 @@ async function joinRoom() {
       updateHostUI();
       if (isFreeRoom && source !== 'breakout') startFreeTimer(roomStartedAt || Date.now());
       if (isHost && myEmail) startAutoAudioRecording();
+      else if (isHost && !myEmail) setTimeout(() => showTranscribeModal(true), 800);
       else if (!isHost && roomTranscribeMode === 'all') setTimeout(showTranscribeModal, 800);
     }
   });
@@ -1806,8 +1803,15 @@ async function stopAndFinalizeAudio() {
   fetch('/api/audio-finalize', { method: 'POST', body: form }).catch(() => {});
 }
 
-function showTranscribeModal() {
+function showTranscribeModal(forHost = false) {
   document.getElementById('modal-email').value = localStorage.getItem('meetEmail') || '';
+  if (forHost) {
+    document.getElementById('modal-title').textContent = '📝 要約メールを受け取りますか？';
+    document.getElementById('modal-desc').textContent = '会議終了後にAI要約をメールでお届けします。あとから設定することはできません。';
+  } else {
+    document.getElementById('modal-title').textContent = '📝 文字起こしが有効になりました';
+    document.getElementById('modal-desc').textContent = '会議終了後、内容の要約をメールでお届けします。';
+  }
   document.getElementById('transcribe-modal').style.display = 'flex';
 }
 
