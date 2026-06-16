@@ -346,8 +346,8 @@ function copyInappUrl() {
     <button class="ctrl-btn ctrl-btn-secondary" id="btn-breakout" onclick="toggleBreakout()" style="display:none">
       <div class="icon">👥</div><span>ブレイクアウト</span>
     </button>
-    <button class="ctrl-btn ctrl-btn-secondary" id="btn-transcribe-toggle" onclick="toggleTranscribeMode()" style="display:none" title="クライアント録音オフ">
-      <div class="icon">📝</div><span id="btn-transcribe-label">録音：自分のみ</span>
+    <button class="ctrl-btn ctrl-btn-secondary" id="btn-transcribe-toggle" onclick="toggleTranscribeMode()" style="display:none">
+      <div class="icon" id="btn-transcribe-icon">📝</div><span id="btn-transcribe-label">録音：自分のみ</span>
     </button>
     <button class="ctrl-btn" id="btn-more" onclick="toggleMore()">
       <div class="icon">⋯</div><span>もっと</span>
@@ -817,14 +817,13 @@ async function joinRoom() {
       roomTranscribeMode = transcribeMode || 'host_only';
       updateHostUI();
       if (isFreeRoom && source !== 'breakout') startFreeTimer(roomStartedAt || Date.now());
-      if (isHost && myEmail) startAutoAudioRecording();
-      else if (isHost && !myEmail) setTimeout(() => showTranscribeModal(true), 800);
+      if (isHost && roomTranscribeMode !== 'none' && myEmail) startAutoAudioRecording();
+      else if (isHost && roomTranscribeMode !== 'none' && !myEmail) setTimeout(() => showTranscribeModal(true), 800);
       else if (!isHost && roomTranscribeMode === 'all') setTimeout(showTranscribeModal, 800);
     }
   });
   socket.on('transcribe-mode-changed', ({ mode }) => {
-    roomTranscribeMode = mode;
-    updateTranscribeLabel();
+    applyTranscribeMode(mode);
     if (!isHost && mode === 'all') setTimeout(showTranscribeModal, 400);
   });
   socket.on('user-joined', ({ id, name }) => {
@@ -1447,15 +1446,37 @@ function updateHostUI() {
 function updateTranscribeLabel() {
   const btn = document.getElementById('btn-transcribe-toggle');
   if (!btn) return;
-  const isAll = roomTranscribeMode === 'all';
-  document.getElementById('btn-transcribe-label').textContent = isAll ? '録音：全員' : '録音：自分のみ';
-  btn.title = isAll ? 'クライアント録音ON（クリックでOFF）' : 'クライアント録音OFF（クリックでON）';
-  btn.style.opacity = isAll ? '1' : '0.6';
+  const labels = { none: '録音：オフ', host_only: '録音：自分のみ', all: '録音：全員' };
+  const opacities = { none: '0.45', host_only: '0.7', all: '1' };
+  const icons = { none: '⏹️', host_only: '📝', all: '🔴' };
+  const mode = roomTranscribeMode || 'host_only';
+  document.getElementById('btn-transcribe-label').textContent = labels[mode] || '録音：自分のみ';
+  document.getElementById('btn-transcribe-icon').textContent = icons[mode] || '📝';
+  btn.style.opacity = opacities[mode] || '0.7';
 }
 
 function toggleTranscribeMode() {
-  const newMode = roomTranscribeMode === 'all' ? 'host_only' : 'all';
+  const cycle = { none: 'host_only', host_only: 'all', all: 'none' };
+  const newMode = cycle[roomTranscribeMode] || 'host_only';
   socket.emit('set-transcribe-mode', { mode: newMode });
+  applyTranscribeMode(newMode);
+}
+
+function applyTranscribeMode(mode) {
+  roomTranscribeMode = mode;
+  updateTranscribeLabel();
+  if (!isHost) return;
+  if (mode === 'none') {
+    if (audioRecorder && audioRecorder.state === 'recording') {
+      audioRecorder.stop();
+      audioRecorder = null;
+      const recEl = document.getElementById('rec-indicator');
+      if (recEl) recEl.classList.remove('active');
+    }
+  } else {
+    if (!audioRecorder && myEmail) startAutoAudioRecording();
+    else if (!audioRecorder && !myEmail) showTranscribeModal(true);
+  }
 }
 
 function grantCohost(targetId) {
