@@ -554,6 +554,17 @@ app.post('/api/utage-webhook', async (req, res) => {
   } catch(e) { console.error('utage-webhook error:', e.message); }
 });
 
+// ---- BNI Manager SSO ----
+app.get('/api/bni-sso-redirect', requireAuth, (req, res) => {
+  const user = db.prepare('SELECT name, email FROM users WHERE id=?').get(req.session.userId);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
+  const secret = process.env.BNI_SSO_SECRET || 'nicemeet-bni-sso-2026';
+  const payload = JSON.stringify({ name: user.name, email: user.email || '', exp: Date.now() + 5 * 60 * 1000 });
+  const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const token = Buffer.from(payload).toString('base64url') + '.' + sig;
+  res.redirect(`https://gaiaarts.org/bni/?sso_token=${encodeURIComponent(token)}`);
+});
+
 // ---- Stripe 決済 ----
 app.post('/api/stripe/checkout', requireAuth, async (req, res) => {
   if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
