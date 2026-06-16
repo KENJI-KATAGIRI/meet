@@ -287,10 +287,7 @@ function copyInappUrl() {
       <div style="font-size:11px;color:#555;margin-bottom:10px;letter-spacing:.5px">📝 文字起こし設定</div>
       <span class="optional-label">メールアドレス（省略可）<br><span style="font-size:11px;color:#4a4a6a">会議終了後に要約を送信します</span></span>
       <input id="input-email" type="email" placeholder="example@email.com">
-      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#777;cursor:pointer;margin-top:-4px;margin-bottom:4px">
-        <input type="checkbox" id="input-allow-all" style="accent-color:#6c63ff;width:14px;height:14px;flex-shrink:0;cursor:pointer">
-        クライアント側にも文字起こしを許可する
-      </label>
+      <input type="checkbox" id="input-allow-all" style="display:none">
     </div>
     <div class="error-msg" id="error-msg"></div>
     <div style="border-top:1px solid #2a2a4a;margin-top:18px;padding-top:16px">
@@ -352,6 +349,9 @@ function copyInappUrl() {
     </button>
     <button class="ctrl-btn ctrl-btn-secondary" id="btn-breakout" onclick="toggleBreakout()" style="display:none">
       <div class="icon">👥</div><span>ブレイクアウト</span>
+    </button>
+    <button class="ctrl-btn ctrl-btn-secondary" id="btn-transcribe-toggle" onclick="toggleTranscribeMode()" style="display:none" title="クライアント録音オフ">
+      <div class="icon">📝</div><span id="btn-transcribe-label">録音：自分のみ</span>
     </button>
     <button class="ctrl-btn" id="btn-more" onclick="toggleMore()">
       <div class="icon">⋯</div><span>もっと</span>
@@ -824,6 +824,11 @@ async function joinRoom() {
       if (isHost && myEmail) startAutoAudioRecording();
       else if (!isHost && roomTranscribeMode === 'all') setTimeout(showTranscribeModal, 800);
     }
+  });
+  socket.on('transcribe-mode-changed', ({ mode }) => {
+    roomTranscribeMode = mode;
+    updateTranscribeLabel();
+    if (!isHost && mode === 'all') setTimeout(showTranscribeModal, 400);
   });
   socket.on('user-joined', ({ id, name }) => {
     peerNames[id] = name; createPeer(id, name, false);
@@ -1437,6 +1442,23 @@ function updateHostUI() {
     const el = document.getElementById(id);
     if (el) el.style.display = show ? '' : 'none';
   });
+  const tBtn = document.getElementById('btn-transcribe-toggle');
+  if (tBtn) tBtn.style.display = isHost ? '' : 'none';
+  updateTranscribeLabel();
+}
+
+function updateTranscribeLabel() {
+  const btn = document.getElementById('btn-transcribe-toggle');
+  if (!btn) return;
+  const isAll = roomTranscribeMode === 'all';
+  document.getElementById('btn-transcribe-label').textContent = isAll ? '録音：全員' : '録音：自分のみ';
+  btn.title = isAll ? 'クライアント録音ON（クリックでOFF）' : 'クライアント録音OFF（クリックでON）';
+  btn.style.opacity = isAll ? '1' : '0.6';
+}
+
+function toggleTranscribeMode() {
+  const newMode = roomTranscribeMode === 'all' ? 'host_only' : 'all';
+  socket.emit('set-transcribe-mode', { mode: newMode });
 }
 
 function grantCohost(targetId) {

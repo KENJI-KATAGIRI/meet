@@ -1984,6 +1984,15 @@ io.on('connection', (socket) => {
   });
 
   // ---- サブホスト管理 ----
+  socket.on('set-transcribe-mode', ({ mode }) => {
+    const roomId = socket.roomId;
+    const room = rooms.get(roomId);
+    if (!room || room.hostId !== socket.id) return;
+    if (!['all', 'host_only', 'none'].includes(mode)) return;
+    room.transcribeMode = mode;
+    io.to(roomId).emit('transcribe-mode-changed', { mode });
+  });
+
   socket.on('grant-cohost', ({ targetId }) => {
     const mainId = socket.mainRoomId || socket.roomId;
     const room = rooms.get(mainId);
