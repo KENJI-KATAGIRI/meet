@@ -1909,6 +1909,7 @@ function startAutoAudioRecording() {
     form.append('sessionId', audioSessionId);
     form.append('chunkIndex', String(idx));
     form.append('audioExt', ext);
+    form.append('roomId', myRoomId);
     const p = fetch('/api/audio-chunk', { method: 'POST', body: form }).catch(() => {});
     pendingUploads.add(p);
     p.finally(() => pendingUploads.delete(p));
