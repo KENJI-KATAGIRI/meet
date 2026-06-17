@@ -1,5 +1,7 @@
 require('dotenv').config();
 const express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
@@ -31,6 +33,33 @@ async function sendMail(to, subject, text) {
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// ---- セキュリティヘッダー ----
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      mediaSrc: ["'self'", "blob:", "data:"],
+      connectSrc: ["'self'", "wss:", "ws:"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      workerSrc: ["'self'", "blob:"],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+    }
+  },
+  crossOriginEmbedderPolicy: false, // WebRTC/MediaPipeに必要
+}));
+
+// ---- レートリミット ----
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'リクエストが多すぎます。15分後に再度お試しください。' }
+});
+const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
+app.use('/auth/', authLimiter);
+app.use('/api/', apiLimiter);
 
 // SQLite永続セッションストア（再起動してもセッションが切れない）
 const sessionDb = new Database(path.join(__dirname, 'data', 'sessions.db'));
@@ -454,11 +483,28 @@ async function verifyPassword(password, stored) {
   const attempt = await new Promise((res, rej) =>
     crypto.scrypt(password, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex')))
   );
-  return attempt === hash;
+  return crypto.timingSafeEqual(Buffer.from(attempt, 'hex'), Buffer.from(hash, 'hex'));
+}
+
+// ---- 入力検証ユーティリティ ----
+function isValidEmail(email) {
+  return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+}
+function safeStr(s, max = 200) {
+  return typeof s === 'string' ? s.trim().slice(0, max) : '';
+}
+function isValidISODate(s) {
+  if (typeof s !== 'string') return false;
+  return !isNaN(new Date(s).getTime());
+}
+// セッション再生成（セッション固定化攻撃対策）
+function regenerateSession(req) {
+  return new Promise((resolve, reject) => req.session.regenerate(e => e ? reject(e) : resolve()));
 }
 
 app.set('trust proxy', 1);
 app.use(express.json({
+  limit: '50kb',
   verify: (req, res, buf) => { if (req.path === '/api/stripe/webhook') req.rawBody = buf; }
 }));
 app.get('/', (req, res, next) => {
@@ -467,11 +513,12 @@ app.get('/', (req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'public')));
 const sessionMiddleware = session({
+  name: 'sid',
   store: new BetterSqliteStore(),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: 'auto', httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000 }
+  cookie: { secure: 'auto', httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: 'lax' }
 });
 app.use(sessionMiddleware);
 io.use((socket, next) => {
@@ -559,6 +606,7 @@ app.get('/auth/google/callback', async (req, res) => {
       const rt = tokens.refresh_token || existing.refresh_token;
       db.prepare('UPDATE users SET name=?, email=?, access_token=?, refresh_token=? WHERE google_id=?')
         .run(data.name, data.email, tokens.access_token, rt, data.id);
+      await regenerateSession(req);
       req.session.userId = existing.id;
       req.session.slug = existing.slug;
     } else {
@@ -567,6 +615,7 @@ app.get('/auth/google/callback', async (req, res) => {
       while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
       const r = db.prepare("INSERT INTO users (google_id, name, email, access_token, refresh_token, slug, registered_at) VALUES (?,?,?,?,?,?,datetime('now'))")
         .run(data.id, data.name, data.email, tokens.access_token, tokens.refresh_token, slug);
+      await regenerateSession(req);
       req.session.userId = r.lastInsertRowid;
       req.session.slug = slug;
     }
@@ -583,15 +632,20 @@ app.get('/auth/logout', (req, res) => { req.session.destroy(); res.redirect('/bo
 app.post('/auth/register', async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) return res.json({ error: '全項目を入力してください' });
-  if (password.length < 8) return res.json({ error: 'パスワードは8文字以上にしてください' });
+  const cleanName = safeStr(name, 50);
+  if (!cleanName) return res.json({ error: '名前を入力してください' });
+  if (!isValidEmail(email)) return res.json({ error: 'メールアドレスが正しくありません' });
+  if (typeof password !== 'string' || password.length < 8 || password.length > 128)
+    return res.json({ error: 'パスワードは8〜128文字で入力してください' });
   if (db.prepare('SELECT id FROM users WHERE email=?').get(email))
     return res.json({ error: 'このメールアドレスはすでに登録されています' });
-  let slug = name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+  let slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
   let base = slug, i = 1;
   while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
   const password_hash = await hashPassword(password);
   const r = db.prepare("INSERT INTO users (name, email, password_hash, slug, registered_at) VALUES (?,?,?,?,datetime('now'))")
-    .run(name, email, password_hash, slug);
+    .run(cleanName, email, password_hash, slug);
+  await regenerateSession(req);
   req.session.userId = r.lastInsertRowid;
   req.session.slug = slug;
   res.json({ ok: true });
@@ -601,10 +655,13 @@ app.post('/auth/register', async (req, res) => {
 app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.json({ error: 'メールアドレスとパスワードを入力してください' });
+  if (!isValidEmail(email) || typeof password !== 'string')
+    return res.json({ error: 'メールアドレスまたはパスワードが違います' });
   const user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
   if (!user || !user.password_hash) return res.json({ error: 'メールアドレスまたはパスワードが違います' });
   const ok = await verifyPassword(password, user.password_hash);
   if (!ok) return res.json({ error: 'メールアドレスまたはパスワードが違います' });
+  await regenerateSession(req);
   req.session.userId = user.id;
   req.session.slug = user.slug;
   res.json({ ok: true });
@@ -830,6 +887,7 @@ app.get('/api/b/:slug/slots', async (req, res) => {
 
   const horizonDays = user.booking_horizon_days || 14;
   const date = req.query.date;
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'invalid date' });
 
   // 予約受付期間チェック
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -876,6 +934,13 @@ app.post('/api/b/:slug/book', async (req, res) => {
   if (!user) return res.status(404).json({ error: 'not found' });
 
   const { booker_name, booker_email, start_time, end_time, purpose } = req.body;
+  const cleanName = safeStr(booker_name, 100);
+  const cleanEmail = safeStr(booker_email, 254);
+  const cleanPurpose = safeStr(purpose, 500);
+  if (!cleanName) return res.status(400).json({ error: '名前を入力してください' });
+  if (cleanEmail && !isValidEmail(cleanEmail)) return res.status(400).json({ error: 'メールアドレスが正しくありません' });
+  if (!start_time || !end_time || !isValidISODate(start_time) || !isValidISODate(end_time))
+    return res.status(400).json({ error: '日時が正しくありません' });
   if (db.prepare('SELECT id FROM bookings WHERE user_id=? AND start_time=? AND (cancelled IS NULL OR cancelled=0)').get(user.id, start_time))
     return res.status(409).json({ error: 'この時間はすでに予約されています' });
 
@@ -892,8 +957,8 @@ app.post('/api/b/:slug/book', async (req, res) => {
       calendarId: user.email,
       sendUpdates: 'all',
       requestBody: {
-        summary: `${booker_name}さんとのミーティング`,
-        description: `用件: ${purpose || 'なし'}\n\nビデオ通話URL: ${meetUrl}\n予約者: ${booker_name}${booker_email ? ` (${booker_email})` : ''}`,
+        summary: `${cleanName}さんとのミーティング`,
+        description: `用件: ${cleanPurpose || 'なし'}\n\nビデオ通話URL: ${meetUrl}\n予約者: ${cleanName}${cleanEmail ? ` (${cleanEmail})` : ''}`,
         start: { dateTime: start_time, timeZone: 'Asia/Tokyo' },
         end: { dateTime: end_time, timeZone: 'Asia/Tokyo' }
       }
@@ -902,7 +967,7 @@ app.post('/api/b/:slug/book', async (req, res) => {
   } catch (e) { console.error('calendar insert error:', e.message); }
 
   db.prepare('INSERT INTO bookings (user_id, booker_name, booker_email, start_time, end_time, purpose, meet_room, google_event_id, cancel_token, meet_system) VALUES (?,?,?,?,?,?,?,?,?,?)')
-    .run(user.id, booker_name, booker_email, start_time, end_time, purpose || '', meetRoom, googleEventId, cancelToken, 'bni');
+    .run(user.id, cleanName, cleanEmail, start_time, end_time, cleanPurpose, meetRoom, googleEventId, cancelToken, 'bni');
 
   // メール送信
   const startDt = new Date(start_time);
@@ -911,16 +976,16 @@ app.post('/api/b/:slug/book', async (req, res) => {
   const fmtTime = `${startDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} 〜 ${endDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
 
   // 予約者へ
-  if (booker_email) {
-    await sendMail(booker_email, `【予約確認】${user.name}さんとのミーティング`,
-`${booker_name} 様
+  if (cleanEmail) {
+    await sendMail(cleanEmail, `【予約確認】${user.name}さんとのミーティング`,
+`${cleanName} 様
 
 ミーティングのご予約が完了しました。
 
 ━━━━━━━━━━━━━━━━━━
 日時：${fmtDate} ${fmtTime}
 相手：${user.name}
-用件：${purpose || 'なし'}
+用件：${cleanPurpose || 'なし'}
 ━━━━━━━━━━━━━━━━━━
 
 ■ ビデオ通話URL
@@ -937,13 +1002,13 @@ ${cancelUrl}
   }
 
   // ホストへ
-  await sendMail(user.email, `【新規予約】${booker_name}さんから予約が入りました`,
+  await sendMail(user.email, `【新規予約】${cleanName}さんから予約が入りました`,
 `新しいミーティングの予約が入りました。
 
 ━━━━━━━━━━━━━━━━━━
 日時：${fmtDate} ${fmtTime}
-予約者：${booker_name}${booker_email ? ` (${booker_email})` : ''}
-用件：${purpose || 'なし'}
+予約者：${cleanName}${cleanEmail ? ` (${cleanEmail})` : ''}
+用件：${cleanPurpose || 'なし'}
 ━━━━━━━━━━━━━━━━━━
 
 ■ ビデオ通話URL
@@ -1419,7 +1484,10 @@ const FACE_PROMPTS = {
 
 const storage = multer.diskStorage({
   destination: recDir,
-  filename: (req, file, cb) => cb(null, file.originalname)
+  filename: (req, file, cb) => {
+    const ext = (path.extname(file.originalname) || '.webm').toLowerCase().replace(/[^a-z0-9.]/g, '').slice(0, 8);
+    cb(null, 'rec-' + Date.now() + '-' + crypto.randomBytes(8).toString('hex') + ext);
+  }
 });
 const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 * 1024 } }); // 2GB
 
@@ -1547,10 +1615,16 @@ const audioChunkUpload = multer({
 app.post('/api/audio-chunk', audioChunkUpload.single('chunk'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const { sessionId, chunkIndex } = req.body;
-  if (!sessionId) { fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'no sessionId' }); }
-  const ext = req.body.audioExt || 'webm';
-  const finalName = `audio-${sessionId}-${String(chunkIndex).padStart(4,'0')}.${ext}`;
-  console.log(`[audio-chunk] session=${sessionId} idx=${chunkIndex} size=${req.file.size}bytes ext=${ext}`);
+  if (!sessionId || !/^[\w-]{5,60}$/.test(sessionId)) {
+    fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'invalid sessionId' });
+  }
+  const chunkIdx = parseInt(chunkIndex, 10);
+  if (isNaN(chunkIdx) || chunkIdx < 0 || chunkIdx > 9999) {
+    fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'invalid chunkIndex' });
+  }
+  const ext = (req.body.audioExt || 'webm').replace(/[^a-z0-9]/g, '').slice(0, 4) || 'webm';
+  const finalName = `audio-${sessionId}-${String(chunkIdx).padStart(4,'0')}.${ext}`;
+  console.log(`[audio-chunk] session=${sessionId} idx=${chunkIdx} size=${req.file.size}bytes ext=${ext}`);
   fs.rename(req.file.path, path.join(recDir, finalName), () => {});
   res.json({ ok: true });
 });
@@ -1567,6 +1641,7 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
   }
   console.log(`[audio-finalize] session=${sessionId} email=${email} openai=${!!openai}`);
   if (!email || !sessionId || !openai) return;
+  if (!isValidEmail(email) || !/^[\w-]{5,60}$/.test(sessionId)) return;
   const fUser = db.prepare('SELECT plan, facility_id FROM users WHERE email=?').get(email);
   const recordMode = req.body.recordMode || '';
   const welfareSystem = req.body.welfareSystem || '';
@@ -1796,7 +1871,7 @@ ${transcript}
 // ---- Public: cancel by token ----
 app.get('/api/cancel-info', (req, res) => {
   const token = req.query.token;
-  if (!token) return res.json({ found: false });
+  if (!token || !/^[a-f0-9]{32}$/.test(token)) return res.json({ found: false });
   const booking = db.prepare(
     'SELECT b.booker_name, b.start_time, b.end_time, b.cancelled, u.name as host_name, u.slug FROM bookings b JOIN users u ON b.user_id = u.id WHERE b.cancel_token=?'
   ).get(token);
@@ -1806,7 +1881,7 @@ app.get('/api/cancel-info', (req, res) => {
 
 app.post('/api/cancel', async (req, res) => {
   const { token } = req.body;
-  if (!token) return res.status(400).json({ error: '無効なリクエストです' });
+  if (!token || !/^[a-f0-9]{32}$/.test(token)) return res.status(400).json({ error: '無効なリクエストです' });
   const booking = db.prepare(
     'SELECT b.*, u.name as host_name, u.email as host_email, u.slug FROM bookings b JOIN users u ON b.user_id = u.id WHERE b.cancel_token=?'
   ).get(token);
@@ -1862,7 +1937,7 @@ https://meet.gaiaarts.org/booking/dashboard
 // ---- Public: room info (time check) ----
 app.get('/api/room-info', (req, res) => {
   const room = req.query.room;
-  if (!room) return res.json({ found: false });
+  if (!room || typeof room !== 'string' || room.length > 64) return res.json({ found: false });
   const booking = db.prepare(
     'SELECT b.booker_name, b.start_time, b.end_time, u.name as host_name FROM bookings b JOIN users u ON b.user_id = u.id WHERE b.meet_room=?'
   ).get(room);
@@ -2330,7 +2405,11 @@ const rooms = new Map();
 const breakouts = new Map();
 io.on('connection', (socket) => {
   socket.on('join-room', ({ roomId, password, userName, transcribeMode, system }) => {
-    const room = rooms.get(roomId);
+    if (typeof roomId !== 'string' || roomId.length > 128 || typeof userName !== 'string') return;
+    const safeRoomId = roomId.trim();
+    const safeUserName = userName.trim().slice(0, 50);
+    if (!safeRoomId || !safeUserName) return;
+    const room = rooms.get(safeRoomId);
     // BNIモードはルームIDがUUID形式で十分安全なのでパスワードチェックをスキップ
     if (room && room.password && room.password !== password && system !== 'bni') {
       socket.emit('join-error', 'パスワードが違います'); return;
@@ -2349,13 +2428,13 @@ io.on('connection', (socket) => {
         hostUiMode = hu?.ui_mode || 'simple';
       }
       const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode };
-      rooms.set(roomId, newRoom);
+      rooms.set(safeRoomId, newRoom);
       if (hostPlan === 'free') {
-        newRoom.warnTimer = setTimeout(() => { io.to(roomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
-        newRoom.endTimer = setTimeout(() => { io.to(roomId).emit('time-limit', {}); }, 45 * 60 * 1000);
+        newRoom.warnTimer = setTimeout(() => { io.to(safeRoomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
+        newRoom.endTimer = setTimeout(() => { io.to(safeRoomId).emit('time-limit', {}); }, 45 * 60 * 1000);
       }
     }
-    const cur = rooms.get(roomId);
+    const cur = rooms.get(safeRoomId);
     for (const [id] of cur.users) {
       if (!io.sockets.sockets.get(id)) cur.users.delete(id);
     }
@@ -2363,14 +2442,14 @@ io.on('connection', (socket) => {
     if (!io.sockets.sockets.get(cur.hostId) || !cur.users.has(cur.hostId)) {
       cur.hostId = socket.id;
     }
-    cur.users.set(socket.id, { name: userName });
-    socket.join(roomId);
-    socket.roomId = roomId;
+    cur.users.set(socket.id, { name: safeUserName });
+    socket.join(safeRoomId);
+    socket.roomId = safeRoomId;
     socket.mainRoomId = null;
-    socket.userName = userName;
+    socket.userName = safeUserName;
     const existing = [...cur.users.entries()].filter(([id]) => id !== socket.id).map(([id, d]) => ({ id, name: d.name }));
     socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main', isFreeRoom: cur.hostPlan === 'free', roomStartedAt: cur.startedAt || Date.now(), hostUiMode: cur.hostUiMode || 'simple' });
-    socket.to(roomId).emit('user-joined', { id: socket.id, name: userName });
+    socket.to(safeRoomId).emit('user-joined', { id: socket.id, name: safeUserName });
   });
   socket.on('offer', ({ to, offer }) => io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }));
   socket.on('answer', ({ to, answer }) => io.to(to).emit('answer', { from: socket.id, answer }));
@@ -2378,8 +2457,8 @@ io.on('connection', (socket) => {
   socket.on('screen-share-start', () => { socket.to(socket.roomId).emit('screen-share-start', { id: socket.id, name: socket.userName }); });
   socket.on('screen-share-stop', () => { socket.to(socket.roomId).emit('screen-share-stop', { id: socket.id }); });
   socket.on('chat-message', ({ message }) => {
-    if (!socket.roomId) return;
-    console.log('[chat] from=' + socket.userName + ' room=' + socket.roomId + ' len=' + (message||'').length);
+    if (!socket.roomId || typeof message !== 'string' || message.length === 0 || message.length > 2000) return;
+    console.log('[chat] from=' + socket.userName + ' room=' + socket.roomId + ' len=' + message.length);
     socket.to(socket.roomId).emit('chat-message', { from: socket.userName, message, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) });
   });
   socket.on('disconnect', () => {
