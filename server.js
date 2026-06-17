@@ -738,6 +738,23 @@ app.post('/api/utage-webhook', async (req, res) => {
 });
 
 // ---- BNI Manager SSO ----
+
+const TURN_SECRET = process.env.TURN_SECRET || '';
+app.get('/api/ice-credentials', (req, res) => {
+  const expiry = Math.floor(Date.now() / 1000) + 3600; // 1時間有効
+  const username = `${expiry}:nicemeet`;
+  const servers = [{ urls: ['stun:stun.l.google.com:19302'] }];
+  if (TURN_SECRET) {
+    const credential = require('crypto').createHmac('sha1', TURN_SECRET).update(username).digest('base64');
+    servers.push({
+      urls: ['turn:49.212.179.11:3478'],
+      username,
+      credential
+    });
+  }
+  res.json({ iceServers: servers });
+});
+
 app.get('/api/bni-sso-token', requireAuth, (req, res) => {
   const user = db.prepare('SELECT name, email FROM users WHERE id=?').get(req.session.userId);
   if (!user) return res.status(401).json({ error: 'unauthorized' });

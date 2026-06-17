@@ -598,20 +598,14 @@ function copyInappUrl() {
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const ICE_CONFIG = {
-  iceServers: [
-    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ]
-};
+// ICE credentials are fetched dynamically from /api/ice-credentials
+let ICE_CONFIG = { iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }] };
+async function refreshIceConfig() {
+  try {
+    const r = await fetch('/api/ice-credentials');
+    if (r.ok) { ICE_CONFIG = await r.json(); }
+  } catch(e) { /* STUNフォールバック */ }
+}
 
 function applyOpusParams(sdp) {
   const match = sdp.match(/a=rtpmap:(\d+) opus/i);
@@ -824,6 +818,7 @@ let mixAudioCtx = null, mixDest = null;
 const peerAudioSources = {};
 
 async function joinRoom() {
+  await refreshIceConfig();
   const name = document.getElementById('input-name').value.trim();
   const room = document.getElementById('input-room').value.trim();
   const pass = document.getElementById('input-pass').value;
@@ -1202,8 +1197,9 @@ function addVideoTile(id, name, stream, isLocal, extraClass) {
   tile.className = extraClass ? 'video-tile ' + extraClass : 'video-tile'; tile.id = 'tile-' + id;
   tile.innerHTML = '<video autoplay playsinline' + (isLocal ? ' muted' : '') + '></video>' +
     '<div class="avatar-placeholder">&#128100;</div>' +
-    '<div class="name-tag">' + name + (isLocal ? ' (あなた)' : '') + '</div>' +
+    '<div class="name-tag"></div>' +
     '<div class="muted-icon">&#128263;</div>';
+  tile.querySelector('.name-tag').textContent = name + (isLocal ? ' (あなた)' : '');
   tile.querySelector('video').srcObject = stream;
   grid.appendChild(tile); updateGrid();
 }
@@ -1860,7 +1856,7 @@ async function doLeaveRoom() {
     shuro: 'https://gaiaarts.org/shuro/', kaigo: 'https://gaiaarts.org/kaigo/',
     houmon: 'https://gaiaarts.org/houmon/', houdei: 'https://gaiaarts.org/houdei/',
     roukin: 'https://gaiaarts.org/roukin/', beauty: 'https://gaiaarts.org/beauty/',
-    bni: 'https://life-energy-coaching.net/bni/',
+    bni: '/bni.html',
     seikatsu: 'https://gaiaarts.org/seikatsu/', keikaku: 'https://gaiaarts.org/keikaku/'
   };
   const dest = (welfareSettings && sysRedirects[welfareSettings.system]) || 'https://www.google.com';
