@@ -32,6 +32,43 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// SQLite永続セッションストア（再起動してもセッションが切れない）
+const sessionDb = new Database(path.join(__dirname, 'data', 'sessions.db'));
+sessionDb.exec(`CREATE TABLE IF NOT EXISTS sessions (
+  sid TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  expires INTEGER NOT NULL
+)`);
+// 期限切れセッションを1時間ごとに削除
+setInterval(() => {
+  try { sessionDb.prepare('DELETE FROM sessions WHERE expires < ?').run(Date.now()); } catch(e) {}
+}, 3600000);
+const Store = require('express-session').Store;
+class BetterSqliteStore extends Store {
+  get(sid, cb) {
+    try {
+      const row = sessionDb.prepare('SELECT data, expires FROM sessions WHERE sid=?').get(sid);
+      if (!row) return cb(null, null);
+      if (row.expires < Date.now()) { this.destroy(sid, ()=>{}); return cb(null, null); }
+      cb(null, JSON.parse(row.data));
+    } catch(e) { cb(e); }
+  }
+  set(sid, sess, cb) {
+    try {
+      const exp = sess.cookie?.expires ? new Date(sess.cookie.expires).getTime() : Date.now() + 30 * 86400000;
+      sessionDb.prepare('INSERT OR REPLACE INTO sessions (sid,data,expires) VALUES (?,?,?)').run(sid, JSON.stringify(sess), exp);
+      cb(null);
+    } catch(e) { cb(e); }
+  }
+  destroy(sid, cb) {
+    try { sessionDb.prepare('DELETE FROM sessions WHERE sid=?').run(sid); cb(null); } catch(e) { cb(e); }
+  }
+  touch(sid, sess, cb) { this.set(sid, sess, cb); }
+}
+
+// BNI Manager DB（既存データをそのまま使用）
+const bniDb = new Database('/home/ubuntu/apps/bni-app/data/bni.db');
+
 // DB setup
 const db = new Database(path.join(__dirname, 'data', 'booking.db'));
 db.exec(`
@@ -167,6 +204,7 @@ try { db.exec("ALTER TABLE users ADD COLUMN ui_mode TEXT DEFAULT 'simple'"); } c
 try { db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT'); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN status TEXT DEFAULT 'confirmed'"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN source TEXT DEFAULT 'video'"); } catch(e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN booking_horizon_days INTEGER DEFAULT 14"); } catch(e) {}
 
 // ── 施設サブスク ヘルパー ────────────────────────────────────────
 function calcMonthlyAmount(locationCount, isEarlyAdopter) {
@@ -211,6 +249,14 @@ const WELFARE_RECORD_TYPES = {
   kaigo: {
     label: '介護グループホーム',
     types: ['モニタリング記録', '家族面談記録', '運営推進会議記録', 'サービス担当者会議記録']
+  },
+  seikatsu: {
+    label: '生活訓練',
+    types: ['モニタリング記録', '個別支援計画会議記録', 'サービス担当者会議記録', '家族面談記録', 'スタッフ間ミーティング']
+  },
+  keikaku: {
+    label: '計画相談支援',
+    types: ['サービス担当者会議記録', 'モニタリング記録', '個別支援計画作成会議記録', '家族面談記録', '関係機関連絡調整']
   }
 };
 
@@ -338,7 +384,61 @@ const WELFARE_PROMPTS = {
 【ケアプランの変更内容・合意事項】
 【役割分担・次回確認事項】`
   }
-};
+,
+  seikatsu: {
+    'モニタリング記録': `以下は生活訓練事業所におけるモニタリング面談の文字起こしです。「モニタリング記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【本人の状況・生活状況の変化】
+【生活訓練の実施状況・達成度】
+【本人の意向・希望】「ご本人より〜との意向が示された」形式で
+【課題と今後の支援方針】
+【計画変更の要否】
+【次回面談予定】`,
+    'サービス担当者会議記録': `以下は生活訓練事業所におけるサービス担当者会議の文字起こしです。「サービス担当者会議記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【参加者】（役職・事業所名を記載）
+【本人・家族の意向】
+【各担当者からの情報提供】
+【合意事項・支援方針】
+【役割分担・対応事項】
+【次回開催予定】`,
+    '家族面談記録': `以下は生活訓練事業所における家族面談の文字起こしです。「家族面談記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【面談目的・参加者】（続柄を記載）
+【家庭での様子（家族報告）】
+【本人の状態・変化】
+【家族の意向・要望】「ご家族より〜との申し出あり」形式で
+【合意事項・対応内容】
+【次回連絡・面談予定】`
+  },
+  keikaku: {
+    'サービス担当者会議記録': `以下は計画相談支援事業所におけるサービス担当者会議の文字起こしです。「サービス担当者会議記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【参加者】（役職・事業所名を記載）
+【本人・家族の現状と意向】
+【各サービス担当者からの情報共有】
+【ニーズ・課題の整理】
+【サービス等利用計画の変更内容・合意事項】
+【役割分担・対応事項】
+【次回開催予定】`,
+    'モニタリング記録': `以下は計画相談支援事業所におけるモニタリング面談の文字起こしです。「モニタリング記録」として相談支援専門員が作成する業務記録文体で作成してください。
+以下の見出しで記述してください：
+【利用者の現状（生活状況・健康状態・障害の状況）】
+【各サービスの利用状況】
+【計画目標の達成状況】
+【本人・家族の意向・要望】
+【課題と今後の支援方針】
+【計画変更の要否と内容】
+【次回モニタリング予定】`,
+    '家族面談記録': `以下は計画相談支援事業所における家族面談の文字起こしです。「家族面談記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【面談目的・参加者】（続柄を記載）
+【家庭での様子（家族報告）】
+【本人の状態・変化】
+【家族の意向・要望】「ご家族より〜との申し出あり」形式で
+【合意事項・対応内容】
+【次回連絡・面談予定】`
+  }};
 // ─────────────────────────────────────────────────────────────────
 
 // パスワードハッシュ
@@ -367,10 +467,11 @@ app.get('/', (req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'public')));
 const sessionMiddleware = session({
+  store: new BetterSqliteStore(),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: 'auto', httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }
+  cookie: { secure: 'auto', httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000 }
 });
 app.use(sessionMiddleware);
 io.use((socket, next) => {
@@ -517,7 +618,7 @@ function requireAuth(req, res, next) {
 
 // ---- API: me ----
 app.get('/api/me', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode, registered_at, stripe_customer_id, plan, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
+  const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode, registered_at, stripe_customer_id, plan, booking_horizon_days, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
   res.json(u);
 });
 
@@ -556,14 +657,14 @@ app.post('/api/utage-webhook', async (req, res) => {
 });
 
 // ---- BNI Manager SSO ----
-app.get('/api/bni-sso-redirect', requireAuth, (req, res) => {
+app.get('/api/bni-sso-token', requireAuth, (req, res) => {
   const user = db.prepare('SELECT name, email FROM users WHERE id=?').get(req.session.userId);
   if (!user) return res.status(401).json({ error: 'unauthorized' });
   const secret = process.env.BNI_SSO_SECRET || 'nicemeet-bni-sso-2026';
   const payload = JSON.stringify({ name: user.name, email: user.email || '', exp: Date.now() + 5 * 60 * 1000 });
   const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   const token = Buffer.from(payload).toString('base64url') + '.' + sig;
-  res.redirect(`https://gaiaarts.org/bni/?sso_token=${encodeURIComponent(token)}`);
+  res.json({ url: `https://gaiaarts.org/bni/?sso_token=${encodeURIComponent(token)}` });
 });
 
 // ---- Stripe 決済 ----
@@ -645,12 +746,13 @@ app.get('/api/availability', requireAuth, (req, res) => {
 });
 
 app.post('/api/availability', requireAuth, (req, res) => {
-  const { availability, slot_duration } = req.body;
+  const { availability, slot_duration, booking_horizon_days } = req.body;
   const uid = req.session.userId;
   db.prepare('DELETE FROM availability WHERE user_id=?').run(uid);
   const stmt = db.prepare('INSERT INTO availability (user_id, day_of_week, start_time, end_time) VALUES (?,?,?,?)');
   for (const a of (availability || [])) stmt.run(uid, a.day_of_week, a.start_time, a.end_time);
   if (slot_duration) db.prepare('UPDATE users SET slot_duration=? WHERE id=?').run(slot_duration, uid);
+  if (booking_horizon_days) db.prepare('UPDATE users SET booking_horizon_days=? WHERE id=?').run(parseInt(booking_horizon_days), uid);
   res.json({ ok: true });
 });
 
@@ -726,10 +828,18 @@ app.get('/api/b/:slug/slots', async (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE slug=?').get(req.params.slug);
   if (!user) return res.status(404).json({ error: 'not found' });
 
+  const horizonDays = user.booking_horizon_days || 14;
   const date = req.query.date;
+
+  // 予約受付期間チェック
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const targetDate = new Date(date + 'T00:00:00+09:00');
+  const diffDays = Math.floor((targetDate - today) / (1000 * 60 * 60 * 24));
+  if (diffDays >= horizonDays) return res.json({ slots: [], hostName: user.name, horizonDays });
+
   const dow = new Date(date + 'T12:00:00+09:00').getDay();
   const avail = db.prepare('SELECT * FROM availability WHERE user_id=? AND day_of_week=?').get(user.id, dow);
-  if (!avail) return res.json({ slots: [], hostName: user.name });
+  if (!avail) return res.json({ slots: [], hostName: user.name, horizonDays });
 
   const allSlots = generateSlots(date, avail.start_time, avail.end_time, user.slot_duration || 30);
 
@@ -757,7 +867,7 @@ app.get('/api/b/:slug/slots', async (req, res) => {
     });
   } catch (e) { console.error('freebusy error:', e.message); }
 
-  res.json({ slots: filtered, hostName: user.name });
+  res.json({ slots: filtered, hostName: user.name, horizonDays });
 });
 
 // ---- Public: book ----
@@ -857,7 +967,7 @@ const FACE_RECORD_TYPES = {
   houmon: ['訪問記録（サービス提供記録）', 'モニタリング面談記録', 'サービス担当者会議記録'],
   houdei: ['保護者面談記録', '個別支援計画モニタリング記録', '個別支援会議記録'],
   kaigo:  ['日常生活支援記録', '家族・入居者面談記録', '月次モニタリング記録', '運営推進会議記録'],
-  shuro:  ['個別面談記録', '個別支援計画モニタリング記録', '就労移行支援面談記録', '個別支援会議記録']
+  shuro:  ['個別面談記録', '個別支援計画モニタリング記録', '就労移行支援面談記録', '個別支援会議記録', '見学・視察メモ', 'スタッフ情報共有']
 };
 
 // ---- 対面録音モード専用：GPTプロンプト ----
@@ -884,6 +994,221 @@ S - Skills（スキル）: 専門スキル・資格・得意分野
   "referral_hints": "紹介につながりそうなキーワード・ニーズ・状況",
   "follow_up": "次回までのフォローアップ・約束事項"
 }`;
+
+// ---- ビデオ通話モード専用：記録種別・GPTプロンプト ----
+const VIDEO_CALL_RECORD_TYPES = {
+  shuro: ['家族・保護者との面談', '就労先企業との連絡調整', '相談支援専門員・ハローワーク連絡', '関係機関との担当者会議', 'スタッフ間ミーティング', '利用者本人との面談（リモート）'],
+  houmon: ['利用者・家族との連絡', 'ケアマネージャーとの連絡', 'サービス担当者会議（オンライン）', 'スタッフ間ミーティング'],
+  houdei: ['保護者との面談', '学校・教育機関との連絡', '専門家（PT・OT・ST等）との連絡', '関係機関との担当者会議', 'スタッフ間ミーティング'],
+  kaigo:  ['家族との面談', 'ケアマネージャーとの連絡', '医療機関との連絡', 'サービス担当者会議（オンライン）', 'スタッフ間ミーティング'],
+  roukin: ['家族との面談', 'ケアマネ・医療機関との連絡', '担当者会議（オンライン）', 'スタッフ間ミーティング'],
+  beauty: ['顧客カウンセリング（オンライン）', 'メーカー・仕入先との商談', 'スタッフミーティング']
+};
+
+const VIDEO_CALL_PROMPTS = {
+  shuro: {
+    "家族・保護者との面談": `以下は就労継続支援スタッフと利用者の家族・保護者とのビデオ通話の文字起こしです。「家族・保護者連絡記録」として業務記録文体（〜との報告があった／〜の意向が示された）で作成してください。
+以下の見出しで記述してください：
+【家族・保護者の報告事項】「〜より〜との報告あり」形式で
+【利用者の状況についての情報共有】
+【家族・保護者の意向・要望】
+【施設側からの説明・合意内容】
+【次回連絡予定・対応事項】`,
+    "就労先企業との連絡調整": `以下は就労継続支援スタッフと就労先企業担当者とのビデオ通話の文字起こしです。「就労先連絡記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【連絡目的・経緯】
+【就労先からの報告・意見】
+【利用者の職場での状況】
+【調整・合意内容】
+【次回連絡予定・フォローアップ事項】`,
+    "相談支援専門員・ハローワーク連絡": `以下は就労継続支援スタッフと相談支援専門員またはハローワーク担当者とのビデオ通話の文字起こしです。「関係機関連絡記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【連絡目的・経緯】
+【相談支援専門員・ハローワークからの情報提供】
+【利用者に関する情報共有】
+【今後の支援方針・役割分担の確認】
+【次回連絡・会議予定】`,
+    "関係機関との担当者会議": `以下は就労継続支援事業所を含む複数の関係機関によるオンライン担当者会議の文字起こしです。「担当者会議記録（オンライン）」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【参加機関・参加者】
+【協議事項・各機関からの報告】
+【利用者の現状・ニーズ】
+【支援方針・役割分担の合意内容】
+【アクションアイテム・担当者】
+【次回会議予定】`,
+    "スタッフ間ミーティング": `以下は就労継続支援スタッフ間のオンラインミーティングの文字起こしです。「スタッフミーティング記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【議題・確認事項】
+【利用者に関する情報共有・申し送り事項】
+【運営・業務に関する決定事項】
+【課題・対応策】
+【次回ミーティング予定・TODO】`,
+    "利用者本人との面談（リモート）": `以下は就労継続支援スタッフと利用者本人とのビデオ通話による個別面談の文字起こしです。「個別面談記録（リモート）」として業務記録文体（〜との訴えあり／〜が確認された）で作成してください。
+以下の見出しで記述してください：
+【利用者の現在の状況・体調】
+【訴え・相談内容】
+【就労・生活に関する状況】
+【支援内容・アドバイス】
+【次回面談予定・対応事項】`,
+  },
+  houmon: {
+    "利用者・家族との連絡": `以下は訪問介護事業所スタッフと利用者または家族とのビデオ通話の文字起こしです。「利用者・家族連絡記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【連絡目的・経緯】
+【利用者・家族からの報告・要望】「〜より〜との申し出あり」形式で
+【サービスに関する確認事項】
+【合意・決定内容】
+【次回連絡・訪問予定】`,
+    "ケアマネージャーとの連絡": `以下は訪問介護スタッフとケアマネージャーとのビデオ通話の文字起こしです。「ケアマネージャー連絡記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【連絡内容・目的】
+【ケアマネージャーからの情報・指示】
+【利用者状況の共有】
+【ケアプランに関する調整・確認事項】
+【次回連絡予定・対応事項】`,
+    "サービス担当者会議（オンライン）": `以下は訪問介護サービスに関するオンライン担当者会議の文字起こしです。「サービス担当者会議記録（オンライン）」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【参加者】
+【協議事項・各担当者からの報告】
+【利用者の現状・ニーズ】
+【支援方針・役割分担の合意内容】
+【次回開催予定】`,
+    "スタッフ間ミーティング": `以下は訪問介護事業所スタッフ間のオンラインミーティングの文字起こしです。「スタッフミーティング記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【議題・確認事項】
+【利用者に関する申し送り事項】
+【業務・運営に関する決定事項】
+【課題・対応策】
+【次回ミーティング予定・TODO】`,
+  },
+  houdei: {
+    "保護者との面談": `以下は放課後等デイサービスの職員と保護者とのビデオ通話の文字起こしです。「保護者連絡記録（ビデオ面談）」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【面談目的・経緯】
+【保護者からの報告・要望】「保護者より〜との報告あり」形式で
+【お子さんの状態・変化の共有】
+【合意事項・次回対応】
+【次回連絡・面談予定】`,
+    "学校・教育機関との連絡": `以下は放課後等デイサービスと学校・教育機関とのビデオ通話の文字起こしです。「学校連携記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【連絡目的・経緯】
+【学校側からの情報・報告】
+【お子さんの状況共有】
+【連携内容・合意事項】
+【次回連絡予定】`,
+    "専門家（PT・OT・ST等）との連絡": `以下は放課後等デイサービスと専門家（理学療法士・作業療法士・言語聴覚士等）とのビデオ通話の文字起こしです。「専門家連携記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【連絡目的・専門家の氏名・職種】
+【専門家からの評価・アドバイス】
+【支援への反映事項】
+【保護者への情報共有内容】
+【次回連絡・評価予定】`,
+    "関係機関との担当者会議": `以下は放課後等デイサービスが参加したオンライン担当者会議の文字起こしです。「担当者会議記録（オンライン）」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【参加者・機関名】
+【各機関からの報告・情報共有】
+【お子さんの現状・ニーズ】
+【支援方針・役割分担の合意内容】
+【次回会議予定】`,
+    "スタッフ間ミーティング": `以下は放課後等デイサービスのスタッフ間オンラインミーティングの文字起こしです。「スタッフミーティング記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【議題・確認事項】
+【お子さんに関する情報共有・申し送り】
+【運営・業務の決定事項】
+【課題・対応策】
+【次回ミーティング予定・TODO】`,
+  },
+  kaigo: {
+    "家族との面談": `以下は介護グループホームの職員と入居者家族とのビデオ通話の文字起こしです。「家族連絡記録（ビデオ面談）」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【面談目的・経緯】
+【家族からの報告・意向・要望】「ご家族より〜との申し出あり」形式で
+【入居者の状態共有】
+【合意事項・施設側の対応】
+【次回連絡・面談予定】`,
+    "ケアマネージャーとの連絡": `以下は介護グループホームの職員とケアマネージャーとのビデオ通話の文字起こしです。「ケアマネージャー連絡記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【連絡内容・目的】
+【ケアマネージャーからの情報・指示】
+【入居者状況の共有】
+【ケアプランに関する調整・確認事項】
+【次回連絡・モニタリング予定】`,
+    "医療機関との連絡": `以下は介護グループホームの職員と医療機関とのビデオ通話の文字起こしです。「医療機関連絡記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【連絡目的・入居者名】
+【医療機関からの情報・指示】
+【入居者の状態・症状の報告】
+【対応内容・処置・投薬変更等】
+【次回受診・連絡予定】`,
+    "サービス担当者会議（オンライン）": `以下は介護グループホームが参加したオンラインサービス担当者会議の文字起こしです。「サービス担当者会議記録（オンライン）」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【参加者・機関名】
+【各担当者からの報告・情報共有】
+【入居者の現状・ニーズ】
+【ケアプランの合意・変更内容】
+【次回開催予定】`,
+    "スタッフ間ミーティング": `以下は介護グループホームのスタッフ間オンラインミーティングの文字起こしです。「スタッフミーティング記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【議題・確認事項】
+【入居者に関する情報共有・申し送り】
+【業務・運営の決定事項】
+【課題・対応策】
+【次回ミーティング予定・TODO】`,
+  },
+  roukin: {
+    "家族との面談": `以下は老人ホームの職員と入居者家族とのビデオ通話の文字起こしです。「家族連絡記録（ビデオ面談）」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【面談目的・経緯】
+【家族からの報告・意向・要望】「ご家族より〜との申し出あり」形式で
+【入居者の状態共有】
+【合意事項・施設側の対応】
+【次回連絡・面談予定】`,
+    "ケアマネ・医療機関との連絡": `以下は老人ホームの職員とケアマネージャーまたは医療機関とのビデオ通話の文字起こしです。「専門家連絡記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【連絡目的・相手の職種・機関】
+【相手側からの情報・指示・アドバイス】
+【入居者状況の報告】
+【対応・合意内容】
+【次回連絡予定】`,
+    "担当者会議（オンライン）": `以下は老人ホームが参加したオンライン担当者会議の文字起こしです。「担当者会議記録（オンライン）」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【参加者・機関名】
+【各担当者からの報告・情報共有】
+【入居者の現状・ニーズ】
+【支援方針・役割分担の合意内容】
+【次回会議予定】`,
+    "スタッフ間ミーティング": `以下は老人ホームのスタッフ間オンラインミーティングの文字起こしです。「スタッフミーティング記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【議題・確認事項】
+【入居者に関する情報共有・申し送り】
+【業務・運営の決定事項】
+【課題・対応策】
+【次回ミーティング予定・TODO】`,
+  },
+  beauty: {
+    "顧客カウンセリング（オンライン）": `以下は美容事業スタッフと顧客とのビデオカウンセリングの文字起こしです。「オンラインカウンセリング記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【顧客の相談内容・ニーズ】
+【現状の確認（肌・髪・ライフスタイル等）】
+【提案内容・説明事項】
+【お客様の反応・意向】
+【次回アクション・フォローアップ】`,
+    "メーカー・仕入先との商談": `以下は美容事業スタッフとメーカーまたは仕入先とのビデオ商談の文字起こしです。「商談記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【商談目的・相手会社名・担当者名】
+【製品・サービスの説明内容】
+【価格・条件・納期の確認事項】
+【合意内容・発注事項】
+【次回連絡・フォローアップ予定】`,
+    "スタッフミーティング": `以下は美容事業のスタッフ間オンラインミーティングの文字起こしです。「スタッフミーティング記録」として業務記録文体で作成してください。
+以下の見出しで記述してください：
+【議題・確認事項】
+【業務・顧客対応の情報共有】
+【決定事項・方針】
+【課題・改善案】
+【次回ミーティング予定・TODO】`,
+  }
+};
 
 const FACE_PROMPTS = {
   houmon: {
@@ -1030,7 +1355,9 @@ const FACE_PROMPTS = {
 ■ 合意した取り組み・次のステップ
 ■ 次回面談の予定・フォローアップ事項
 
-【注意】A型は雇用契約に基づくため、就労条件や賃金に関する発言は特に正確に記録すること。工賃・賃金の具体的数値はAI生成ではなく担当者が確認・補足すること。`,
+【注意】A型は雇用契約に基づくため、就労条件や賃金に関する発言は特に正確に記録すること。工賃・賃金の具体的数値はAI生成ではなく担当者が確認・補足すること。
+
+【必須制約】文字起こしに記載されていない事実・数値・発言は絶対に作成しないこと。該当するセクションの内容が文字起こしにない場合は「（本日の面談では言及なし）」と記載すること。`,
 
     '個別支援計画モニタリング記録': `以下は就労継続支援の個別支援計画モニタリング面談（6か月ごとに法定義務）の文字起こしです。障害者総合支援法指定基準第58条に基づく「個別支援計画モニタリング記録」として業務記録文体で作成してください。
 
@@ -1064,7 +1391,29 @@ const FACE_PROMPTS = {
 ■ 計画内容の合意事項
 ■ 次回会議予定
 
-【注意】本人が参加できなかった場合は必ずその理由を記録すること（法定義務）。日付順序（原案 ≦ 会議 ≦ 本作成 ≦ 同意）を必ず確認すること。`
+【注意】本人が参加できなかった場合は必ずその理由を記録すること（法定義務）。日付順序（原案 ≦ 会議 ≦ 本作成 ≦ 同意）を必ず確認すること。`,
+
+    '見学・視察メモ': `以下は就労継続支援事業所の見学・視察時の会話・メモの文字起こしです。見学・視察の記録として要点をまとめてください。
+
+【記載項目（文字起こしに内容がある項目のみ）】
+■ 見学先・視察場所
+■ 作業内容・サービス内容の概要
+■ 気づき・印象・特記事項
+■ 質疑応答の内容
+■ 今後の検討事項・参考にする点
+
+【必須制約】文字起こしに記載されていない事実・数値・発言は絶対に作成しないこと。該当する項目の内容が文字起こしにない場合は「（記録なし）」と記載すること。`,
+
+    'スタッフ情報共有': `以下はスタッフ間の情報共有・申し送り・ミーティングの文字起こしです。スタッフ向けの情報共有メモとして要点をまとめてください。
+
+【記載項目（文字起こしに内容がある項目のみ）】
+■ 共有された利用者情報・状況変化
+■ 業務連絡・申し送り事項
+■ 課題・検討事項
+■ 決定事項・対応方針
+■ 次回確認事項
+
+【必須制約】文字起こしに記載されていない事実・数値・発言は絶対に作成しないこと。該当する項目の内容が文字起こしにない場合は「（記録なし）」と記載すること。`
   }
 };
 
@@ -1209,7 +1558,13 @@ app.post('/api/audio-chunk', audioChunkUpload.single('chunk'), (req, res) => {
 const formParser = multer().none();
 app.post('/api/audio-finalize', formParser, async (req, res) => {
   res.json({ ok: true });
-  const { sessionId, email } = req.body;
+  const { sessionId } = req.body;
+  let email = req.body.email || '';
+  // セッションログイン中は登録メールアドレスを優先
+  if (req.session?.userId) {
+    const su = db.prepare('SELECT email FROM users WHERE id=?').get(req.session.userId);
+    if (su?.email) email = su.email;
+  }
   console.log(`[audio-finalize] session=${sessionId} email=${email} openai=${!!openai}`);
   if (!email || !sessionId || !openai) return;
   const fUser = db.prepare('SELECT plan, facility_id FROM users WHERE email=?').get(email);
@@ -1337,7 +1692,7 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
       return;
     }
 
-    const welfarePrompt = isWelfareRecord ? (WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null) : null;
+    const welfarePrompt = isWelfareRecord ? (VIDEO_CALL_PROMPTS[welfareSystem]?.[welfareRecordType] || WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null) : null;
     const systemPrompt = isBniRecord
       ? BNI_PROMPT
       : welfarePrompt
@@ -1401,9 +1756,9 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
     } else if (fUser?.facility_id) {
       if (isWelfareRecord) {
         db.prepare(
-          'INSERT INTO nm_call_records (facility_id, room_id, welfare_system, record_type, member_name, staff_name, summary_text, raw_transcript) VALUES (?,?,?,?,?,?,?,?)'
-        ).run(fUser.facility_id, sessionId, welfareSystem, welfareRecordType, memberName, staffName, summary, transcript);
-        console.log(`[audio-finalize] saved to nm_call_records: ${welfareSystem}/${welfareRecordType} member=${memberName}`);
+          'INSERT INTO nm_call_records (facility_id, room_id, welfare_system, record_type, member_name, staff_name, summary_text, raw_transcript, source) VALUES (?,?,?,?,?,?,?,?,?)'
+        ).run(fUser.facility_id, sessionId, welfareSystem, welfareRecordType, memberName, staffName, summary, transcript, 'video');
+        console.log(`[audio-finalize] saved to nm_call_records (video): ${welfareSystem}/${welfareRecordType} member=${memberName}`);
       } else {
         db.prepare(
           'INSERT INTO nm_meetings (facility_id, room_id, host_email, started_at, ended_at, duration_minutes, ai_summary_used, summary_text) VALUES (?,?,?,datetime(\'now\',?),datetime(\'now\'),?,1,?)'
@@ -1546,6 +1901,76 @@ app.post('/api/bni/contact-capture', async (req, res) => {
     });
     console.log(`[bni-contact-capture] user=${bni_user} contact=${name} bni=${is_bni_member}`);
   } catch(e) { console.error('[bni-contact-capture] error:', e.message); }
+});
+
+
+// ── 福祉SaaS 施設モードSSO ───────────────────────────────────────────
+app.get('/api/welfare-sso', (req, res) => {
+  const { token, dest } = req.query;
+  if (!token) return res.redirect('/');
+
+  try {
+    const [payloadB64, sig] = token.split('.');
+    if (!payloadB64 || !sig) return res.redirect('/');
+
+    const welfareSecret = process.env.WELFARE_SSO_SECRET || '';
+    const expectedSig = crypto.createHmac('sha256', welfareSecret)
+      .update(payloadB64).digest('hex');
+    if (sig !== expectedSig) {
+      console.warn('[welfare-sso] invalid signature');
+      return res.redirect('/');
+    }
+
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+    if (!payload.exp || Date.now() / 1000 > payload.exp) {
+      console.warn('[welfare-sso] token expired');
+      return res.redirect('/');
+    }
+
+    const email = payload.email;
+    const officeName = payload.office_name || 'welfare';
+
+    let user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
+
+    // nm_facilities に事業所を登録（なければ作成）
+    let facility = db.prepare('SELECT * FROM nm_facilities WHERE admin_email=?').get(email);
+    if (!facility) {
+      db.prepare(
+        'INSERT INTO nm_facilities (name, admin_email, contact_name, trial_status) VALUES (?,?,?,?)'
+      ).run(officeName, email, officeName, 'active');
+      facility = db.prepare('SELECT * FROM nm_facilities WHERE admin_email=?').get(email);
+    }
+    // 拠点が0件の場合はデフォルト1拠点を自動作成（AI利用時間計算のため）
+    const locCount = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(facility.id)?.cnt || 0;
+    if (locCount === 0) {
+      db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(facility.id, officeName || '本事業所');
+    }
+
+    if (!user) {
+      let slug = officeName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'welfare';
+      let slugBase = slug, slugI = 1;
+      while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = slugBase + slugI++;
+      db.prepare(
+        "INSERT INTO users (name, email, plan, ui_mode, facility_id, slug, registered_at) VALUES (?,?,?,?,?,?,datetime('now'))"
+      ).run(officeName, email, 'free', 'welfare', facility.id, slug);
+      user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
+    } else {
+      db.prepare('UPDATE users SET ui_mode=?, name=?, facility_id=? WHERE id=?').run(
+        'welfare', officeName, facility.id, user.id
+      );
+    }
+
+    req.session.userId = user.id;
+    req.session.save((err) => {
+      if (err) { console.error('[welfare-sso] session save error:', err); return res.redirect('/'); }
+      const destination = dest || '/record';
+      console.log('[welfare-sso] login OK:', email, '->', destination);
+      res.redirect(destination);
+    });
+  } catch(e) {
+    console.error('[welfare-sso] error:', e);
+    res.redirect('/');
+  }
 });
 
 app.get('/record', (req, res) => res.sendFile(path.join(__dirname, 'public', 'record.html')));
@@ -1749,7 +2174,9 @@ app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'
     });
     fs.unlink(req.file.path, () => {});
     const segs = (result.segments || []).filter(s => s.text?.trim() && !isWhisperHallucination(s.text.trim()));
-    // Speaker diarization
+    if (!segs.length) return res.status(422).json({ error: 'no speech detected' });
+
+    // Step1: 沈黙ギャップで粗くターン分割
     const SPEAKER_GAP = 2.0;
     const turns = [];
     let speaker = 'A', lastEnd = 0, buf = [];
@@ -1763,7 +2190,38 @@ app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'
       lastEnd = seg.end;
     }
     if (buf.length) turns.push({ speaker, text: buf.join(' ') });
-    const transcript = turns.map(t => `【話者${t.speaker}】${t.text}`).join('\n');
+    const rawTranscript = turns.map(t => `【話者${t.speaker}】${t.text}`).join('\n');
+
+    // Step2: GPT-4o-miniで話者境界を再推定（要約精度向上のため）
+    let transcript = rawTranscript;
+    try {
+      const diarRes = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        messages: [
+          {
+            role: 'system',
+            content: `あなたは日本語会話の話者分離の専門家です。以下のルールで文字起こしを【話者A】【話者B】に再ラベリングしてください。
+
+【ルール】
+- 返答・相槌（「そうですね」「なるほど」「えー」等）は直前と別話者にする
+- 質問に対する回答は別話者にする
+- 話題の転換や間投詞を話者切り替えのヒントにする
+- 【話者A】【話者B】の2名のみ使用
+- 元のテキスト内容は一切変えず、ラベルだけ変える
+- 出力形式：【話者A】テキスト\n【話者B】テキスト\n... のみ`
+          },
+          { role: 'user', content: rawTranscript }
+        ]
+      });
+      const diarText = diarRes.choices[0].message.content.trim();
+      if (diarText.includes('【話者A】') || diarText.includes('【話者B】')) {
+        transcript = diarText;
+      }
+    } catch(e) {
+      console.warn('[face-record] diarization GPT failed, fallback to gap-based:', e.message);
+    }
+
     if (!transcript) return res.status(422).json({ error: 'no speech detected' });
     // GPT summary with welfare prompt
     const welfarePrompt = FACE_PROMPTS[welfareSystem]?.[welfareRecordType] || WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null;
@@ -1772,7 +2230,10 @@ app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'
       : '以下は対面会話の文字起こしです。日本語で業務記録文体（〜が見られた／〜が確認された）で要約してください。主要な内容・意向・特記事項を箇条書きでまとめてください。';
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: transcript }]
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: '【文字起こし本文（この内容のみを根拠に記録すること）】\n' + transcript }
+      ]
     });
     const summary = completion.choices[0].message.content;
     // Save as draft
@@ -1868,9 +2329,10 @@ app.patch('/api/admin/confirm-draft/:id', express.json(), (req, res) => {
 const rooms = new Map();
 const breakouts = new Map();
 io.on('connection', (socket) => {
-  socket.on('join-room', ({ roomId, password, userName, transcribeMode }) => {
+  socket.on('join-room', ({ roomId, password, userName, transcribeMode, system }) => {
     const room = rooms.get(roomId);
-    if (room && room.password && room.password !== password) {
+    // BNIモードはルームIDがUUID形式で十分安全なのでパスワードチェックをスキップ
+    if (room && room.password && room.password !== password && system !== 'bni') {
       socket.emit('join-error', 'パスワードが違います'); return;
     }
     if (!room) {
@@ -2099,6 +2561,330 @@ io.on('connection', (socket) => {
     bs.rooms.forEach((_,i) => io.to(mainId+'__br__'+(i+1)).emit('breakout:broadcast-msg',{from:socket.userName,message,time:t}));
   });
 
+});
+
+// ============================================================
+// BNI Manager API（1to1Manager）
+// セッション: req.session.bniUserId でBNIユーザーを識別
+// ============================================================
+const bcryptCompat = (() => {
+  // パスワード検証（既存のPython bcryptハッシュ互換）
+  // Pythonのpasslib bcryptは $2b$ プレフィックス
+  // Node.jsのcryptoでPBKDF2+saltを使った既存の仕組みを流用
+  return {
+    verify: (plain, hash, salt) => {
+      if (!hash || !salt) return false;
+      const h = crypto.createHash('sha256').update(plain + salt).digest('hex');
+      return h === hash;
+    }
+  };
+})();
+
+function bniAuth(req, res, next) {
+  if (!req.session.bniUserId) return res.status(401).json({ error: 'unauthorized' });
+  next();
+}
+
+// BNI静的ファイル（/bni/ 以下）
+app.get('/bni/lp', (req, res) => res.sendFile(path.join(__dirname, 'public', 'bni', 'lp.html')));
+app.get('/bni/lp.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'bni', 'lp.html')));
+app.use('/bni', express.static(path.join(__dirname, 'public', 'bni')));
+
+// --- 認証 ---
+app.post('/bni/api/auth/login', express.json(), (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'メールアドレスとパスワードを入力してください' });
+  const user = bniDb.prepare('SELECT * FROM users WHERE username=? OR email=?').get(email, email);
+  if (!user) return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
+  if (!bcryptCompat.verify(password, user.pw_hash, user.pw_salt)) {
+    return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
+  }
+  req.session.bniUserId = user.id;
+  res.json({ ok: true, user: { id: user.id, name: user.display_name || user.username, email: user.email, plan: user.plan } });
+});
+
+app.post('/bni/api/auth/register', express.json(), (req, res) => {
+  const { email, password, name } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'メールアドレスとパスワードを入力してください' });
+  const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  if (!emailRe.test(email)) return res.status(400).json({ error: '有効なメールアドレスを入力してください' });
+  const exists = bniDb.prepare('SELECT id FROM users WHERE username=? OR email=?').get(email, email);
+  if (exists) return res.status(400).json({ error: 'そのメールアドレスは既に登録されています' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.createHash('sha256').update(password + salt).digest('hex');
+  const displayName = name || email.split('@')[0];
+  const r = bniDb.prepare('INSERT INTO users (username, display_name, email, pw_hash, pw_salt, auth_type) VALUES (?,?,?,?,?,?)').run(email, displayName, email, hash, salt, 'password');
+  req.session.bniUserId = r.lastInsertRowid;
+  res.json({ ok: true, user: { id: r.lastInsertRowid, name: displayName, email, plan: 'free' } });
+});
+
+app.get('/bni/api/auth/me', bniAuth, (req, res) => {
+  const user = bniDb.prepare('SELECT id, display_name, username, email, plan, stripe_customer_id, plan_expires FROM users WHERE id=?').get(req.session.bniUserId);
+  if (!user) { req.session.bniUserId = null; return res.status(401).json({ error: 'unauthorized' }); }
+  res.json({ id: user.id, name: user.display_name || user.username, email: user.email, plan: user.plan, stripe_customer_id: user.stripe_customer_id, plan_expires: user.plan_expires });
+});
+
+app.post('/bni/api/auth/logout', (req, res) => {
+  req.session.bniUserId = null;
+  res.json({ ok: true });
+});
+
+app.put('/bni/api/auth/password', express.json(), bniAuth, (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password) return res.status(400).json({ error: 'パスワードを入力してください' });
+  const user = bniDb.prepare('SELECT * FROM users WHERE id=?').get(req.session.bniUserId);
+  if (!bcryptCompat.verify(current_password, user.pw_hash, user.pw_salt)) {
+    return res.status(400).json({ error: '現在のパスワードが違います' });
+  }
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.createHash('sha256').update(new_password + salt).digest('hex');
+  bniDb.prepare('UPDATE users SET pw_hash=?, pw_salt=? WHERE id=?').run(hash, salt, user.id);
+  res.json({ ok: true });
+});
+
+app.put('/bni/api/auth/email', express.json(), bniAuth, (req, res) => {
+  const { new_email } = req.body;
+  if (!new_email) return res.status(400).json({ error: 'メールアドレスを入力してください' });
+  const exists = bniDb.prepare('SELECT id FROM users WHERE (username=? OR email=?) AND id!=?').get(new_email, new_email, req.session.bniUserId);
+  if (exists) return res.status(400).json({ error: 'そのメールアドレスは既に使用されています' });
+  bniDb.prepare('UPDATE users SET email=?, username=? WHERE id=?').run(new_email, new_email, req.session.bniUserId);
+  res.json({ ok: true });
+});
+
+// NiceMeetログイン済みユーザーをBNIに自動ログイン（SSO簡略版）
+app.get('/bni/api/sso', (req, res) => {
+  if (!req.session.userId) return res.redirect('/bni/?login=1');
+  const nmUser = db.prepare('SELECT email, name FROM users WHERE id=?').get(req.session.userId);
+  if (!nmUser?.email) return res.redirect('/bni/?login=1');
+  let bniUser = bniDb.prepare('SELECT id FROM users WHERE email=?').get(nmUser.email);
+  if (!bniUser) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('hex') + salt).digest('hex');
+    const r = bniDb.prepare('INSERT INTO users (username,display_name,email,pw_hash,pw_salt,auth_type) VALUES (?,?,?,?,?,?)').run(nmUser.email, nmUser.name || nmUser.email.split('@')[0], nmUser.email, hash, salt, 'sso');
+    bniUser = { id: r.lastInsertRowid };
+  }
+  req.session.bniUserId = bniUser.id;
+  res.redirect('/bni/');
+});
+
+// --- 設定 ---
+app.get('/bni/api/settings', bniAuth, (req, res) => {
+  const rows = bniDb.prepare('SELECT key, value FROM settings').all();
+  const s = {};
+  rows.forEach(r => { try { s[r.key] = JSON.parse(r.value); } catch(e) { s[r.key] = r.value; } });
+  res.json(s);
+});
+
+app.put('/bni/api/settings', express.json(), bniAuth, (req, res) => {
+  const upsert = bniDb.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
+  const upAll = bniDb.transaction(pairs => { pairs.forEach(([k,v]) => upsert.run(k, JSON.stringify(v))); });
+  upAll(Object.entries(req.body));
+  res.json({ ok: true });
+});
+
+// --- コンタクト ---
+app.get('/bni/api/contacts', bniAuth, (req, res) => {
+  const rows = bniDb.prepare('SELECT * FROM contacts WHERE user_id=? ORDER BY name').all(req.session.bniUserId);
+  res.json(rows);
+});
+
+app.post('/bni/api/contacts', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  const r = bniDb.prepare(`INSERT INTO contacts (user_id,name,reading,company,chapter,category,last_meeting_date,business_description,area,birthplace,residence,spouse,family,previous_jobs,hobbies,experience_years,success_key,selling_points,target_customers,referral_intro,request,goals,accomplishments,interests,networks,skills,introduction) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    req.session.bniUserId, d.name||'', d.reading||'', d.company||'', d.chapter||'', d.category||'', d.last_meeting_date||'', d.business_description||'', d.area||'', d.birthplace||'', d.residence||'', d.spouse||'', d.family||'', d.previous_jobs||'', d.hobbies||'', d.experience_years||'', d.success_key||'', d.selling_points||'', d.target_customers||'', d.referral_intro||'', d.request||'', d.goals||'', d.accomplishments||'', d.interests||'', d.networks||'', d.skills||'', d.introduction||''
+  );
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.get('/bni/api/contacts/:id', bniAuth, (req, res) => {
+  const c = bniDb.prepare('SELECT * FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  res.json(c);
+});
+
+app.put('/bni/api/contacts/:id', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  bniDb.prepare(`UPDATE contacts SET name=?,reading=?,company=?,chapter=?,category=?,last_meeting_date=?,business_description=?,area=?,birthplace=?,residence=?,spouse=?,family=?,previous_jobs=?,hobbies=?,experience_years=?,success_key=?,selling_points=?,target_customers=?,referral_intro=?,request=?,goals=?,accomplishments=?,interests=?,networks=?,skills=?,introduction=?,updated_at=datetime('now','localtime') WHERE id=? AND user_id=?`).run(
+    d.name||'', d.reading||'', d.company||'', d.chapter||'', d.category||'', d.last_meeting_date||'', d.business_description||'', d.area||'', d.birthplace||'', d.residence||'', d.spouse||'', d.family||'', d.previous_jobs||'', d.hobbies||'', d.experience_years||'', d.success_key||'', d.selling_points||'', d.target_customers||'', d.referral_intro||'', d.request||'', d.goals||'', d.accomplishments||'', d.interests||'', d.networks||'', d.skills||'', d.introduction||'', req.params.id, req.session.bniUserId
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/bni/api/contacts/:id', bniAuth, (req, res) => {
+  bniDb.prepare('DELETE FROM contacts WHERE id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  bniDb.prepare('DELETE FROM memos WHERE contact_id=?').run(req.params.id);
+  bniDb.prepare('DELETE FROM one_on_ones WHERE contact_id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  bniDb.prepare('DELETE FROM referrals WHERE contact_id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  res.json({ ok: true });
+});
+
+// --- 1on1ミーティング ---
+app.get('/bni/api/contacts/:id/one-on-ones', bniAuth, (req, res) => {
+  const rows = bniDb.prepare('SELECT * FROM one_on_ones WHERE contact_id=? AND user_id=? ORDER BY meeting_date DESC').all(req.params.id, req.session.bniUserId);
+  res.json(rows);
+});
+
+app.post('/bni/api/contacts/:id/one-on-ones', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  const r = bniDb.prepare('INSERT INTO one_on_ones (user_id,contact_id,contact_name,meeting_date,duration_minutes,transcript,summary,gains_goals,gains_accomplishments,gains_interests,gains_networks,gains_skills,referral_hints,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
+    req.session.bniUserId, req.params.id, d.contact_name||'', d.meeting_date||'', d.duration_minutes||0, d.transcript||'', d.summary||'', d.gains_goals||'', d.gains_accomplishments||'', d.gains_interests||'', d.gains_networks||'', d.gains_skills||'', d.referral_hints||'', d.follow_up||''
+  );
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.put('/bni/api/contacts/:cid/one-on-ones/:id', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  bniDb.prepare('UPDATE one_on_ones SET meeting_date=?,duration_minutes=?,transcript=?,summary=?,gains_goals=?,gains_accomplishments=?,gains_interests=?,gains_networks=?,gains_skills=?,referral_hints=?,follow_up=? WHERE id=? AND user_id=?').run(
+    d.meeting_date||'', d.duration_minutes||0, d.transcript||'', d.summary||'', d.gains_goals||'', d.gains_accomplishments||'', d.gains_interests||'', d.gains_networks||'', d.gains_skills||'', d.referral_hints||'', d.follow_up||'', req.params.id, req.session.bniUserId
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/bni/api/contacts/:cid/one-on-ones/:id', bniAuth, (req, res) => {
+  bniDb.prepare('DELETE FROM one_on_ones WHERE id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  res.json({ ok: true });
+});
+
+// --- 紹介 ---
+app.get('/bni/api/contacts/:id/referrals', bniAuth, (req, res) => {
+  const rows = bniDb.prepare('SELECT * FROM referrals WHERE contact_id=? AND user_id=? ORDER BY date DESC').all(req.params.id, req.session.bniUserId);
+  res.json(rows);
+});
+
+app.post('/bni/api/contacts/:id/referrals', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  const r = bniDb.prepare('INSERT INTO referrals (user_id,contact_id,direction,date,description,result,amount) VALUES (?,?,?,?,?,?,?)').run(
+    req.session.bniUserId, req.params.id, d.direction||'given', d.date||'', d.description||'', d.result||'進行中', d.amount||0
+  );
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.put('/bni/api/contacts/:cid/referrals/:id', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  bniDb.prepare('UPDATE referrals SET direction=?,date=?,description=?,result=?,amount=? WHERE id=? AND user_id=?').run(
+    d.direction||'given', d.date||'', d.description||'', d.result||'進行中', d.amount||0, req.params.id, req.session.bniUserId
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/bni/api/contacts/:cid/referrals/:id', bniAuth, (req, res) => {
+  bniDb.prepare('DELETE FROM referrals WHERE id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  res.json({ ok: true });
+});
+
+// --- メモ ---
+app.get('/bni/api/contacts/:id/memos', bniAuth, (req, res) => {
+  const rows = bniDb.prepare('SELECT * FROM memos WHERE contact_id=? ORDER BY created_at DESC').all(req.params.id);
+  res.json(rows);
+});
+
+app.post('/bni/api/contacts/:id/memos', express.json(), bniAuth, (req, res) => {
+  const r = bniDb.prepare('INSERT INTO memos (contact_id,content) VALUES (?,?)').run(req.params.id, req.body.content||'');
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.delete('/bni/api/contacts/:cid/memos/:id', bniAuth, (req, res) => {
+  bniDb.prepare('DELETE FROM memos WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// --- Stripe（BNI用）---
+app.post('/bni/api/stripe/checkout', bniAuth, async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: 'Stripe未設定' });
+  const user = bniDb.prepare('SELECT * FROM users WHERE id=?').get(req.session.bniUserId);
+  try {
+    const sessionParams = {
+      mode: 'subscription',
+      payment_method_collection: 'always',
+      line_items: [{ price: process.env.BNI_STRIPE_PRICE_ID || process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      success_url: 'https://gaiaarts.org/bni/?payment=success',
+      cancel_url: 'https://gaiaarts.org/bni/?payment=cancel',
+      subscription_data: { trial_period_days: 30 },
+      customer_email: user.email,
+    };
+    if (user.stripe_customer_id) sessionParams.customer = user.stripe_customer_id;
+    else delete sessionParams.customer_email;
+    const checkoutSession = await stripe.checkout.sessions.create(sessionParams);
+    res.json({ url: checkoutSession.url });
+  } catch(e) {
+    console.error('[bni stripe checkout]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/bni/api/stripe/portal', bniAuth, async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: 'Stripe未設定' });
+  const user = bniDb.prepare('SELECT stripe_customer_id FROM users WHERE id=?').get(req.session.bniUserId);
+  if (!user?.stripe_customer_id) return res.status(400).json({ error: 'サブスクリプションがありません' });
+  try {
+    const portal = await stripe.billingPortal.sessions.create({ customer: user.stripe_customer_id, return_url: 'https://gaiaarts.org/bni/' });
+    res.json({ url: portal.url });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- スタブ（将来実装予定）---
+app.get('/bni/api/dashboard', bniAuth, (req, res) => {
+  const uid = req.session.bniUserId;
+  const total = bniDb.prepare('SELECT COUNT(*) as c FROM contacts WHERE user_id=?').get(uid)?.c || 0;
+  const chapters = bniDb.prepare('SELECT COUNT(DISTINCT chapter) as c FROM contacts WHERE user_id=? AND chapter!=""').get(uid)?.c || 0;
+  res.json({ total_contacts: total, pending_reminders: 0, chapters, monthly: [] });
+});
+app.get('/bni/api/suggestions/next-meetings', bniAuth, (req, res) => res.json([]));
+app.get('/bni/api/my-profile', bniAuth, (req, res) => {
+  const user = bniDb.prepare('SELECT id, display_name as name, username, email, plan FROM users WHERE id=?').get(req.session.bniUserId);
+  res.json(user || {});
+});
+app.put('/bni/api/my-profile', express.json(), bniAuth, (req, res) => {
+  const { name } = req.body;
+  if (name) bniDb.prepare('UPDATE users SET display_name=? WHERE id=?').run(name, req.session.bniUserId);
+  res.json({ ok: true });
+});
+app.post('/bni/api/auth/change-password', express.json(), bniAuth, (req, res) => {
+  const { current_password, new_password } = req.body;
+  const user = bniDb.prepare('SELECT * FROM users WHERE id=?').get(req.session.bniUserId);
+  if (!bcryptCompat.verify(current_password, user.pw_hash, user.pw_salt)) return res.status(400).json({ error: '現在のパスワードが違います' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.createHash('sha256').update(new_password + salt).digest('hex');
+  bniDb.prepare('UPDATE users SET pw_hash=?, pw_salt=? WHERE id=?').run(hash, salt, user.id);
+  res.json({ ok: true });
+});
+app.get('/bni/api/contacts/:id/reminders', bniAuth, (req, res) => res.json([]));
+app.post('/bni/api/contacts/:id/reminders', express.json(), bniAuth, (req, res) => res.json({ id: 0 }));
+app.put('/bni/api/reminders/:id/toggle', bniAuth, (req, res) => res.json({ ok: true }));
+app.delete('/bni/api/reminders/:id', bniAuth, (req, res) => res.json({ ok: true }));
+app.post('/bni/api/reminders/:id/sync-google', bniAuth, (req, res) => res.json({ ok: true }));
+app.get('/bni/api/auth/google/status', bniAuth, (req, res) => res.json({ connected: false }));
+app.get('/bni/api/auth/google/calendar', bniAuth, (req, res) => res.redirect('/bni/'));
+app.delete('/bni/api/auth/google/calendar', bniAuth, (req, res) => res.json({ ok: true }));
+app.post('/bni/api/import/file', bniAuth, (req, res) => res.status(501).json({ error: '近日対応予定' }));
+app.post('/bni/api/import/url', bniAuth, (req, res) => res.status(501).json({ error: '近日対応予定' }));
+app.get('/bni/api/export/zip', bniAuth, (req, res) => res.status(501).json({ error: '近日対応予定' }));
+
+// BNI Stripe Webhook
+app.post('/bni/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const secret = process.env.BNI_STRIPE_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
+  if (!stripe || !secret) return res.status(400).json({ error: 'webhook未設定' });
+  let event;
+  try { event = stripe.webhooks.constructEvent(req.body, sig, secret); } catch(e) { return res.status(400).send('Webhook Error'); }
+  const sub = event.data.object;
+  if (['customer.subscription.created','customer.subscription.updated','checkout.session.completed'].includes(event.type)) {
+    const customerId = sub.customer || (event.type==='checkout.session.completed' ? sub.customer : null);
+    if (customerId) {
+      const plan = (sub.status==='active'||sub.status==='trialing') ? 'paid' : 'free';
+      const exp = sub.current_period_end ? new Date(sub.current_period_end*1000).toISOString() : null;
+      bniDb.prepare('UPDATE users SET plan=?, plan_expires=?, stripe_customer_id=? WHERE stripe_customer_id=?').run(plan, exp, customerId, customerId);
+      // stripe_customer_idが未設定のユーザーに設定
+      if (event.type==='checkout.session.completed' && sub.customer_email) {
+        bniDb.prepare('UPDATE users SET plan=?, stripe_customer_id=? WHERE email=? AND (stripe_customer_id IS NULL OR stripe_customer_id="")').run('paid', customerId, sub.customer_email);
+      }
+    }
+  } else if (event.type==='customer.subscription.deleted') {
+    bniDb.prepare('UPDATE users SET plan="free" WHERE stripe_customer_id=?').run(sub.customer);
+  }
+  res.json({ received: true });
 });
 
 server.listen(3100, () => console.log('Meet+Booking server on port 3100'));
