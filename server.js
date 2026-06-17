@@ -59,6 +59,8 @@ const authLimiter = rateLimit({
 });
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
 const bniApiLimiter = rateLimit({ windowMs: 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
+// アップロード系は厳しく制限（ディスク枯渇・AI費用乱用防止）
+const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'アップロード回数が多すぎます' } });
 app.use('/auth/', authLimiter);
 app.use('/api/', apiLimiter);
 app.use('/bni/api/', bniApiLimiter);
@@ -1571,11 +1573,12 @@ async function transcribeAndSummarize(filepath, filename, roomId) {
   }
 }
 
-app.post('/api/upload-recording', upload.single('file'), (req, res) => {
+app.post('/api/upload-recording', uploadLimiter, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const url = `https://meet.gaiaarts.org/recordings/${req.file.filename}`;
   const roomId = typeof req.body.roomId === 'string' ? req.body.roomId.slice(0, 128) : '';
-  if (roomId) {
+  const isActiveRoom = roomId && rooms && rooms.has(roomId);
+  if (isActiveRoom) {
     io.to(roomId).emit('recording-ready', {
       url,
       filename: req.file.filename,
@@ -1583,7 +1586,8 @@ app.post('/api/upload-recording', upload.single('file'), (req, res) => {
     });
   }
   res.json({ ok: true, url });
-  if (openai) transcribeAndSummarize(req.file.path, req.file.filename, roomId);
+  // アクティブなルームのみ AI 処理（費用乱用防止）
+  if (openai && isActiveRoom) transcribeAndSummarize(req.file.path, req.file.filename, roomId);
 });
 
 // 録画ファイルを24時間後に自動削除（1時間ごとにチェック）
@@ -1631,7 +1635,7 @@ const uploadFileMiddleware = multer({
   fileFilter: (req, file, cb) => cb(null, ALLOWED_CHAT_TYPES.has(file.mimetype))
 });
 
-app.post('/api/upload-file', uploadFileMiddleware.single('file'), (req, res) => {
+app.post('/api/upload-file', uploadLimiter, uploadFileMiddleware.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const url = '/uploads/' + req.file.filename;
   const origName = req.file.originalname;
@@ -1668,7 +1672,7 @@ const audioChunkUpload = multer({
   limits: { fileSize: 200 * 1024 * 1024 }
 });
 
-app.post('/api/audio-chunk', audioChunkUpload.single('chunk'), (req, res) => {
+app.post('/api/audio-chunk', uploadLimiter, audioChunkUpload.single('chunk'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const { sessionId, chunkIndex } = req.body;
   if (!sessionId || !/^[\w-]{5,60}$/.test(sessionId)) {
@@ -1686,7 +1690,7 @@ app.post('/api/audio-chunk', audioChunkUpload.single('chunk'), (req, res) => {
 });
 
 const formParser = multer().none();
-app.post('/api/audio-finalize', formParser, async (req, res) => {
+app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
   res.json({ ok: true });
   const { sessionId } = req.body;
   let email = req.body.email || '';
@@ -2776,18 +2780,38 @@ io.on('connection', (socket) => {
 // BNI Manager API（1to1Manager）
 // セッション: req.session.bniUserId でBNIユーザーを識別
 // ============================================================
-const bcryptCompat = (() => {
-  // パスワード検証（既存のPython bcryptハッシュ互換）
-  // Pythonのpasslib bcryptは $2b$ プレフィックス
-  // Node.jsのcryptoでPBKDF2+saltを使った既存の仕組みを流用
-  return {
-    verify: (plain, hash, salt) => {
-      if (!hash || !salt) return false;
-      const h = crypto.createHash('sha256').update(plain + salt).digest('hex');
-      return h === hash;
+// BNI パスワードユーティリティ
+// 新規: PBKDF2(SHA256, 100000回) — pw_hash = "pbkdf2$100000$<hex>"
+// 既存: SHA256+salt (レガシー) — ログイン成功時に自動アップグレード
+const BNI_PBKDF2_ITER = 100000;
+const BNI_PBKDF2_KEYLEN = 32;
+function bniBuildHash(password, salt) {
+  const key = crypto.pbkdf2Sync(password, salt, BNI_PBKDF2_ITER, BNI_PBKDF2_KEYLEN, 'sha256').toString('hex');
+  return `pbkdf2$${BNI_PBKDF2_ITER}$${key}`;
+}
+function bniMakePassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return { hash: bniBuildHash(password, salt), salt };
+}
+const bcryptCompat = {
+  verify: (plain, hash, salt) => {
+    if (!hash || !salt) return false;
+    if (hash.startsWith('pbkdf2$')) {
+      const parts = hash.split('$');
+      if (parts.length !== 3) return false;
+      const iter = parseInt(parts[1], 10);
+      if (!Number.isInteger(iter) || iter < 1 || iter > 2000000) return false;
+      const expected = crypto.pbkdf2Sync(plain, salt, iter, BNI_PBKDF2_KEYLEN, 'sha256').toString('hex');
+      const a = Buffer.from(parts[2].padEnd(64, '0'), 'hex');
+      const b = Buffer.from(expected, 'hex');
+      return a.length === b.length && crypto.timingSafeEqual(a, b) && parts[2].length === expected.length;
     }
-  };
-})();
+    // レガシー SHA256 検証（timing-safe）
+    const expected = crypto.createHash('sha256').update(plain + salt).digest('hex');
+    if (hash.length !== expected.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(expected, 'hex'));
+  }
+};
 
 function bniAuth(req, res, next) {
   if (!req.session.bniUserId) return res.status(401).json({ error: 'unauthorized' });
@@ -2800,13 +2824,18 @@ app.get('/bni/lp.html', (req, res) => res.sendFile(path.join(__dirname, 'public'
 app.use('/bni', express.static(path.join(__dirname, 'public', 'bni')));
 
 // --- 認証 ---
-app.post('/bni/api/auth/login', authLimiter, express.json(), (req, res) => {
+app.post('/bni/api/auth/login', authLimiter, express.json(), async (req, res) => {
   const { email, password } = req.body;
   if (!isValidEmail(email) || typeof password !== 'string') return res.status(400).json({ error: 'メールアドレスまたはパスワードが違います' });
   const user = bniDb.prepare('SELECT * FROM users WHERE username=? OR email=?').get(email, email);
   if (!user) return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
   if (!bcryptCompat.verify(password, user.pw_hash, user.pw_salt)) {
     return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
+  }
+  // レガシーSHA256ハッシュをPBKDF2に自動アップグレード
+  if (!user.pw_hash.startsWith('pbkdf2$')) {
+    const { hash, salt } = bniMakePassword(password);
+    bniDb.prepare('UPDATE users SET pw_hash=?, pw_salt=? WHERE id=?').run(hash, salt, user.id);
   }
   await regenerateSession(req);
   req.session.bniUserId = user.id;
@@ -2819,8 +2848,7 @@ app.post('/bni/api/auth/register', authLimiter, express.json(), async (req, res)
   if (typeof password !== 'string' || password.length < 8 || password.length > 128) return res.status(400).json({ error: 'パスワードは8〜128文字で入力してください' });
   const exists = bniDb.prepare('SELECT id FROM users WHERE username=? OR email=?').get(email, email);
   if (exists) return res.status(400).json({ error: 'そのメールアドレスは既に登録されています' });
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.createHash('sha256').update(password + salt).digest('hex');
+  const { hash, salt } = bniMakePassword(password);
   const displayName = safeStr(name || email.split('@')[0], 100);
   const r = bniDb.prepare('INSERT INTO users (username, display_name, email, pw_hash, pw_salt, auth_type) VALUES (?,?,?,?,?,?)').run(email, displayName, email, hash, salt, 'password');
   await regenerateSession(req);
@@ -2847,8 +2875,7 @@ app.put('/bni/api/auth/password', express.json(), bniAuth, (req, res) => {
   if (!bcryptCompat.verify(current_password, user.pw_hash, user.pw_salt)) {
     return res.status(400).json({ error: '現在のパスワードが違います' });
   }
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.createHash('sha256').update(new_password + salt).digest('hex');
+  const { hash, salt } = bniMakePassword(new_password);
   bniDb.prepare('UPDATE users SET pw_hash=?, pw_salt=? WHERE id=?').run(hash, salt, user.id);
   res.json({ ok: true });
 });
@@ -2869,8 +2896,7 @@ app.get('/bni/api/sso', async (req, res) => {
   if (!nmUser?.email) return res.redirect('/bni/?login=1');
   let bniUser = bniDb.prepare('SELECT id FROM users WHERE email=?').get(nmUser.email);
   if (!bniUser) {
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.createHash('sha256').update(crypto.randomBytes(32).toString('hex') + salt).digest('hex');
+    const { hash, salt } = bniMakePassword(crypto.randomBytes(32).toString('hex'));
     const r = bniDb.prepare('INSERT INTO users (username,display_name,email,pw_hash,pw_salt,auth_type) VALUES (?,?,?,?,?,?)').run(nmUser.email, nmUser.name || nmUser.email.split('@')[0], nmUser.email, hash, salt, 'sso');
     bniUser = { id: r.lastInsertRowid };
   }
@@ -2941,6 +2967,8 @@ app.get('/bni/api/contacts/:id/one-on-ones', bniAuth, (req, res) => {
 });
 
 app.post('/bni/api/contacts/:id/one-on-ones', express.json(), bniAuth, (req, res) => {
+  const contact = bniDb.prepare('SELECT id FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!contact) return res.status(404).json({ error: 'not found' });
   const d = req.body;
   const r = bniDb.prepare('INSERT INTO one_on_ones (user_id,contact_id,contact_name,meeting_date,duration_minutes,transcript,summary,gains_goals,gains_accomplishments,gains_interests,gains_networks,gains_skills,referral_hints,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
     req.session.bniUserId, req.params.id, d.contact_name||'', d.meeting_date||'', d.duration_minutes||0, d.transcript||'', d.summary||'', d.gains_goals||'', d.gains_accomplishments||'', d.gains_interests||'', d.gains_networks||'', d.gains_skills||'', d.referral_hints||'', d.follow_up||''
@@ -2968,6 +2996,8 @@ app.get('/bni/api/contacts/:id/referrals', bniAuth, (req, res) => {
 });
 
 app.post('/bni/api/contacts/:id/referrals', express.json(), bniAuth, (req, res) => {
+  const contact = bniDb.prepare('SELECT id FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!contact) return res.status(404).json({ error: 'not found' });
   const d = req.body;
   const r = bniDb.prepare('INSERT INTO referrals (user_id,contact_id,direction,date,description,result,amount) VALUES (?,?,?,?,?,?,?)').run(
     req.session.bniUserId, req.params.id, d.direction||'given', d.date||'', d.description||'', d.result||'進行中', d.amount||0
@@ -3071,8 +3101,7 @@ app.post('/bni/api/auth/change-password', express.json(), bniAuth, (req, res) =>
   const user = bniDb.prepare('SELECT * FROM users WHERE id=?').get(req.session.bniUserId);
   if (!user) return res.status(401).json({ error: 'unauthorized' });
   if (!bcryptCompat.verify(current_password, user.pw_hash, user.pw_salt)) return res.status(400).json({ error: '現在のパスワードが違います' });
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.createHash('sha256').update(new_password + salt).digest('hex');
+  const { hash, salt } = bniMakePassword(new_password);
   bniDb.prepare('UPDATE users SET pw_hash=?, pw_salt=? WHERE id=?').run(hash, salt, user.id);
   res.json({ ok: true });
 });
@@ -3111,6 +3140,13 @@ app.post('/bni/api/stripe/webhook', express.raw({ type: 'application/json' }), (
     bniDb.prepare('UPDATE users SET plan="free" WHERE stripe_customer_id=?').run(sub.customer);
   }
   res.json({ received: true });
+});
+
+// グローバルエラーハンドラー（スタックトレース漏洩防止）
+app.use((err, req, res, next) => {
+  console.error('[500]', req.method, req.path, err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'サーバーエラーが発生しました' });
 });
 
 server.listen(3100, () => console.log('Meet+Booking server on port 3100'));
