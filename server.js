@@ -1710,7 +1710,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
   const staffName = safeStr(req.body.staffName, 100);
   const isWelfareRecord = recordMode === 'welfare' && welfareSystem && welfareRecordType;
   const isBniRecord = recordMode === 'bni';
-  const bniContactId = req.body.bniContactId ? parseInt(req.body.bniContactId) || null : null;
+  const bniContactId = req.body.bniContactId ? parseInt(req.body.bniContactId, 10) || null : null;
   if (recordMode === 'none') { console.log('[audio-finalize] mode=none, skip'); return; }
   let canUseAI = false;
   if (isBniRecord) {
@@ -2081,7 +2081,7 @@ app.post('/api/bni/contact-capture', async (req, res) => {
 
 
 // ── 福祉SaaS 施設モードSSO ───────────────────────────────────────────
-app.get('/api/welfare-sso', (req, res) => {
+app.get('/api/welfare-sso', async (req, res) => {
   const { token, dest } = req.query;
   if (!token) return res.redirect('/');
 
@@ -2137,6 +2137,7 @@ app.get('/api/welfare-sso', (req, res) => {
       );
     }
 
+    await regenerateSession(req);
     req.session.userId = user.id;
     req.session.save((err) => {
       if (err) { console.error('[welfare-sso] session save error:', err); return res.redirect('/'); }
@@ -2442,7 +2443,7 @@ app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'
 app.patch('/api/face-record/confirm/:id', requireAuth, express.json(), (req, res) => {
   const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
   if (!u?.facility_id) return res.status(403).json({ error: 'no facility' });
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   const rec = db.prepare('SELECT * FROM nm_call_records WHERE id=? AND facility_id=? AND status=?').get(id, u.facility_id, 'draft');
   if (!rec) return res.status(404).json({ error: 'draft not found' });
   const summary = req.body.summary || rec.summary_text;
@@ -2453,7 +2454,7 @@ app.patch('/api/face-record/confirm/:id', requireAuth, express.json(), (req, res
 app.delete('/api/face-record/draft/:id', requireAuth, (req, res) => {
   const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
   if (!u?.facility_id) return res.status(403).json({ error: 'no facility' });
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   const rec = db.prepare("SELECT * FROM nm_call_records WHERE id=? AND facility_id=? AND status='draft'").get(id, u.facility_id);
   if (!rec) return res.status(404).json({ error: 'draft not found' });
   db.prepare('DELETE FROM nm_call_records WHERE id=?').run(id);
@@ -2517,7 +2518,7 @@ app.get('/api/admin/drafts', (req, res) => {
 
 app.patch('/api/admin/confirm-draft/:id', express.json(), (req, res) => {
   if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   const rec = db.prepare("SELECT * FROM nm_call_records WHERE id=? AND status='draft'").get(id);
   if (!rec) return res.status(404).json({ error: 'draft not found' });
   db.prepare("UPDATE nm_call_records SET status='confirmed' WHERE id=?").run(id);
@@ -2768,7 +2769,8 @@ io.on('connection', (socket) => {
     if (typeof message !== 'string' || message.length === 0 || message.length > 500) return;
     const mainId = socket.mainRoomId || socket.roomId;
     const bs = breakouts.get(mainId);
-    if (!bs) return;
+    const room = rooms.get(mainId);
+    if (!bs || !room || (room.hostId !== socket.id && !room.coHosts.has(socket.id))) return;
     const t = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
     io.to(mainId).emit('breakout:broadcast-msg',{from:socket.userName,message,time:t});
     bs.rooms.forEach((_,i) => io.to(mainId+'__br__'+(i+1)).emit('breakout:broadcast-msg',{from:socket.userName,message,time:t}));
