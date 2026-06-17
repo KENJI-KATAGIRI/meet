@@ -1847,73 +1847,110 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
     const summary = completion.choices[0].message.content;
 
     const durMin = chunkFiles.length * 2;
+    // モード別処理：各関数は完全独立。片方を修正しても他方に影響しない。
     if (isBniRecord) {
-      let bniData = { summary, gains: {}, referral_hints: '', follow_up: '' };
-      try { bniData = Object.assign(bniData, JSON.parse(summary)); } catch(e) {}
-      const bniWebhookUrl = process.env.BNI_WEBHOOK_URL || 'http://localhost:8300/api/nicemeet-webhook';
-      const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
-      try {
-        await fetch(bniWebhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-nicemeet-secret': bniSecret },
-          body: JSON.stringify({
-            bni_user: staffName,
-            contact_id: bniContactId,
-            contact_name: memberName,
-            duration_minutes: durMin,
-            transcript,
-            summary: bniData.summary || summary,
-            gains: bniData.gains || {},
-            referral_hints: bniData.referral_hints || '',
-            follow_up: bniData.follow_up || ''
-          })
-        });
-        console.log(`[audio-finalize] BNI 1-2-1 sent to BNI app user=${staffName} contact=${memberName}`);
-        // R2にも保存
-        const driveUrl = process.env.DRIVE_INTERNAL_URL || 'http://localhost:8309/api/internal/upload-json';
-        const driveSecret = process.env.DRIVE_INTERNAL_SECRET || (console.warn('[SECURITY] DRIVE_INTERNAL_SECRET not set, using default'), 'gaia-internal-2026');
-        const r2Date = new Date().toISOString().slice(0, 10);
-        const r2Name = (memberName || 'unknown').replace(/[^\w぀-鿿]/g, '_');
-        const r2Key = `nicemeet/bni/${r2Date}/${sessionId}-${r2Name}.json`;
-        const r2Body = JSON.stringify({
-          date: r2Date, bni_user: staffName, contact_name: memberName,
-          duration_minutes: durMin, transcript,
-          summary: bniData.summary || summary,
-          gains: bniData.gains || {},
-          referral_hints: bniData.referral_hints || '',
-          follow_up: bniData.follow_up || ''
-        }, null, 2);
-        fetch(driveUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-internal-secret': driveSecret },
-          body: JSON.stringify({ key: r2Key, content: r2Body })
-        }).then(() => console.log('[audio-finalize] R2 saved:', r2Key))
-          .catch(e => console.error('[audio-finalize] R2 error:', e.message));
-      } catch(e) { console.error('[audio-finalize] BNI webhook error:', e.message); }
-    } else if (fUser?.facility_id) {
-      if (isWelfareRecord) {
-        db.prepare(
-          'INSERT INTO nm_call_records (facility_id, room_id, welfare_system, record_type, member_name, staff_name, summary_text, raw_transcript, source) VALUES (?,?,?,?,?,?,?,?,?)'
-        ).run(fUser.facility_id, sessionId, welfareSystem, welfareRecordType, memberName, staffName, summary, transcript, 'video');
-        console.log(`[audio-finalize] saved to nm_call_records (video): ${welfareSystem}/${welfareRecordType} member=${memberName}`);
-      } else {
-        db.prepare(
-          'INSERT INTO nm_meetings (facility_id, room_id, host_email, started_at, ended_at, duration_minutes, ai_summary_used, summary_text) VALUES (?,?,?,datetime(\'now\',?),datetime(\'now\'),?,1,?)'
-        ).run(fUser.facility_id, sessionId, email, `-${durMin} minutes`, durMin, summary);
-      }
+      await handleBniFinalize({ email, sessionId, staffName, memberName, bniContactId, durMin, transcript, summary });
+    } else {
+      await handleFacilityFinalize({ email, sessionId, fUser, welfareSystem, welfareRecordType, memberName, staffName, durMin, transcript, summary, isWelfareRecord });
     }
+  } catch(e) {
+    console.error('audio finalize error:', e.message);
+    sendMail(email, '【NiceMeet】文字起こしエラー', '処理中にエラーが発生しました。').catch(() => {});
+  }
+});
 
-    const mailSubject = isBniRecord
-      ? `【NiceMeet BNI】1-2-1ミーティング記録${memberName ? '（' + memberName + 'さん）' : ''}`
-      : isWelfareRecord
-      ? `【NiceMeet】${welfareRecordType}${memberName ? '（' + memberName + '）' : ''}`
-      : '【NiceMeet】会議の文字起こし・要約';
-    const mailHeader = isWelfareRecord
-      ? `【${welfareRecordType}】
-対象: ${memberName || '（記載なし）'} / 担当: ${staffName || '（記載なし）'} / 面談日: ${new Date().toLocaleDateString('ja-JP')}`
-      : '【AI要約】';
+// ================================================================
+// BNIモード専用処理
+// このファイルで BNI に関わる変更はここだけ修正する。施設モードには触れない。
+// ================================================================
+async function handleBniFinalize({ email, sessionId, staffName, memberName, bniContactId, durMin, transcript, summary }) {
+  let bniData = { summary, gains: {}, referral_hints: '', follow_up: '' };
+  try { bniData = Object.assign(bniData, JSON.parse(summary)); } catch(e) {}
 
-    await sendMail(email, mailSubject,
+  const bniWebhookUrl = process.env.BNI_WEBHOOK_URL || 'http://localhost:8300/api/nicemeet-webhook';
+  const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
+  try {
+    await fetch(bniWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-nicemeet-secret': bniSecret },
+      body: JSON.stringify({
+        bni_user: staffName,
+        contact_id: bniContactId,
+        contact_name: memberName,
+        duration_minutes: durMin,
+        transcript,
+        summary: bniData.summary || summary,
+        gains: bniData.gains || {},
+        referral_hints: bniData.referral_hints || '',
+        follow_up: bniData.follow_up || ''
+      })
+    });
+    console.log(`[bni-finalize] sent to BNI app user=${staffName} contact=${memberName}`);
+
+    // R2バックアップ保存
+    const driveUrl = process.env.DRIVE_INTERNAL_URL || 'http://localhost:8309/api/internal/upload-json';
+    const driveSecret = process.env.DRIVE_INTERNAL_SECRET || (console.warn('[SECURITY] DRIVE_INTERNAL_SECRET not set, using default'), 'gaia-internal-2026');
+    const r2Date = new Date().toISOString().slice(0, 10);
+    const r2Name = (memberName || 'unknown').replace(/[^\w぀-鿿]/g, '_');
+    const r2Key = `nicemeet/bni/${r2Date}/${sessionId}-${r2Name}.json`;
+    const r2Body = JSON.stringify({
+      date: r2Date, bni_user: staffName, contact_name: memberName,
+      duration_minutes: durMin, transcript,
+      summary: bniData.summary || summary,
+      gains: bniData.gains || {},
+      referral_hints: bniData.referral_hints || '',
+      follow_up: bniData.follow_up || ''
+    }, null, 2);
+    fetch(driveUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-internal-secret': driveSecret },
+      body: JSON.stringify({ key: r2Key, content: r2Body })
+    }).then(() => console.log('[bni-finalize] R2 saved:', r2Key))
+      .catch(e => console.error('[bni-finalize] R2 error:', e.message));
+  } catch(e) {
+    console.error('[bni-finalize] webhook error:', e.message);
+  }
+
+  await sendMail(email,
+    `【NiceMeet BNI】1-2-1ミーティング記録${memberName ? '（' + memberName + 'さん）' : ''}`,
+`━━━━━━━━━━━━━━━━━━
+【AI要約】
+━━━━━━━━━━━━━━━━━━
+${summary}
+
+━━━━━━━━━━━━━━━━━━
+【文字起こし（全文）】
+━━━━━━━━━━━━━━━━━━
+${transcript}
+`);
+}
+
+// ================================================================
+// 施設モード専用処理
+// このファイルで 施設モード に関わる変更はここだけ修正する。BNIモードには触れない。
+// ================================================================
+async function handleFacilityFinalize({ email, sessionId, fUser, welfareSystem, welfareRecordType, memberName, staffName, durMin, transcript, summary, isWelfareRecord }) {
+  if (fUser?.facility_id) {
+    if (isWelfareRecord) {
+      db.prepare(
+        'INSERT INTO nm_call_records (facility_id, room_id, welfare_system, record_type, member_name, staff_name, summary_text, raw_transcript, source) VALUES (?,?,?,?,?,?,?,?,?)'
+      ).run(fUser.facility_id, sessionId, welfareSystem, welfareRecordType, memberName, staffName, summary, transcript, 'video');
+      console.log(`[facility-finalize] saved to nm_call_records: ${welfareSystem}/${welfareRecordType} member=${memberName}`);
+    } else {
+      db.prepare(
+        'INSERT INTO nm_meetings (facility_id, room_id, host_email, started_at, ended_at, duration_minutes, ai_summary_used, summary_text) VALUES (?,?,?,datetime(\'now\',?),datetime(\'now\'),?,1,?)'
+      ).run(fUser.facility_id, sessionId, email, `-${durMin} minutes`, durMin, summary);
+    }
+  }
+
+  const mailSubject = isWelfareRecord
+    ? `【NiceMeet】${welfareRecordType}${memberName ? '（' + memberName + '）' : ''}`
+    : '【NiceMeet】会議の文字起こし・要約';
+  const mailHeader = isWelfareRecord
+    ? `【${welfareRecordType}】\n対象: ${memberName || '（記載なし）'} / 担当: ${staffName || '（記載なし）'} / 面談日: ${new Date().toLocaleDateString('ja-JP')}`
+    : '【AI要約】';
+
+  await sendMail(email, mailSubject,
 `━━━━━━━━━━━━━━━━━━
 ${mailHeader}
 ━━━━━━━━━━━━━━━━━━
@@ -1924,11 +1961,7 @@ ${summary}
 ━━━━━━━━━━━━━━━━━━
 ${transcript}
 `);
-  } catch(e) {
-    console.error('audio finalize error:', e.message);
-    sendMail(email, '【NiceMeet】文字起こしエラー', '処理中にエラーが発生しました。').catch(() => {});
-  }
-});
+}
 
 // ---- Public: cancel by token ----
 app.get('/api/cancel-info', (req, res) => {
