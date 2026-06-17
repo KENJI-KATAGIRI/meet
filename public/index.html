@@ -159,12 +159,19 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 #more-menu.open{display:flex}
 @media(max-width:640px){
   body,#lobby{height:100dvh}
+  #meeting{height:100dvh;height:100svh}
   .lobby-box{padding:24px 20px}
-  #controls{padding:8px 2px;gap:2px}
-  .ctrl-btn{min-width:44px;padding:4px 2px;font-size:9px}
+  #controls{padding:8px 4px;gap:4px;flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start}
+  .ctrl-btn{min-width:52px;max-width:52px;padding:4px 2px;font-size:9px;flex-shrink:0}
   .ctrl-btn .icon{width:44px;height:44px;font-size:20px}
+  .ctrl-btn.leave{min-width:64px;max-width:64px;margin-left:auto;flex-shrink:0}
+  .ctrl-btn.leave .icon{background:#e94560}
   .ctrl-btn-secondary{display:none}
   #btn-flip,#btn-more{display:flex}
+  .room-info{display:none}
+  #participant-count{display:none}
+  #top-bar{overflow:hidden}
+  #top-bar-right .layout-btn{display:none}
   #chat-panel.open{position:fixed!important;width:100%!important;height:100dvh;top:0;left:0;z-index:200}
   #chat-panel>*{min-width:0!important}
   #effects-panel{width:100%;left:-100%}
@@ -283,6 +290,17 @@ function copyInappUrl() {
     <span class="optional-label">パスワード（省略可）</span>
     <input id="input-pass" type="password" placeholder="パスワード">
     <div class="time-banner" id="time-banner"></div>
+    <!-- 福祉モード設定（system paramがある場合のみ表示） -->
+    <div id="welfare-setup" style="display:none;background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.25);border-radius:10px;padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:#4ade80;font-weight:600;margin-bottom:10px">📋 面談記録設定</div>
+      <select id="ws-record-type" style="width:100%;padding:9px 12px;background:#1a1a3a;border:1px solid #3a3a5a;border-radius:8px;color:#e0e0ff;font-size:14px;margin-bottom:8px;outline:none">
+        <option value="">記録タイプを選択...</option>
+      </select>
+      <input id="ws-staff-name" placeholder="担当者名・こちら側（必須）" maxlength="30" required
+        style="width:100%;padding:9px 12px;background:#1a1a3a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:14px;outline:none;box-sizing:border-box;margin-bottom:8px">
+      <input id="ws-member-name" placeholder="利用者名・相手側（必須）" maxlength="30" required
+        style="width:100%;padding:9px 12px;background:#1a1a3a;border:1px solid #3a3a5a;border-radius:8px;color:#fff;font-size:14px;outline:none;box-sizing:border-box">
+    </div>
     <button class="btn-primary" onclick="joinRoom()">参加する</button>
     <input id="input-email" type="email" style="display:none">
     <input type="checkbox" id="input-allow-all" style="display:none">
@@ -328,6 +346,9 @@ function copyInappUrl() {
     </button>
     <button class="ctrl-btn" id="btn-cam" onclick="toggleCam()">
       <div class="icon">📷</div><span>カメラ</span>
+    </button>
+    <button class="ctrl-btn ctrl-btn-secondary" id="btn-noise-gate" onclick="toggleNoiseGate()" title="キーボード音・背景雑音を除去">
+      <div class="icon">🎚️</div><span>ノイズ除去</span>
     </button>
     <button class="ctrl-btn" id="btn-flip" onclick="flipCamera()">
       <div class="icon">🔄</div><span>切替</span>
@@ -605,6 +626,8 @@ function applyOpusParams(sdp) {
 
 let socket, rawStream, localStream, screenStream;
 let screenSenders = {};
+let noiseGateNode = null, ngCtx = null, ngDest = null;
+let noiseGateEnabled = true;
 let myName = '', myRoomId = '';
 let welfareSettings = { mode: 'none', system: '', recordType: '', memberName: '', staffName: '' };
 const peers = {}, peerNames = {}, peerStreams = {}, peerInitiator = {};
@@ -643,6 +666,8 @@ const systemLabels = {
   roukin: '老人ホームManager',
   beauty: 'Beauty Manager',
   bni: 'BNI Manager',
+  seikatsu: 'OWL生活訓練Manager',
+  keikaku: 'OWL計画相談支援Manager',
 };
 if (systemParam && systemLabels[systemParam]) {
   // システムバッジを表示
@@ -673,10 +698,54 @@ if (systemParam === 'bni') {
     nameBadge.textContent = '🤝 ' + bniContactName + ' さんとの1-2-1';
     document.querySelector('.lobby-box h1').after(nameBadge);
   }
+  // BNIモードではパスワード不要（ルームIDがUUID形式で十分安全）
+  document.getElementById('input-pass').style.display = 'none';
+  document.querySelector('.optional-label').style.display = 'none';
+  document.getElementById('input-pass').value = '';
   // 事前情報フォームを表示（bni_user がある = ホスト発行URLを他者が開いた）
   if (urlParams.get('bni_user')) {
     document.getElementById('bni-prejoin').style.display = 'flex';
     document.getElementById('lobby').style.display = 'none';
+  }
+}
+// 福祉SaaS（BNI以外）もsystem情報を保持して退出後に元のページに戻れるようにする
+if (systemParam && systemParam !== 'bni' && systemLabels[systemParam]) {
+  welfareSettings.system = systemParam;
+  welfareSettings.mode = 'welfare';
+  // パスワードフィールドを隠す（ランダムルームIDで十分安全）
+  document.getElementById('input-pass').style.display = 'none';
+  document.querySelector('.optional-label').style.display = 'none';
+  // 福祉設定UIを表示・記録タイプを設定
+  const wsDiv = document.getElementById('welfare-setup');
+  if (wsDiv) {
+    wsDiv.style.display = 'block';
+    const wsTypes = {
+      shuro: ['家族・保護者との面談', '就労先企業との連絡調整', '相談支援専門員・ハローワーク連絡', '関係機関との担当者会議', 'スタッフ間ミーティング', '利用者本人との面談（リモート）'],
+      houmon: ['利用者・家族との連絡', 'ケアマネージャーとの連絡', 'サービス担当者会議（オンライン）', 'スタッフ間ミーティング'],
+      houdei: ['保護者との面談', '学校・教育機関との連絡', '専門家（PT・OT・ST等）との連絡', '関係機関との担当者会議', 'スタッフ間ミーティング'],
+      kaigo: ['家族との面談', 'ケアマネージャーとの連絡', '医療機関との連絡', 'サービス担当者会議（オンライン）', 'スタッフ間ミーティング'],
+      roukin: ['家族との面談', 'ケアマネ・医療機関との連絡', '担当者会議（オンライン）', 'スタッフ間ミーティング'],
+      beauty: ['顧客カウンセリング（オンライン）', 'メーカー・仕入先との商談', 'スタッフミーティング'],
+      seikatsu: ['家族・保護者面談（リモート）', 'サービス担当者会議（リモート参加）', '就労移行支援事業所との連携会議', '医療機関・主治医との連携（リモート）', '相談支援専門員との連絡会議', '市区町村・行政との協議（リモート）'],
+      keikaku: ['サービス担当者会議（リモート）', 'サービス事業所との連絡調整（オンライン）', '医療機関・病院との連携（リモート）', '行政・市区町村との協議（リモート）', '本人・家族との計画確認面談（リモート）', '退院支援・地域移行協議（リモート）']
+    };
+    const typeList = wsTypes[systemParam] || [];
+    const sel = document.getElementById('ws-record-type');
+    typeList.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t; sel.appendChild(o); });
+    // URLパラメーターに記録タイプが指定されていれば自動選択
+    const urlRecordType = urlParams.get('recordType') || '';
+    const urlMemberName = urlParams.get('memberName') || '';
+    if (urlRecordType && typeList.includes(urlRecordType)) {
+      sel.value = urlRecordType;
+    } else if (typeList.length > 0) {
+      sel.value = typeList[0];
+    }
+    if (urlRecordType) welfareSettings.recordType = urlRecordType;
+    // 利用者名を自動入力
+    const memberLabels = { shuro: '利用者名', houmon: '利用者名', houdei: 'お子さん名', kaigo: '入居者名', roukin: '入居者名', beauty: '顧客名', seikatsu: '利用者名', keikaku: '相談者名' };
+    const mnInput = document.getElementById('ws-member-name');
+    mnInput.placeholder = (memberLabels[systemParam] || '利用者名') + '・相手側（必須）';
+    if (urlMemberName) { mnInput.value = urlMemberName; welfareSettings.memberName = urlMemberName; }
   }
 }
 
@@ -716,6 +785,8 @@ function skipPrejoin() {
 }
 if (urlParams.get('room')) {
   document.getElementById('input-room').value = urlParams.get('room');
+  document.getElementById('input-pass').style.display = 'none';
+  document.querySelector('.optional-label').style.display = 'none';
   (async () => {
     try {
       const r = await fetch('/api/room-info?room=' + encodeURIComponent(urlParams.get('room')));
@@ -762,6 +833,19 @@ async function joinRoom() {
   errEl.textContent = '';
   myEmail = document.getElementById('input-email').value.trim();
   if (myEmail) localStorage.setItem('meetEmail', myEmail);
+  // 福祉モードの記録設定を読み取り
+  if (welfareSettings.mode === 'welfare') {
+    const rt = document.getElementById('ws-record-type');
+    const mn = document.getElementById('ws-member-name');
+    const sn = document.getElementById('ws-staff-name');
+    const snVal = sn ? sn.value.trim() : '';
+    const mnVal = mn ? mn.value.trim() : '';
+    if (!snVal) { errEl.textContent = '担当者名（こちら側）を入力してください'; return; }
+    if (!mnVal) { errEl.textContent = '利用者名（相手側）を入力してください'; return; }
+    if (rt) welfareSettings.recordType = rt.value;
+    if (mn) welfareSettings.memberName = mnVal || welfareSettings.memberName;
+    welfareSettings.staffName = snVal;
+  }
   const transcribeMode = document.getElementById('input-allow-all').checked ? 'all' : 'host_only';
   const isMobile = window.innerWidth <= 640 || /Mobi|Android/i.test(navigator.userAgent);
   try {
@@ -796,6 +880,23 @@ async function joinRoom() {
     });
   }
   localStream = rawStream;
+  // ノイズゲート（AudioWorklet）で打鍵音などを除去
+  try {
+    ngCtx = new AudioContext({ latencyHint: 'interactive' });
+    await ngCtx.audioWorklet.addModule('/noise-gate.js');
+    noiseGateNode = new AudioWorkletNode(ngCtx, 'noise-suppressor');
+    const ngSrc = ngCtx.createMediaStreamSource(rawStream);
+    ngDest = ngCtx.createMediaStreamDestination();
+    ngSrc.connect(noiseGateNode);
+    noiseGateNode.connect(ngDest);
+    const ngStream = new MediaStream();
+    ngDest.stream.getAudioTracks().forEach(t => ngStream.addTrack(t));
+    rawStream.getVideoTracks().forEach(t => ngStream.addTrack(t));
+    localStream = ngStream;
+    console.log('[noise-gate] enabled');
+  } catch(e) {
+    console.warn('[noise-gate] AudioWorklet unavailable, using raw stream:', e);
+  }
   myName = name; myRoomId = room;
   loadBgSettings();
   document.getElementById('lobby').style.display = 'none';
@@ -818,14 +919,15 @@ async function joinRoom() {
       roomTranscribeMode = transcribeMode || 'host_only';
       updateHostUI();
       if (isFreeRoom && source !== 'breakout') startFreeTimer(roomStartedAt || Date.now());
-      if (isHost && roomTranscribeMode !== 'none' && myEmail) startAutoAudioRecording();
-      else if (isHost && roomTranscribeMode !== 'none' && !myEmail) setTimeout(() => showTranscribeModal(true), 800);
-      else if (!isHost && roomTranscribeMode === 'all') setTimeout(showTranscribeModal, 800);
+      const _isWelfare = welfareSettings && welfareSettings.mode === 'welfare';
+      if (isHost && roomTranscribeMode !== 'none' && (myEmail || _isWelfare)) startAutoAudioRecording();
+      else if (isHost && roomTranscribeMode !== 'none' && !myEmail && !_isWelfare) setTimeout(() => showTranscribeModal(true), 800);
+      else if (!isHost && roomTranscribeMode === 'all') { if (_isWelfare) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 800); }
     }
   });
   socket.on('transcribe-mode-changed', ({ mode }) => {
     applyTranscribeMode(mode);
-    if (!isHost && mode === 'all') setTimeout(showTranscribeModal, 400);
+    if (!isHost && mode === 'all') { const _w = welfareSettings && welfareSettings.mode === 'welfare'; if (_w) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 400); }
   });
   socket.on('user-joined', ({ id, name }) => {
     peerNames[id] = name; createPeer(id, name, false);
@@ -976,7 +1078,7 @@ async function joinRoom() {
     addChatMessage(from + ' [全員へ]', message, time, false, false);
   });
 
-  socket.emit('join-room', { roomId: room, password: pass, userName: name, transcribeMode });
+  socket.emit('join-room', { roomId: room, password: systemParam === 'bni' ? '' : pass, userName: name, transcribeMode, system: systemParam || '' });
   history.replaceState(null, '', '?room=' + encodeURIComponent(room));
 }
 
@@ -1296,6 +1398,18 @@ function toggleMic() {
   document.getElementById('tile-local').classList.toggle('muted', !micOn);
 }
 
+function toggleNoiseGate() {
+  if (!noiseGateNode) return;
+  noiseGateEnabled = !noiseGateEnabled;
+  // threshold: 高い値でほぼ全カット（実質バイパス）、通常値で除去ON
+  noiseGateNode.port.postMessage({ threshold: noiseGateEnabled ? 0.025 : 0.0001 });
+  const btn = document.getElementById('btn-noise-gate');
+  if (btn) {
+    btn.classList.toggle('active', !noiseGateEnabled);
+    btn.querySelector('span').textContent = noiseGateEnabled ? 'ノイズ除去' : '除去OFF';
+  }
+}
+
 function toggleCam() {
   camOn = !camOn;
   rawStream.getVideoTracks().forEach(t => t.enabled = camOn);
@@ -1475,8 +1589,9 @@ function applyTranscribeMode(mode) {
       if (recEl) recEl.classList.remove('active');
     }
   } else {
-    if (!audioRecorder && myEmail) startAutoAudioRecording();
-    else if (!audioRecorder && !myEmail) showTranscribeModal(true);
+    const _iW = welfareSettings && welfareSettings.mode === 'welfare';
+    if (!audioRecorder && (myEmail || _iW)) startAutoAudioRecording();
+    else if (!audioRecorder && !myEmail && !_iW) showTranscribeModal(true);
   }
 }
 
@@ -1740,7 +1855,15 @@ async function doLeaveRoom() {
   if (rafId) cancelAnimationFrame(rafId);
   if (mpSegmenter) { mpSegmenter.close(); mpSegmenter = null; }
   if (socket) socket.disconnect();
-  location.href = '/';
+  // 福祉SaaS連携: 元のシステムに戻る
+  const sysRedirects = {
+    shuro: 'https://gaiaarts.org/shuro/', kaigo: 'https://gaiaarts.org/kaigo/',
+    houmon: 'https://gaiaarts.org/houmon/', houdei: 'https://gaiaarts.org/houdei/',
+    roukin: 'https://gaiaarts.org/roukin/', beauty: 'https://gaiaarts.org/beauty/',
+    bni: 'https://life-energy-coaching.net/bni/'
+  };
+  const dest = (welfareSettings && sysRedirects[welfareSettings.system]) || 'https://www.google.com';
+  location.href = dest;
 }
 
 // ============ 音声自動録音・文字起こし ============
@@ -2091,7 +2214,8 @@ async function initEffectsStream() {
   personCtx = personCanvas.getContext('2d');
 
   effectsStream = effectsCanvas.captureStream(30);
-  rawStream.getAudioTracks().forEach(t => effectsStream.addTrack(t));
+  const _audioSrc = (ngDest && noiseGateEnabled) ? ngDest.stream : rawStream;
+  _audioSrc.getAudioTracks().forEach(t => effectsStream.addTrack(t));
 
   localStream = effectsStream;
 
@@ -2744,9 +2868,14 @@ function loadBgSettings() {
 
 <script>
 fetch('/api/me').then(r=>r.json()).then(me=>{
-  if(me && me.ui_mode==='welfare'){
+  if(me && me.ui_mode==='welfare' && systemParam){
     var lnk=document.getElementById('face-rec-link');
     if(lnk) lnk.style.display='flex';
+  }
+  // systemParamなし（相手用URL）の場合はwelfare-setupを強制非表示
+  if(!(systemParam && systemParam !== 'bni')){
+    var ws=document.getElementById('welfare-setup');
+    if(ws) ws.style.display='none';
   }
 }).catch(function(){});
 </script>
