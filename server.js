@@ -675,7 +675,10 @@ app.post('/auth/login', async (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
   if (!user || !user.password_hash) return res.json({ error: 'メールアドレスまたはパスワードが違います' });
   const ok = await verifyPassword(password, user.password_hash);
-  if (!ok) return res.json({ error: 'メールアドレスまたはパスワードが違います' });
+  if (!ok) {
+    console.warn(`[auth-fail] ip=${(req.ip || '').replace(/[^0-9a-f:.]/gi, '')}`);
+    return res.json({ error: 'メールアドレスまたはパスワードが違います' });
+  }
   await regenerateSession(req);
   req.session.userId = user.id;
   req.session.slug = user.slug;
@@ -2862,6 +2865,7 @@ app.post('/bni/api/auth/login', authLimiter, express.json(), async (req, res) =>
   const user = bniDb.prepare('SELECT * FROM users WHERE username=? OR email=?').get(email, email);
   if (!user) return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
   if (!bcryptCompat.verify(password, user.pw_hash, user.pw_salt)) {
+    console.warn(`[bni-auth-fail] ip=${(req.ip || '').replace(/[^0-9a-f:.]/gi, '')}`);
     return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
   }
   // レガシーSHA256ハッシュをPBKDF2に自動アップグレード
