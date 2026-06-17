@@ -501,6 +501,9 @@ function isValidISODate(s) {
 function regenerateSession(req) {
   return new Promise((resolve, reject) => req.session.regenerate(e => e ? reject(e) : resolve()));
 }
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 app.set('trust proxy', 1);
 app.use(express.json({
@@ -687,6 +690,11 @@ app.get('/api/my-plan', requireAuth, (req, res) => {
 
 // ---- UTAGE/UnivaPay Webhook ----
 app.post('/api/utage-webhook', async (req, res) => {
+  const utageSecret = process.env.UTAGE_WEBHOOK_SECRET || '';
+  if (utageSecret) {
+    const provided = req.headers['x-utage-secret'] || req.query.secret || '';
+    if (provided !== utageSecret) return res.status(403).json({ error: 'forbidden' });
+  }
   res.json({ ok: true });
   try {
     const data = req.body;
@@ -717,7 +725,7 @@ app.post('/api/utage-webhook', async (req, res) => {
 app.get('/api/bni-sso-token', requireAuth, (req, res) => {
   const user = db.prepare('SELECT name, email FROM users WHERE id=?').get(req.session.userId);
   if (!user) return res.status(401).json({ error: 'unauthorized' });
-  const secret = process.env.BNI_SSO_SECRET || 'nicemeet-bni-sso-2026';
+  const secret = process.env.BNI_SSO_SECRET || (() => { console.warn('[SECURITY] BNI_SSO_SECRET not set'); return crypto.randomBytes(32).toString('hex'); })();
   const payload = JSON.stringify({ name: user.name, email: user.email || '', exp: Date.now() + 5 * 60 * 1000 });
   const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   const token = Buffer.from(payload).toString('base64url') + '.' + sig;
@@ -805,11 +813,21 @@ app.get('/api/availability', requireAuth, (req, res) => {
 app.post('/api/availability', requireAuth, (req, res) => {
   const { availability, slot_duration, booking_horizon_days } = req.body;
   const uid = req.session.userId;
+  const avArr = Array.isArray(availability) ? availability.slice(0, 100) : [];
   db.prepare('DELETE FROM availability WHERE user_id=?').run(uid);
   const stmt = db.prepare('INSERT INTO availability (user_id, day_of_week, start_time, end_time) VALUES (?,?,?,?)');
-  for (const a of (availability || [])) stmt.run(uid, a.day_of_week, a.start_time, a.end_time);
-  if (slot_duration) db.prepare('UPDATE users SET slot_duration=? WHERE id=?').run(slot_duration, uid);
-  if (booking_horizon_days) db.prepare('UPDATE users SET booking_horizon_days=? WHERE id=?').run(parseInt(booking_horizon_days), uid);
+  const timeRe = /^\d{2}:\d{2}$/;
+  for (const a of avArr) {
+    const dow = parseInt(a.day_of_week, 10);
+    if (isNaN(dow) || dow < 0 || dow > 6) continue;
+    if (typeof a.start_time !== 'string' || !timeRe.test(a.start_time)) continue;
+    if (typeof a.end_time !== 'string' || !timeRe.test(a.end_time)) continue;
+    stmt.run(uid, dow, a.start_time, a.end_time);
+  }
+  const sdVal = parseInt(slot_duration, 10);
+  if (!isNaN(sdVal) && sdVal >= 15 && sdVal <= 240) db.prepare('UPDATE users SET slot_duration=? WHERE id=?').run(sdVal, uid);
+  const hdVal = parseInt(booking_horizon_days, 10);
+  if (!isNaN(hdVal) && hdVal >= 1 && hdVal <= 365) db.prepare('UPDATE users SET booking_horizon_days=? WHERE id=?').run(hdVal, uid);
   res.json({ ok: true });
 });
 
@@ -1532,12 +1550,12 @@ async function transcribeAndSummarize(filepath, filename, roomId) {
 app.post('/api/upload-recording', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const url = `https://meet.gaiaarts.org/recordings/${req.file.filename}`;
-  const roomId = req.body.roomId;
+  const roomId = typeof req.body.roomId === 'string' ? req.body.roomId.slice(0, 128) : '';
   if (roomId) {
     io.to(roomId).emit('recording-ready', {
       url,
       filename: req.file.filename,
-      uploader: req.body.uploaderName || '参加者'
+      uploader: req.body.uploaderName ? String(req.body.uploaderName).trim().slice(0, 50) : '参加者'
     });
   }
   res.json({ ok: true, url });
@@ -1570,9 +1588,8 @@ app.use('/uploads', express.static(uploadDir));
 const uploadStorage = multer.diskStorage({
   destination: uploadDir,
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const base = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9._-]/g, '_');
-    cb(null, Date.now() + '-' + base + ext);
+    const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^a-z0-9.]/g, '').slice(0, 8);
+    cb(null, Date.now() + '-' + require('crypto').randomBytes(8).toString('hex') + ext);
   }
 });
 const uploadFileMiddleware = multer({ storage: uploadStorage, limits: { fileSize: 50 * 1024 * 1024 } });
@@ -1581,13 +1598,15 @@ app.post('/api/upload-file', uploadFileMiddleware.single('file'), (req, res) => 
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const url = '/uploads/' + req.file.filename;
   const origName = req.file.originalname;
+  const safeOrigName = escHtml(origName);
+  const safeUrl = escHtml(url);
   const isImage = req.file.mimetype.startsWith('image/');
-  const roomId = req.body.roomId;
-  const senderName = req.body.senderName || '参加者';
+  const roomId = typeof req.body.roomId === 'string' ? req.body.roomId.slice(0, 128) : '';
+  const senderName = req.body.senderName ? String(req.body.senderName).trim().slice(0, 50) : '参加者';
   const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
   const msgHtml = isImage
-    ? `<img src="${url}" alt="${origName}" class="chat-img" onclick="window.open('${url}','_blank')">`
-    : `<a href="${url}" download="${origName}" target="_blank" class="chat-file-link">📎 ${origName}</a>`;
+    ? `<img src="${safeUrl}" alt="${safeOrigName}" class="chat-img" onclick="window.open('${safeUrl}','_blank')">`
+    : `<a href="${safeUrl}" download="${safeOrigName}" target="_blank" class="chat-file-link">📎 ${safeOrigName}</a>`;
   if (roomId) io.to(roomId).emit('chat-file', { from: senderName, message: msgHtml, time });
   res.json({ ok: true, url, origName, isImage });
 });
@@ -1986,12 +2005,13 @@ app.get('/api/welfare-sso', (req, res) => {
 
   try {
     const [payloadB64, sig] = token.split('.');
-    if (!payloadB64 || !sig) return res.redirect('/');
+    if (!payloadB64 || !sig || !/^[a-f0-9]{64}$/.test(sig)) return res.redirect('/');
 
     const welfareSecret = process.env.WELFARE_SSO_SECRET || '';
+    if (!welfareSecret) { console.warn('[welfare-sso] WELFARE_SSO_SECRET not set — rejecting'); return res.redirect('/'); }
     const expectedSig = crypto.createHmac('sha256', welfareSecret)
       .update(payloadB64).digest('hex');
-    if (sig !== expectedSig) {
+    if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expectedSig, 'hex'))) {
       console.warn('[welfare-sso] invalid signature');
       return res.redirect('/');
     }
@@ -2038,7 +2058,7 @@ app.get('/api/welfare-sso', (req, res) => {
     req.session.userId = user.id;
     req.session.save((err) => {
       if (err) { console.error('[welfare-sso] session save error:', err); return res.redirect('/'); }
-      const destination = dest || '/record';
+      const destination = (dest && typeof dest === 'string' && /^\/[^/\\]/.test(dest) && !dest.startsWith('//')) ? dest : '/record';
       console.log('[welfare-sso] login OK:', email, '->', destination);
       res.redirect(destination);
     });
@@ -2171,8 +2191,8 @@ app.get('/api/facility/call-records', requireAuth, (req, res) => {
   const { system, member } = req.query;
   let sql = 'SELECT * FROM nm_call_records WHERE facility_id=?';
   const params = [u.facility_id];
-  if (system) { sql += ' AND welfare_system=?'; params.push(system); }
-  if (member) { sql += ' AND member_name LIKE ?'; params.push('%' + member + '%'); }
+  if (system && typeof system === 'string') { sql += ' AND welfare_system=?'; params.push(system.slice(0, 20)); }
+  if (member && typeof member === 'string') { sql += ' AND member_name LIKE ?'; params.push('%' + member.slice(0, 100) + '%'); }
   sql += ' ORDER BY created_at DESC LIMIT 200';
   const rows = db.prepare(sql).all(...params);
   res.json({ records: rows });
@@ -2348,7 +2368,11 @@ app.delete('/api/face-record/draft/:id', requireAuth, (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────
 // ── 管理者用エンドポイント ────────────────────────────────────────
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'nicemeet-admin-2026';
+const ADMIN_SECRET = process.env.ADMIN_SECRET || (() => {
+  const r = require('crypto').randomBytes(32).toString('hex');
+  console.warn('[SECURITY] ADMIN_SECRET not set — using random value (admin API unavailable until env is set)');
+  return r;
+})();
 
 app.post('/api/admin/set-mode', (req, res) => {
   const { secret, email, mode } = req.body;
@@ -2503,6 +2527,8 @@ io.on('connection', (socket) => {
 
   // ---- ルーム切替（ブレイクアウト用）----
   socket.on('switch-room', ({ newRoomId, mainRoomId }) => {
+    if (typeof newRoomId !== 'string' || newRoomId.length === 0 || newRoomId.length > 128) return;
+    if (mainRoomId !== null && mainRoomId !== undefined && (typeof mainRoomId !== 'string' || mainRoomId.length > 128)) return;
     const oldRoomId = socket.roomId;
     if (oldRoomId) {
       const oldRoom = rooms.get(oldRoomId);
@@ -2535,6 +2561,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('grant-cohost', ({ targetId }) => {
+    if (typeof targetId !== 'string' || targetId.length > 64) return;
     const mainId = socket.mainRoomId || socket.roomId;
     const room = rooms.get(mainId);
     if (!room || room.hostId !== socket.id) return;
@@ -2543,6 +2570,7 @@ io.on('connection', (socket) => {
     io.to(mainId).emit('cohost-list', { coHosts: [...room.coHosts], hostId: room.hostId });
   });
   socket.on('revoke-cohost', ({ targetId }) => {
+    if (typeof targetId !== 'string' || targetId.length > 64) return;
     const mainId = socket.mainRoomId || socket.roomId;
     const room = rooms.get(mainId);
     if (!room || room.hostId !== socket.id) return;
@@ -2553,23 +2581,27 @@ io.on('connection', (socket) => {
 
   // ---- ブレイクアウトルーム ----
   socket.on('breakout:setup', ({ numRooms, timerSeconds }) => {
+    if (typeof numRooms !== 'number' || !Number.isInteger(numRooms) || numRooms < 2 || numRooms > 50) return;
+    const safeTimer = (typeof timerSeconds === 'number' && Number.isFinite(timerSeconds) && timerSeconds >= 0 && timerSeconds <= 3600) ? Math.floor(timerSeconds) : 0;
     const mainId = socket.mainRoomId || socket.roomId;
     const room = rooms.get(mainId);
     if (!room || (room.hostId !== socket.id && !room.coHosts.has(socket.id))) return;
     if (breakouts.has(mainId) && breakouts.get(mainId).active) return;
     breakouts.set(mainId, {
-      numRooms, timerSeconds: timerSeconds||0, timerEnd: null, active: false, timerTimeout: null,
+      numRooms, timerSeconds: safeTimer, timerEnd: null, active: false, timerTimeout: null,
       rooms: Array.from({length:numRooms}, (_,i) => ({id:i+1, name:'部屋 '+(i+1), participants:[]})),
       assignments: new Map()
     });
     const pList = [...room.users.entries()].map(([id,d]) => ({id, name:d.name}));
     socket.emit('breakout:ready', {
       rooms: Array.from({length:numRooms}, (_,i) => ({id:i+1, name:'部屋 '+(i+1), participants:[]})),
-      participants: pList, numRooms, timerSeconds: timerSeconds||0
+      participants: pList, numRooms, timerSeconds: safeTimer
     });
   });
 
   socket.on('breakout:assign', ({ targetId, roomNum }) => {
+    if (typeof targetId !== 'string' || targetId.length > 64) return;
+    if (typeof roomNum !== 'number' || !Number.isInteger(roomNum)) return;
     const mainId = socket.mainRoomId || socket.roomId;
     const bs = breakouts.get(mainId);
     const room = rooms.get(mainId);
@@ -2632,6 +2664,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('breakout:broadcast', ({ message }) => {
+    if (typeof message !== 'string' || message.length === 0 || message.length > 500) return;
     const mainId = socket.mainRoomId || socket.roomId;
     const bs = breakouts.get(mainId);
     if (!bs) return;
@@ -2670,9 +2703,9 @@ app.get('/bni/lp.html', (req, res) => res.sendFile(path.join(__dirname, 'public'
 app.use('/bni', express.static(path.join(__dirname, 'public', 'bni')));
 
 // --- 認証 ---
-app.post('/bni/api/auth/login', express.json(), (req, res) => {
+app.post('/bni/api/auth/login', authLimiter, express.json(), (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'メールアドレスとパスワードを入力してください' });
+  if (!isValidEmail(email) || typeof password !== 'string') return res.status(400).json({ error: 'メールアドレスまたはパスワードが違います' });
   const user = bniDb.prepare('SELECT * FROM users WHERE username=? OR email=?').get(email, email);
   if (!user) return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
   if (!bcryptCompat.verify(password, user.pw_hash, user.pw_salt)) {
@@ -2682,11 +2715,10 @@ app.post('/bni/api/auth/login', express.json(), (req, res) => {
   res.json({ ok: true, user: { id: user.id, name: user.display_name || user.username, email: user.email, plan: user.plan } });
 });
 
-app.post('/bni/api/auth/register', express.json(), (req, res) => {
+app.post('/bni/api/auth/register', authLimiter, express.json(), (req, res) => {
   const { email, password, name } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'メールアドレスとパスワードを入力してください' });
-  const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-  if (!emailRe.test(email)) return res.status(400).json({ error: '有効なメールアドレスを入力してください' });
+  if (!isValidEmail(email)) return res.status(400).json({ error: '有効なメールアドレスを入力してください' });
+  if (typeof password !== 'string' || password.length < 8 || password.length > 128) return res.status(400).json({ error: 'パスワードは8〜128文字で入力してください' });
   const exists = bniDb.prepare('SELECT id FROM users WHERE username=? OR email=?').get(email, email);
   if (exists) return res.status(400).json({ error: 'そのメールアドレスは既に登録されています' });
   const salt = crypto.randomBytes(16).toString('hex');
@@ -2710,7 +2742,8 @@ app.post('/bni/api/auth/logout', (req, res) => {
 
 app.put('/bni/api/auth/password', express.json(), bniAuth, (req, res) => {
   const { current_password, new_password } = req.body;
-  if (!current_password || !new_password) return res.status(400).json({ error: 'パスワードを入力してください' });
+  if (typeof current_password !== 'string' || typeof new_password !== 'string' || new_password.length < 8 || new_password.length > 128)
+    return res.status(400).json({ error: 'パスワードは8〜128文字で入力してください' });
   const user = bniDb.prepare('SELECT * FROM users WHERE id=?').get(req.session.bniUserId);
   if (!bcryptCompat.verify(current_password, user.pw_hash, user.pw_salt)) {
     return res.status(400).json({ error: '現在のパスワードが違います' });
@@ -2723,7 +2756,7 @@ app.put('/bni/api/auth/password', express.json(), bniAuth, (req, res) => {
 
 app.put('/bni/api/auth/email', express.json(), bniAuth, (req, res) => {
   const { new_email } = req.body;
-  if (!new_email) return res.status(400).json({ error: 'メールアドレスを入力してください' });
+  if (!isValidEmail(new_email)) return res.status(400).json({ error: '有効なメールアドレスを入力してください' });
   const exists = bniDb.prepare('SELECT id FROM users WHERE (username=? OR email=?) AND id!=?').get(new_email, new_email, req.session.bniUserId);
   if (exists) return res.status(400).json({ error: 'そのメールアドレスは既に使用されています' });
   bniDb.prepare('UPDATE users SET email=?, username=? WHERE id=?').run(new_email, new_email, req.session.bniUserId);
@@ -2756,8 +2789,9 @@ app.get('/bni/api/settings', bniAuth, (req, res) => {
 
 app.put('/bni/api/settings', express.json(), bniAuth, (req, res) => {
   const upsert = bniDb.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
+  const entries = Object.entries(req.body).filter(([k]) => typeof k === 'string' && k.length <= 100);
   const upAll = bniDb.transaction(pairs => { pairs.forEach(([k,v]) => upsert.run(k, JSON.stringify(v))); });
-  upAll(Object.entries(req.body));
+  upAll(entries);
   res.json({ ok: true });
 });
 
@@ -2922,7 +2956,10 @@ app.put('/bni/api/my-profile', express.json(), bniAuth, (req, res) => {
 });
 app.post('/bni/api/auth/change-password', express.json(), bniAuth, (req, res) => {
   const { current_password, new_password } = req.body;
+  if (typeof current_password !== 'string' || typeof new_password !== 'string' || new_password.length < 8 || new_password.length > 128)
+    return res.status(400).json({ error: 'パスワードは8〜128文字で入力してください' });
   const user = bniDb.prepare('SELECT * FROM users WHERE id=?').get(req.session.bniUserId);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
   if (!bcryptCompat.verify(current_password, user.pw_hash, user.pw_salt)) return res.status(400).json({ error: '現在のパスワードが違います' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.createHash('sha256').update(new_password + salt).digest('hex');
