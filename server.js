@@ -706,7 +706,7 @@ app.post('/api/utage-webhook', async (req, res) => {
       ((inner.subscription || {}).metadata || {}).email ||
       inner.email || data.mail || data.email || ''
     );
-    if (!email) { console.log('[utage-webhook] no email found'); return; }
+    if (!email || !isValidEmail(email)) { console.log('[utage-webhook] no valid email found'); return; }
     const eventType = data.type || '';
     const status = inner.status || '';
     const body = JSON.stringify(data);
@@ -2082,24 +2082,29 @@ app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'b
 // 施設登録（トライアル開始）
 app.post('/api/facility/register', requireAuth, async (req, res) => {
   const { facility_name, contact_name, phone, locations } = req.body;
-  if (!facility_name || !Array.isArray(locations) || !locations.length)
+  const cleanFacName = safeStr(facility_name, 100);
+  const cleanContact = safeStr(contact_name, 50);
+  const cleanPhone = safeStr(phone, 20);
+  if (!cleanFacName || !Array.isArray(locations) || !locations.length || locations.length > 50)
     return res.status(400).json({ error: '施設名と拠点名は必須です' });
+  const cleanLocs = locations.map(l => safeStr(l, 100)).filter(l => l);
+  if (!cleanLocs.length) return res.status(400).json({ error: '有効な拠点名を入力してください' });
   const u = db.prepare('SELECT email, facility_id FROM users WHERE id=?').get(req.session.userId);
   if (!u) return res.status(404).json({ error: 'user not found' });
   if (u.facility_id) return res.status(409).json({ error: 'already registered' });
   const fac = db.prepare(
     'INSERT INTO nm_facilities (name, admin_email, contact_name, phone) VALUES (?,?,?,?)'
-  ).run(facility_name, u.email, contact_name || '', phone || '');
+  ).run(cleanFacName, u.email, cleanContact, cleanPhone);
   const facilityId = fac.lastInsertRowid;
-  for (const loc of locations) {
+  for (const loc of cleanLocs) {
     db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(facilityId, loc);
   }
-  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(facilityId, locations.length, '初回登録');
+  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(facilityId, cleanLocs.length, '初回登録');
   db.prepare('UPDATE users SET facility_id=?, ui_mode=\'welfare\' WHERE id=?').run(facilityId, req.session.userId);
-  const amount = calcMonthlyAmount(locations.length, 1);
+  const amount = calcMonthlyAmount(cleanLocs.length, 1);
   await sendMail(process.env.GMAIL_USER || '',
-    `【NiceMeet】新規施設トライアル開始: ${facility_name}`,
-    `施設名: ${facility_name}\n担当者: ${contact_name}\nメール: ${u.email}\n拠点数: ${locations.length}\n月額(先行): ¥${amount.total.toLocaleString()}\n登録日: ${new Date().toLocaleString('ja-JP')}`
+    `【NiceMeet】新規施設トライアル開始: ${cleanFacName}`,
+    `施設名: ${cleanFacName}\n担当者: ${cleanContact}\nメール: ${u.email}\n拠点数: ${cleanLocs.length}\n月額(先行): ¥${amount.total.toLocaleString()}\n登録日: ${new Date().toLocaleString('ja-JP')}`
   );
   res.json({ ok: true, facilityId });
 });
@@ -2132,11 +2137,11 @@ app.get('/api/facility/status', requireAuth, (req, res) => {
 app.post('/api/facility/location', requireAuth, (req, res) => {
   const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
   if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ error: '拠点名は必須です' });
-  db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(u.facility_id, name);
+  const cleanLocName = safeStr(req.body.name, 100);
+  if (!cleanLocName) return res.status(400).json({ error: '拠点名は必須です' });
+  db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(u.facility_id, cleanLocName);
   const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(u.facility_id).cnt;
-  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(u.facility_id, lc, '拠点追加: ' + name);
+  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(u.facility_id, lc, '拠点追加: ' + cleanLocName);
   res.json({ ok: true, locationCount: lc });
 });
 
@@ -2157,12 +2162,12 @@ app.delete('/api/facility/location/:id', requireAuth, (req, res) => {
 // 有料申込フォーム
 app.post('/api/facility/inquiry', requireAuth, async (req, res) => {
   const u = db.prepare('SELECT email, facility_id FROM users WHERE id=?').get(req.session.userId);
-  const { message } = req.body;
+  const cleanMsg = safeStr(req.body.message, 2000);
   const fac = u?.facility_id ? db.prepare('SELECT name FROM nm_facilities WHERE id=?').get(u.facility_id) : null;
-  db.prepare('INSERT INTO nm_inquiries (facility_id, name, email, message) VALUES (?,?,?,?)').run(u?.facility_id || null, fac?.name || '', u?.email || '', message || '');
+  db.prepare('INSERT INTO nm_inquiries (facility_id, name, email, message) VALUES (?,?,?,?)').run(u?.facility_id || null, fac?.name || '', u?.email || '', cleanMsg);
   await sendMail(process.env.GMAIL_USER || '',
     `【NiceMeet】有料プラン申込: ${fac?.name || u?.email}`,
-    `施設名: ${fac?.name || '未登録'}\nメール: ${u?.email}\nメッセージ: ${message || '(なし)'}\n申込日時: ${new Date().toLocaleString('ja-JP')}`
+    `施設名: ${fac?.name || '未登録'}\nメール: ${u?.email}\nメッセージ: ${cleanMsg || '(なし)'}\n申込日時: ${new Date().toLocaleString('ja-JP')}`
   );
   res.json({ ok: true });
 });
@@ -2824,10 +2829,12 @@ app.put('/bni/api/contacts/:id', express.json(), bniAuth, (req, res) => {
 });
 
 app.delete('/bni/api/contacts/:id', bniAuth, (req, res) => {
-  bniDb.prepare('DELETE FROM contacts WHERE id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
-  bniDb.prepare('DELETE FROM memos WHERE contact_id=?').run(req.params.id);
-  bniDb.prepare('DELETE FROM one_on_ones WHERE contact_id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
-  bniDb.prepare('DELETE FROM referrals WHERE contact_id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  const result = bniDb.prepare('DELETE FROM contacts WHERE id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  if (result.changes > 0) {
+    bniDb.prepare('DELETE FROM memos WHERE contact_id=?').run(req.params.id);
+    bniDb.prepare('DELETE FROM one_on_ones WHERE contact_id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+    bniDb.prepare('DELETE FROM referrals WHERE contact_id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  }
   res.json({ ok: true });
 });
 
@@ -2887,16 +2894,22 @@ app.delete('/bni/api/contacts/:cid/referrals/:id', bniAuth, (req, res) => {
 
 // --- メモ ---
 app.get('/bni/api/contacts/:id/memos', bniAuth, (req, res) => {
+  const contact = bniDb.prepare('SELECT id FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!contact) return res.status(404).json({ error: 'not found' });
   const rows = bniDb.prepare('SELECT * FROM memos WHERE contact_id=? ORDER BY created_at DESC').all(req.params.id);
   res.json(rows);
 });
 
 app.post('/bni/api/contacts/:id/memos', express.json(), bniAuth, (req, res) => {
-  const r = bniDb.prepare('INSERT INTO memos (contact_id,content) VALUES (?,?)').run(req.params.id, req.body.content||'');
+  const contact = bniDb.prepare('SELECT id FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!contact) return res.status(404).json({ error: 'not found' });
+  const r = bniDb.prepare('INSERT INTO memos (contact_id,content) VALUES (?,?)').run(req.params.id, safeStr(req.body.content||'', 2000));
   res.json({ id: r.lastInsertRowid });
 });
 
 app.delete('/bni/api/contacts/:cid/memos/:id', bniAuth, (req, res) => {
+  const memo = bniDb.prepare('SELECT m.id FROM memos m JOIN contacts c ON c.id=m.contact_id WHERE m.id=? AND c.user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!memo) return res.status(404).json({ error: 'not found' });
   bniDb.prepare('DELETE FROM memos WHERE id=?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -2950,8 +2963,8 @@ app.get('/bni/api/my-profile', bniAuth, (req, res) => {
   res.json(user || {});
 });
 app.put('/bni/api/my-profile', express.json(), bniAuth, (req, res) => {
-  const { name } = req.body;
-  if (name) bniDb.prepare('UPDATE users SET display_name=? WHERE id=?').run(name, req.session.bniUserId);
+  const cleanName = safeStr(req.body.name, 100);
+  if (cleanName) bniDb.prepare('UPDATE users SET display_name=? WHERE id=?').run(cleanName, req.session.bniUserId);
   res.json({ ok: true });
 });
 app.post('/bni/api/auth/change-password', express.json(), bniAuth, (req, res) => {
