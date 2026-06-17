@@ -1057,25 +1057,31 @@ const FACE_RECORD_TYPES = {
 const BNI_PROMPT = `あなたはBNI（Business Network International）の1-2-1ミーティング専門の記録アシスタントです。
 以下の会話からGAINS情報と紹介機会を抽出してください。
 
+【絶対に守るルール】
+- 会話テキストから明確に読み取れた内容だけを記録すること
+- 推測・創作・補完は絶対にしないこと
+- 会話に出てきていない情報は必ず空文字 "" にすること
+- 会話が短すぎる・業務的なやり取りのみ・実質的な1-2-1の内容がない場合は、summaryに「会話が短すぎるか、1-2-1の内容ではありませんでした」と入れ、他フィールドは全て "" にすること
+
 GAINS:
 G - Goals（目標）: ビジネス目標・人生の夢・達成したいこと
-A - Accomplishments（実績）: 最近の成功・受賞・成果・誤れること
+A - Accomplishments（実績）: 最近の成功・受賞・成果
 I - Interests（趣味・関心）: 趣味・プライベートの関心・ライフスタイル
 N - Networks（人脈）: 所属団体・コミュニティ・業界つながり
 S - Skills（スキル）: 専門スキル・資格・得意分野
 
 必ずJSON形式のみで出力すること（他のテキストは一切含めない）:
 {
-  "summary": "1-2-1全体の要約（3-4文）",
+  "summary": "1-2-1全体の要約（3-4文）。内容が不十分なら上記ルール通りに記載",
   "gains": {
-    "goals": "目標に関する情報",
-    "accomplishments": "実績に関する情報",
-    "interests": "趣味・関心に関する情報",
-    "networks": "人脈に関する情報",
-    "skills": "スキルに関する情報"
+    "goals": "会話から読み取れた目標のみ。なければ空文字",
+    "accomplishments": "会話から読み取れた実績のみ。なければ空文字",
+    "interests": "会話から読み取れた趣味・関心のみ。なければ空文字",
+    "networks": "会話から読み取れた人脈のみ。なければ空文字",
+    "skills": "会話から読み取れたスキルのみ。なければ空文字"
   },
-  "referral_hints": "紹介につながりそうなキーワード・ニーズ・状況",
-  "follow_up": "次回までのフォローアップ・約束事項"
+  "referral_hints": "会話から読み取れた紹介機会のみ。なければ空文字",
+  "follow_up": "会話から読み取れたフォローアップのみ。なければ空文字"
 }`;
 
 // ---- ビデオ通話モード専用：記録種別・GPTプロンプト ----
@@ -1781,8 +1787,16 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
 
     chunkFiles.forEach(f => fs.unlink(path.join(recDir, f), () => {}));
 
-    if (!transcript) {
-      await sendMail(email, '【NiceMeet】会議の文字起こし', '音声が検出されませんでした。');
+    // 話者タグを除いた実テキスト文字数で有効な会話かチェック
+    const transcriptTextOnly = transcript.replace(/【話者[A-Z]】/g, '').trim();
+    if (!transcriptTextOnly || transcriptTextOnly.length < 30) {
+      if (isBniRecord) {
+        // BNIモード：チェックイン等の誤入室でメールを送らない
+        console.log(`[audio-finalize] BNI: transcript too short (${transcriptTextOnly.length} chars), skip mail`);
+      } else {
+        // 施設モード：短くても通知する
+        await sendMail(email, '【NiceMeet】会議の文字起こし', '音声が短すぎるか検出されませんでした。');
+      }
       return;
     }
 
