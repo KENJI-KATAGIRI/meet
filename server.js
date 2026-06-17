@@ -1648,7 +1648,7 @@ app.post('/api/upload-file', uploadLimiter, uploadFileMiddleware.single('file'),
   const msgHtml = isImage
     ? `<img src="${safeUrl}" alt="${safeOrigName}" class="chat-img" onclick="window.open('${safeUrl}','_blank')">`
     : `<a href="${safeUrl}" download="${safeOrigName}" target="_blank" class="chat-file-link">📎 ${safeOrigName}</a>`;
-  if (roomId) io.to(roomId).emit('chat-file', { from: senderName, message: msgHtml, time });
+  if (roomId && rooms.has(roomId)) io.to(roomId).emit('chat-file', { from: senderName, message: msgHtml, time });
   res.json({ ok: true, url, origName, isImage });
 });
 
@@ -1714,7 +1714,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
   if (recordMode === 'none') { console.log('[audio-finalize] mode=none, skip'); return; }
   let canUseAI = false;
   if (isBniRecord) {
-    canUseAI = true;
+    canUseAI = !!(req.session?.userId || req.session?.bniUserId);
   } else if (fUser?.facility_id) {
     const fac = db.prepare('SELECT * FROM nm_facilities WHERE id=?').get(fUser.facility_id);
     const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(fUser.facility_id)?.cnt || 0;
@@ -2261,9 +2261,10 @@ app.get('/api/facility/export/csv', requireAuth, (req, res) => {
   if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
   const rows = db.prepare('SELECT * FROM nm_meetings WHERE facility_id=? ORDER BY started_at DESC').all(u.facility_id);
   const header = '会議ID,ルームID,ホストメール,開始日時,終了日時,通話時間(分),AI要約\n';
+  const csvQ = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const body = rows.map(r => [
-    r.id, r.room_id || '', r.host_email || '',
-    r.started_at || '', r.ended_at || '',
+    r.id, csvQ(r.room_id), csvQ(r.host_email),
+    csvQ(r.started_at), csvQ(r.ended_at),
     Math.round(r.duration_minutes || 0),
     r.ai_summary_used ? 'あり' : 'なし'
   ].join(',')).join('\n');
@@ -2292,14 +2293,15 @@ app.get('/api/facility/call-records/csv', requireAuth, (req, res) => {
   if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
   const rows = db.prepare('SELECT * FROM nm_call_records WHERE facility_id=? ORDER BY created_at DESC').all(u.facility_id);
   const header = '記録ID,業態,記録種別,対象者,担当職員,面談日,要約内容\n';
+  const csvQ2 = v => '"' + String(v ?? '').replace(/"/g, '""').replace(/\n/g, ' ') + '"';
   const body = rows.map(r => [
     r.id,
-    WELFARE_RECORD_TYPES[r.welfare_system]?.label || r.welfare_system,
-    r.record_type || '',
-    r.member_name || '',
-    r.staff_name || '',
-    r.interview_date || '',
-    '"' + (r.summary_text || '').replace(/"/g, '""'). replace(/\n/g, ' ') + '"'
+    csvQ2(WELFARE_RECORD_TYPES[r.welfare_system]?.label || r.welfare_system),
+    csvQ2(r.record_type),
+    csvQ2(r.member_name),
+    csvQ2(r.staff_name),
+    csvQ2(r.interview_date),
+    csvQ2(r.summary_text)
   ].join(',')).join('\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="call_records.csv"');
