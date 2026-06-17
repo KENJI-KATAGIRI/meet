@@ -1514,7 +1514,14 @@ const storage = multer.diskStorage({
     cb(null, 'rec-' + Date.now() + '-' + crypto.randomBytes(8).toString('hex') + ext);
   }
 });
-const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 * 1024 } }); // 2GB
+const upload = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['video/webm', 'video/mp4', 'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'application/octet-stream'];
+    cb(null, allowed.includes(file.mimetype));
+  }
+}); // 2GB
 
 async function transcribeAndSummarize(filepath, filename, roomId) {
   try {
@@ -1599,7 +1606,20 @@ const uploadStorage = multer.diskStorage({
     cb(null, Date.now() + '-' + require('crypto').randomBytes(8).toString('hex') + ext);
   }
 });
-const uploadFileMiddleware = multer({ storage: uploadStorage, limits: { fileSize: 50 * 1024 * 1024 } });
+const ALLOWED_CHAT_TYPES = new Set([
+  'image/jpeg','image/png','image/gif','image/webp',
+  'application/pdf',
+  'text/plain','text/csv',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+const uploadFileMiddleware = multer({
+  storage: uploadStorage,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, ALLOWED_CHAT_TYPES.has(file.mimetype))
+});
 
 app.post('/api/upload-file', uploadFileMiddleware.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
@@ -1669,11 +1689,11 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
   if (!email || !sessionId || !openai) return;
   if (!isValidEmail(email) || !/^[\w-]{5,60}$/.test(sessionId)) return;
   const fUser = db.prepare('SELECT plan, facility_id FROM users WHERE email=?').get(email);
-  const recordMode = req.body.recordMode || '';
-  const welfareSystem = req.body.welfareSystem || '';
-  const welfareRecordType = req.body.welfareRecordType || '';
-  const memberName = req.body.memberName || '';
-  const staffName = req.body.staffName || '';
+  const recordMode = safeStr(req.body.recordMode, 20);
+  const welfareSystem = safeStr(req.body.welfareSystem, 20);
+  const welfareRecordType = safeStr(req.body.welfareRecordType, 50);
+  const memberName = safeStr(req.body.memberName, 100);
+  const staffName = safeStr(req.body.staffName, 100);
   const isWelfareRecord = recordMode === 'welfare' && welfareSystem && welfareRecordType;
   const isBniRecord = recordMode === 'bni';
   const bniContactId = req.body.bniContactId ? parseInt(req.body.bniContactId) || null : null;
@@ -2236,18 +2256,25 @@ const faceRecordUpload = multer({
   storage: multer.diskStorage({
     destination: recDir,
     filename: (req, file, cb) => {
-      const uid = req.session?.userId || 'anon';
-      cb(null, `face-${uid}-${Date.now()}.webm`);
+      cb(null, `face-${Date.now()}-${crypto.randomBytes(8).toString('hex')}.webm`);
     }
   }),
-  limits: { fileSize: 30 * 1024 * 1024 } // 30MB
+  limits: { fileSize: 30 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'video/webm', 'audio/wav', 'application/octet-stream'];
+    cb(null, allowed.includes(file.mimetype));
+  }
 });
 
 app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no audio file' });
   if (!openai) return res.status(503).json({ error: 'AI unavailable' });
   const u = db.prepare('SELECT plan, facility_id FROM users WHERE id=?').get(req.session.userId);
-  const { memberName='', staffName='', welfareSystem='', welfareRecordType='', interviewDate='' } = req.body;
+  const memberName = safeStr(req.body.memberName, 100);
+  const staffName = safeStr(req.body.staffName, 100);
+  const welfareSystem = safeStr(req.body.welfareSystem, 20);
+  const welfareRecordType = safeStr(req.body.welfareRecordType, 50);
+  const interviewDate = (req.body.interviewDate && /^\d{4}-\d{2}-\d{2}$/.test(req.body.interviewDate)) ? req.body.interviewDate : '';
   if (!welfareSystem || !welfareRecordType) {
     fs.unlink(req.file.path, () => {});
     return res.status(400).json({ error: 'welfareSystem and welfareRecordType required' });
@@ -2803,8 +2830,9 @@ app.get('/bni/api/settings', bniAuth, (req, res) => {
 });
 
 app.put('/bni/api/settings', express.json(), bniAuth, (req, res) => {
+  const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
   const upsert = bniDb.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
-  const entries = Object.entries(req.body).filter(([k]) => typeof k === 'string' && k.length <= 100);
+  const entries = Object.entries(req.body).filter(([k]) => typeof k === 'string' && k.length > 0 && k.length <= 100 && !PROTO_KEYS.has(k));
   const upAll = bniDb.transaction(pairs => { pairs.forEach(([k,v]) => upsert.run(k, JSON.stringify(v))); });
   upAll(entries);
   res.json({ ok: true });
