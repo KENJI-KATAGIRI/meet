@@ -701,8 +701,10 @@ app.get('/api/my-plan', requireAuth, (req, res) => {
 app.post('/api/utage-webhook', async (req, res) => {
   const utageSecret = process.env.UTAGE_WEBHOOK_SECRET || '';
   if (utageSecret) {
-    const provided = req.headers['x-utage-secret'] || req.query.secret || '';
-    if (provided !== utageSecret) return res.status(403).json({ error: 'forbidden' });
+    const provided = req.headers['x-utage-secret'] || '';
+    const ok = provided.length === utageSecret.length &&
+      crypto.timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(utageSecret, 'utf8'));
+    if (!ok) return res.status(403).json({ error: 'forbidden' });
   }
   res.json({ ok: true });
   try {
@@ -790,7 +792,7 @@ app.post('/api/stripe/webhook', async (req, res) => {
   let event;
   try {
     event = stripe.webhooks.constructEvent(req.rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch(e) { return res.status(400).send('Webhook Error: ' + e.message); }
+  } catch(e) { console.error('stripe webhook error:', e.message); return res.status(400).send('Webhook Error'); }
   res.json({ received: true });
   try {
     const obj = event.data.object;
@@ -2462,9 +2464,20 @@ const ADMIN_SECRET = process.env.ADMIN_SECRET || (() => {
   return r;
 })();
 
+function getAdminToken(req) {
+  const auth = req.headers['authorization'];
+  if (auth && auth.startsWith('Bearer ')) return auth.slice(7);
+  return (req.body && typeof req.body.secret === 'string') ? req.body.secret : null;
+}
+
+function checkAdminSecret(provided) {
+  if (typeof provided !== 'string' || provided.length !== ADMIN_SECRET.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(ADMIN_SECRET, 'utf8'));
+}
+
 app.post('/api/admin/set-mode', (req, res) => {
-  const { secret, email, mode } = req.body;
-  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const { email, mode } = req.body;
   if (!['simple', 'welfare'].includes(mode)) return res.status(400).json({ error: 'invalid mode' });
   const u = db.prepare('SELECT id FROM users WHERE email=?').get(email);
   if (!u) return res.status(404).json({ error: 'user not found' });
@@ -2474,15 +2487,13 @@ app.post('/api/admin/set-mode', (req, res) => {
 });
 
 app.get('/api/admin/users', (req, res) => {
-  const { secret } = req.query;
-  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
   const rows = db.prepare('SELECT id, name, email, ui_mode, facility_id FROM users ORDER BY id DESC').all();
   res.json({ records: rows });
 });
 
 app.get('/api/admin/users.csv', (req, res) => {
-  const { secret } = req.query;
-  if (secret !== ADMIN_SECRET) return res.status(403).send('forbidden');
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).send('forbidden');
   const rows = db.prepare('SELECT id, name, email, plan, plan_expires, stripe_customer_id FROM users ORDER BY id DESC').all();
   const header = 'ID,名前,メール,プラン,プラン期限,Stripe顧客ID';
   const csv = [header, ...rows.map(r =>
@@ -2495,15 +2506,13 @@ app.get('/api/admin/users.csv', (req, res) => {
 });
 
 app.get('/api/admin/drafts', (req, res) => {
-  const { secret } = req.query;
-  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
   const rows = db.prepare("SELECT * FROM nm_call_records WHERE status='draft' ORDER BY created_at DESC").all();
   res.json({ records: rows });
 });
 
 app.patch('/api/admin/confirm-draft/:id', express.json(), (req, res) => {
-  const { secret } = req.body;
-  if (secret !== ADMIN_SECRET) return res.status(403).json({ error: 'forbidden' });
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
   const id = parseInt(req.params.id);
   const rec = db.prepare("SELECT * FROM nm_call_records WHERE id=? AND status='draft'").get(id);
   if (!rec) return res.status(404).json({ error: 'draft not found' });
