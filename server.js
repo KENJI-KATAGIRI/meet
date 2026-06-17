@@ -519,6 +519,7 @@ app.get('/', (req, res, next) => {
   next();
 });
 app.use(express.static(path.join(__dirname, 'public')));
+if (!process.env.SESSION_SECRET) { console.error('[FATAL] SESSION_SECRET is not set in .env — exiting'); process.exit(1); }
 const sessionMiddleware = session({
   name: 'sid',
   store: new BetterSqliteStore(),
@@ -702,12 +703,11 @@ app.get('/api/my-plan', requireAuth, (req, res) => {
 // ---- UTAGE/UnivaPay Webhook ----
 app.post('/api/utage-webhook', async (req, res) => {
   const utageSecret = process.env.UTAGE_WEBHOOK_SECRET || '';
-  if (utageSecret) {
-    const provided = req.headers['x-utage-secret'] || '';
-    const ok = provided.length === utageSecret.length &&
-      crypto.timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(utageSecret, 'utf8'));
-    if (!ok) return res.status(403).json({ error: 'forbidden' });
-  }
+  if (!utageSecret) return res.status(503).json({ error: 'webhook not configured' });
+  const provided = req.headers['x-utage-secret'] || '';
+  const ok = provided.length === utageSecret.length &&
+    crypto.timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(utageSecret, 'utf8'));
+  if (!ok) return res.status(403).json({ error: 'forbidden' });
   res.json({ ok: true });
   try {
     const data = req.body;
@@ -1710,7 +1710,8 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
   const staffName = safeStr(req.body.staffName, 100);
   const isWelfareRecord = recordMode === 'welfare' && welfareSystem && welfareRecordType;
   const isBniRecord = recordMode === 'bni';
-  const bniContactId = req.body.bniContactId ? parseInt(req.body.bniContactId, 10) || null : null;
+  const _cid = parseInt(req.body.bniContactId, 10);
+  const bniContactId = (!isNaN(_cid) && _cid > 0) ? _cid : null;
   if (recordMode === 'none') { console.log('[audio-finalize] mode=none, skip'); return; }
   let canUseAI = false;
   if (isBniRecord) {
@@ -2065,7 +2066,7 @@ app.get('/b/:slug', (req, res) => res.sendFile(path.join(__dirname, 'public', 'b
 app.post('/api/bni/contact-capture', async (req, res) => {
   res.json({ ok: true });
   const { bni_user, name, email, is_bni_member, category, chapter } = req.body;
-  if (!bni_user || !name || !email) return;
+  if (!bni_user || !name || !email || !isValidEmail(email)) return;
   const bniWebhookUrl = process.env.BNI_WEBHOOK_URL?.replace('/api/nicemeet-webhook', '/api/nicemeet-contact')
     || 'http://localhost:8300/api/nicemeet-contact';
   const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
