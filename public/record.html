@@ -129,6 +129,8 @@
         <option value="houmon">訪問介護</option>
         <option value="shuro">就労継続支援（A型・B型）</option>
         <option value="kaigo">介護グループホーム</option>
+        <option value="seikatsu">生活訓練</option>
+        <option value="keikaku">計画相談支援</option>
       </select>
     </div>
     <div class="fld">
@@ -137,6 +139,10 @@
         <option value="">業態を先に選択</option>
       </select>
     </div>
+  </div>
+  <div style="font-size:12px;color:#9ca3af;line-height:1.6;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+    💡 <strong>話者精度を上げるコツ</strong><br>
+    話者が変わるとき、1〜2秒ほど間を置くとAIが話者の切り替わりを正確に認識できます。
   </div>
   <button class="btn-start" id="btn-start" onclick="startRecording()" disabled>&#x1F3A4;&nbsp; 録音を開始する</button>
 </div>
@@ -154,6 +160,7 @@
       <span id="rec-detail">—</span>
     </div>
     <div class="rec-warn" id="rec-warn" style="display:none">&#x26A0;&#xFE0F; 15分を超えました。長時間録音はファイルが大きくなります。</div>
+
   </div>
   <button class="btn-stop" onclick="stopRecording()">&#x25A0;&nbsp;&nbsp;停&nbsp;止</button>
 </div>
@@ -173,9 +180,13 @@
   <div class="draft-meta" id="draft-meta"></div>
   <div class="draft-lbl">AI生成サマリー（修正可）</div>
   <textarea class="draft-ta" id="draft-ta"></textarea>
+  <details style="margin-bottom:12px">
+    <summary style="cursor:pointer;font-size:12px;color:#9ca3af;padding:6px 0">📄 文字起こし原文を確認する</summary>
+    <pre id="draft-transcript" style="margin-top:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;font-size:12px;color:#d1d5db;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto"></pre>
+  </details>
   <div class="draft-actions">
     <button class="btn-confirm" onclick="confirmRecord()">&#x2713;&nbsp;確定する</button>
-    <button class="btn-discard" onclick="discardRecord()">破棄</button>
+    <button class="btn-discard" onclick="discardRecord()">破棄して戻る</button>
   </div>
 </div>
 
@@ -193,12 +204,15 @@
 const WR_TYPES = {
   houdei: ['保護者面談記録','個別支援計画モニタリング記録','サービス担当者会議記録'],
   houmon: ['訪問記録（サービス提供記録）','モニタリング面談記録','サービス担当者会議記録'],
-  shuro:  ['個別面談記録','個別支援計画モニタリング記録','就労移行支援面談記録','サービス担当者会議記録'],
-  kaigo:  ['日常生活支援記録','家族・入居者面談記録','月次モニタリング記録','サービス担当者会議記録']
+  shuro:  ['個別面談記録','個別支援計画モニタリング記録','就労移行支援面談記録','個別支援会議記録','見学・視察メモ','スタッフ情報共有'],
+  kaigo:  ['日常生活支援記録','家族・入居者面談記録','月次モニタリング記録','サービス担当者会議記録'],
+  seikatsu: ['モニタリング記録','個別支援計画会議記録','サービス担当者会議記録','家族面談記録','スタッフ間ミーティング','利用者本人との面談'],
+  keikaku:  ['サービス担当者会議記録','モニタリング記録','個別支援計画作成会議記録','家族面談記録','関係機関連絡調整','スタッフ間ミーティング']
 };
 const SYS_LABELS = {
   houdei:'放課後等デイサービス', houmon:'訪問介護',
-  shuro:'就労継続支援', kaigo:'介護グループホーム'
+  shuro:'就労継続支援', kaigo:'介護グループホーム',
+  seikatsu:'生活訓練', keikaku:'計画相談支援'
 };
 
 let mediaRecorder = null, audioChunks = [], timerInterval = null;
@@ -273,6 +287,15 @@ async function init() {
       if (navigator.onLine) { handleOnline(); }
       else { window.addEventListener('online', handleOnline, { once: true }); }
       return;
+    }
+    // URLの?system=からサービス種別を自動セット・非表示
+    const urlSys = new URLSearchParams(location.search).get('system') || '';
+    const sysEl = document.getElementById('welfare-system');
+    if (urlSys && sysEl.querySelector('option[value="' + urlSys + '"]')) {
+      sysEl.value = urlSys;
+      onSysChange();
+      // 業態選択欄を非表示（1種類に固定）
+      sysEl.closest('.fld').style.display = 'none';
     }
     showScreen('setup');
   } catch(e) {
@@ -394,6 +417,7 @@ async function upload({ blob, memberName, staffName, welfareSystem, welfareRecor
     if (r.ok && r.id) {
       currentDraftId = r.id;
       document.getElementById('draft-ta').value = r.summary || '';
+      document.getElementById('draft-transcript').textContent = r.transcript || '（文字起こしデータなし）';
       const sysLabel = SYS_LABELS[welfareSystem] || welfareSystem;
       document.getElementById('draft-meta').innerHTML =
         `<strong>${memberName || '（氏名未記入）'}</strong>${sysLabel} / ${welfareRecordType}<br>
@@ -421,19 +445,23 @@ async function confirmRecord() {
     }).then(r => r.json());
     if (r.ok) {
       currentDraftId = null; audioChunks = []; currentPayload = null;
-      toast('✓ 記録を確定しました');
-      setTimeout(() => showScreen('setup'), 700);
+      toast('✓ 記録を確定しました。面談記録ページに戻ります...');
+      const sysR = { shuro: 'https://gaiaarts.org/shuro/', kaigo: 'https://gaiaarts.org/kaigo/', houmon: 'https://gaiaarts.org/houmon/', houdei: 'https://gaiaarts.org/houdei/', roukin: 'https://gaiaarts.org/roukin/', beauty: 'https://gaiaarts.org/beauty/', seikatsu: 'https://gaiaarts.org/seikatsu/', keikaku: 'https://gaiaarts.org/keikaku/' };
+      const sysKey = new URLSearchParams(location.search).get('system') || '';
+      setTimeout(() => { window.location.href = sysR[sysKey] || '/booking/dashboard'; }, 1500);
     } else { toast('エラー: ' + (r.error || '')); }
   } catch(e) { toast('通信エラー'); }
 }
 
 async function discardRecord() {
-  if (!confirm('この記録を破棄しますか？')) return;
+  if (!confirm('この記録を破棄してよろしいですか？\n録音データは削除されます。')) return;
   if (currentDraftId) {
     try { await fetch('/api/face-record/draft/' + currentDraftId, { method: 'DELETE' }); } catch(e) {}
   }
   currentDraftId = null; audioChunks = []; currentPayload = null;
-  showScreen('setup');
+  var sysR = { shuro: 'https://gaiaarts.org/shuro/', kaigo: 'https://gaiaarts.org/kaigo/', houmon: 'https://gaiaarts.org/houmon/', houdei: 'https://gaiaarts.org/houdei/', roukin: 'https://gaiaarts.org/roukin/', beauty: 'https://gaiaarts.org/beauty/', seikatsu: 'https://gaiaarts.org/seikatsu/', keikaku: 'https://gaiaarts.org/keikaku/' };
+  var sysKey = new URLSearchParams(location.search).get('system') || '';
+  window.location.href = sysR[sysKey] || '/booking/dashboard';
 }
 
 function goBack() {
@@ -443,7 +471,13 @@ function goBack() {
     mediaRecorder.stop();
     mediaRecorder.stream.getTracks().forEach(t => t.stop());
   }
-  window.location.href = '/booking/dashboard';
+  const sysRedirects = {
+    shuro: 'https://gaiaarts.org/shuro/', kaigo: 'https://gaiaarts.org/kaigo/',
+    houmon: 'https://gaiaarts.org/houmon/', houdei: 'https://gaiaarts.org/houdei/',
+    roukin: 'https://gaiaarts.org/roukin/', beauty: 'https://gaiaarts.org/beauty/', seikatsu: 'https://gaiaarts.org/seikatsu/', keikaku: 'https://gaiaarts.org/keikaku/'
+  };
+  const sys = new URLSearchParams(location.search).get('system') || '';
+  window.location.href = sysRedirects[sys] || '/booking/dashboard';
 }
 
 function toast(msg) {
