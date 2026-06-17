@@ -1593,7 +1593,7 @@ async function transcribeAndSummarize(filepath, filename, roomId) {
   }
 }
 
-app.post('/api/upload-recording', uploadLimiter, upload.single('file'), (req, res) => {
+app.post('/api/upload-recording', uploadLimiter, requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const url = createRecordingToken(req.file.filename);
   const roomId = typeof req.body.roomId === 'string' ? req.body.roomId.slice(0, 128) : '';
@@ -1659,7 +1659,7 @@ const uploadFileMiddleware = multer({
   fileFilter: (req, file, cb) => cb(null, ALLOWED_CHAT_TYPES.has(file.mimetype))
 });
 
-app.post('/api/upload-file', uploadLimiter, uploadFileMiddleware.single('file'), (req, res) => {
+app.post('/api/upload-file', uploadLimiter, requireAuth, uploadFileMiddleware.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const url = '/uploads/' + req.file.filename;
   const origName = req.file.originalname;
@@ -1701,6 +1701,10 @@ app.post('/api/audio-chunk', uploadLimiter, audioChunkUpload.single('chunk'), (r
   const { sessionId, chunkIndex } = req.body;
   if (!sessionId || !/^[\w-]{5,60}$/.test(sessionId)) {
     fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'invalid sessionId' });
+  }
+  const chunkRoomId = typeof req.body.roomId === 'string' ? req.body.roomId : '';
+  if (!chunkRoomId || !rooms.has(chunkRoomId)) {
+    fs.unlink(req.file.path, () => {}); return res.status(403).json({ error: 'invalid room' });
   }
   const chunkIdx = parseInt(chunkIndex, 10);
   if (isNaN(chunkIdx) || chunkIdx < 0 || chunkIdx > 9999) {
