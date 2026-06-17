@@ -585,6 +585,9 @@ function isWhisperHallucination(text) {
 }
 
 app.get('/auth/google', (req, res) => {
+  const state = crypto.randomBytes(16).toString('hex');
+  req.session.oauthState = state;
+  req.session.save(() => {});
   const url = getOAuthClient().generateAuthUrl({
     access_type: 'offline',
     scope: [
@@ -592,15 +595,19 @@ app.get('/auth/google', (req, res) => {
       'https://www.googleapis.com/auth/userinfo.email',
       'https://www.googleapis.com/auth/calendar'
     ],
-    prompt: 'consent'
+    prompt: 'consent',
+    state
   });
   res.redirect(url);
 });
 
 app.get('/auth/google/callback', async (req, res) => {
   try {
+    const { code, state } = req.query;
+    if (!state || !req.session.oauthState || state !== req.session.oauthState) return res.redirect('/booking?error=1');
+    delete req.session.oauthState;
     const client = getOAuthClient();
-    const { tokens } = await client.getToken(req.query.code);
+    const { tokens } = await client.getToken(code);
     client.setCredentials(tokens);
     const { data } = await google.oauth2({ version: 'v2', auth: client }).userinfo.get();
 
@@ -629,7 +636,7 @@ app.get('/auth/google/callback', async (req, res) => {
   }
 });
 
-app.get('/auth/logout', (req, res) => { req.session.destroy(); res.redirect('/booking'); });
+app.get('/auth/logout', (req, res) => { req.session.destroy(() => res.redirect('/booking')); });
 
 // ---- メール＋パスワード登録 ----
 app.post('/auth/register', async (req, res) => {
@@ -1808,7 +1815,7 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
       let bniData = { summary, gains: {}, referral_hints: '', follow_up: '' };
       try { bniData = Object.assign(bniData, JSON.parse(summary)); } catch(e) {}
       const bniWebhookUrl = process.env.BNI_WEBHOOK_URL || 'http://localhost:8300/api/nicemeet-webhook';
-      const bniSecret = process.env.BNI_WEBHOOK_SECRET || 'nicemeet-bni-2026';
+      const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
       try {
         await fetch(bniWebhookUrl, {
           method: 'POST',
@@ -1828,7 +1835,7 @@ app.post('/api/audio-finalize', formParser, async (req, res) => {
         console.log(`[audio-finalize] BNI 1-2-1 sent to BNI app user=${staffName} contact=${memberName}`);
         // R2にも保存
         const driveUrl = process.env.DRIVE_INTERNAL_URL || 'http://localhost:8309/api/internal/upload-json';
-        const driveSecret = process.env.DRIVE_INTERNAL_SECRET || 'gaia-internal-2026';
+        const driveSecret = process.env.DRIVE_INTERNAL_SECRET || (console.warn('[SECURITY] DRIVE_INTERNAL_SECRET not set, using default'), 'gaia-internal-2026');
         const r2Date = new Date().toISOString().slice(0, 10);
         const r2Name = (memberName || 'unknown').replace(/[^\w぀-鿿]/g, '_');
         const r2Key = `nicemeet/bni/${r2Date}/${sessionId}-${r2Name}.json`;
@@ -1986,7 +1993,7 @@ app.post('/api/bni/contact-capture', async (req, res) => {
   if (!bni_user || !name || !email) return;
   const bniWebhookUrl = process.env.BNI_WEBHOOK_URL?.replace('/api/nicemeet-webhook', '/api/nicemeet-contact')
     || 'http://localhost:8300/api/nicemeet-contact';
-  const bniSecret = process.env.BNI_WEBHOOK_SECRET || 'nicemeet-bni-2026';
+  const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
   try {
     await fetch(bniWebhookUrl, {
       method: 'POST',
@@ -2716,11 +2723,12 @@ app.post('/bni/api/auth/login', authLimiter, express.json(), (req, res) => {
   if (!bcryptCompat.verify(password, user.pw_hash, user.pw_salt)) {
     return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
   }
+  await regenerateSession(req);
   req.session.bniUserId = user.id;
   res.json({ ok: true, user: { id: user.id, name: user.display_name || user.username, email: user.email, plan: user.plan } });
 });
 
-app.post('/bni/api/auth/register', authLimiter, express.json(), (req, res) => {
+app.post('/bni/api/auth/register', authLimiter, express.json(), async (req, res) => {
   const { email, password, name } = req.body;
   if (!isValidEmail(email)) return res.status(400).json({ error: '有効なメールアドレスを入力してください' });
   if (typeof password !== 'string' || password.length < 8 || password.length > 128) return res.status(400).json({ error: 'パスワードは8〜128文字で入力してください' });
@@ -2728,8 +2736,9 @@ app.post('/bni/api/auth/register', authLimiter, express.json(), (req, res) => {
   if (exists) return res.status(400).json({ error: 'そのメールアドレスは既に登録されています' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.createHash('sha256').update(password + salt).digest('hex');
-  const displayName = name || email.split('@')[0];
+  const displayName = safeStr(name || email.split('@')[0], 100);
   const r = bniDb.prepare('INSERT INTO users (username, display_name, email, pw_hash, pw_salt, auth_type) VALUES (?,?,?,?,?,?)').run(email, displayName, email, hash, salt, 'password');
+  await regenerateSession(req);
   req.session.bniUserId = r.lastInsertRowid;
   res.json({ ok: true, user: { id: r.lastInsertRowid, name: displayName, email, plan: 'free' } });
 });
@@ -2742,7 +2751,7 @@ app.get('/bni/api/auth/me', bniAuth, (req, res) => {
 
 app.post('/bni/api/auth/logout', (req, res) => {
   req.session.bniUserId = null;
-  res.json({ ok: true });
+  req.session.save(() => res.json({ ok: true }));
 });
 
 app.put('/bni/api/auth/password', express.json(), bniAuth, (req, res) => {
@@ -2769,7 +2778,7 @@ app.put('/bni/api/auth/email', express.json(), bniAuth, (req, res) => {
 });
 
 // NiceMeetログイン済みユーザーをBNIに自動ログイン（SSO簡略版）
-app.get('/bni/api/sso', (req, res) => {
+app.get('/bni/api/sso', async (req, res) => {
   if (!req.session.userId) return res.redirect('/bni/?login=1');
   const nmUser = db.prepare('SELECT email, name FROM users WHERE id=?').get(req.session.userId);
   if (!nmUser?.email) return res.redirect('/bni/?login=1');
@@ -2780,6 +2789,7 @@ app.get('/bni/api/sso', (req, res) => {
     const r = bniDb.prepare('INSERT INTO users (username,display_name,email,pw_hash,pw_salt,auth_type) VALUES (?,?,?,?,?,?)').run(nmUser.email, nmUser.name || nmUser.email.split('@')[0], nmUser.email, hash, salt, 'sso');
     bniUser = { id: r.lastInsertRowid };
   }
+  await regenerateSession(req);
   req.session.bniUserId = bniUser.id;
   res.redirect('/bni/');
 });
