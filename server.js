@@ -2446,7 +2446,7 @@ app.patch('/api/face-record/confirm/:id', requireAuth, express.json(), (req, res
   const id = parseInt(req.params.id, 10);
   const rec = db.prepare('SELECT * FROM nm_call_records WHERE id=? AND facility_id=? AND status=?').get(id, u.facility_id, 'draft');
   if (!rec) return res.status(404).json({ error: 'draft not found' });
-  const summary = req.body.summary || rec.summary_text;
+  const summary = safeStr(req.body.summary !== undefined ? req.body.summary : (rec.summary_text || ''), 50000);
   db.prepare("UPDATE nm_call_records SET summary_text=?, status='confirmed' WHERE id=?").run(summary, id);
   res.json({ ok: true });
 });
@@ -2577,9 +2577,14 @@ io.on('connection', (socket) => {
     socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main', isFreeRoom: cur.hostPlan === 'free', roomStartedAt: cur.startedAt || Date.now(), hostUiMode: cur.hostUiMode || 'simple' });
     socket.to(safeRoomId).emit('user-joined', { id: socket.id, name: safeUserName });
   });
-  socket.on('offer', ({ to, offer }) => io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }));
-  socket.on('answer', ({ to, answer }) => io.to(to).emit('answer', { from: socket.id, answer }));
-  socket.on('ice-candidate', ({ to, candidate }) => io.to(to).emit('ice-candidate', { from: socket.id, candidate }));
+  function isPeerInRoom(to) {
+    if (typeof to !== 'string' || to.length === 0 || to.length > 64) return false;
+    const room = rooms.get(socket.roomId);
+    return room ? room.users.has(to) : false;
+  }
+  socket.on('offer', ({ to, offer }) => { if (isPeerInRoom(to)) io.to(to).emit('offer', { from: socket.id, fromName: socket.userName, offer }); });
+  socket.on('answer', ({ to, answer }) => { if (isPeerInRoom(to)) io.to(to).emit('answer', { from: socket.id, answer }); });
+  socket.on('ice-candidate', ({ to, candidate }) => { if (isPeerInRoom(to)) io.to(to).emit('ice-candidate', { from: socket.id, candidate }); });
   socket.on('screen-share-start', () => { socket.to(socket.roomId).emit('screen-share-start', { id: socket.id, name: socket.userName }); });
   socket.on('screen-share-stop', () => { socket.to(socket.roomId).emit('screen-share-stop', { id: socket.id }); });
   socket.on('chat-message', ({ message }) => {
@@ -2917,9 +2922,16 @@ app.get('/bni/api/settings', bniAuth, (req, res) => {
 
 app.put('/bni/api/settings', express.json(), bniAuth, (req, res) => {
   const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+  const entries = Object.entries(req.body)
+    .filter(([k]) => typeof k === 'string' && k.length > 0 && k.length <= 100 && !PROTO_KEYS.has(k))
+    .slice(0, 200);
   const upsert = bniDb.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
-  const entries = Object.entries(req.body).filter(([k]) => typeof k === 'string' && k.length > 0 && k.length <= 100 && !PROTO_KEYS.has(k));
-  const upAll = bniDb.transaction(pairs => { pairs.forEach(([k,v]) => upsert.run(k, JSON.stringify(v))); });
+  const upAll = bniDb.transaction(pairs => {
+    pairs.forEach(([k,v]) => {
+      const serialized = JSON.stringify(v);
+      if (serialized && serialized.length <= 10000) upsert.run(k, serialized);
+    });
+  });
   upAll(entries);
   res.json({ ok: true });
 });
