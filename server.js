@@ -58,8 +58,10 @@ const authLimiter = rateLimit({
   message: { error: 'リクエストが多すぎます。15分後に再度お試しください。' }
 });
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
+const bniApiLimiter = rateLimit({ windowMs: 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
 app.use('/auth/', authLimiter);
 app.use('/api/', apiLimiter);
+app.use('/bni/api/', bniApiLimiter);
 
 // SQLite永続セッションストア（再起動してもセッションが切れない）
 const sessionDb = new Database(path.join(__dirname, 'data', 'sessions.db'));
@@ -766,7 +768,7 @@ app.post('/api/stripe/checkout', requireAuth, async (req, res) => {
       locale: 'ja'
     });
     res.json({ url: session.url });
-  } catch(e) { console.error('stripe checkout error:', e.message); res.status(500).json({ error: e.message }); }
+  } catch(e) { console.error('stripe checkout error:', e.message); res.status(500).json({ error: '決済処理に失敗しました' }); }
 });
 
 app.get('/api/stripe/portal', requireAuth, async (req, res) => {
@@ -779,7 +781,7 @@ app.get('/api/stripe/portal', requireAuth, async (req, res) => {
       return_url: 'https://meet.gaiaarts.org/booking/dashboard'
     });
     res.redirect(session.url);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.error('stripe portal error:', e.message); res.status(500).json({ error: 'ポータルの取得に失敗しました' }); }
 });
 
 app.post('/api/stripe/webhook', async (req, res) => {
@@ -2380,7 +2382,7 @@ app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'
   } catch(e) {
     fs.unlink(req.file.path, () => {});
     console.error('[face-record] error:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: '処理中にエラーが発生しました' });
   }
 });
 
@@ -2972,7 +2974,7 @@ app.post('/bni/api/stripe/checkout', bniAuth, async (req, res) => {
     res.json({ url: checkoutSession.url });
   } catch(e) {
     console.error('[bni stripe checkout]', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: '決済処理に失敗しました' });
   }
 });
 
@@ -2984,7 +2986,8 @@ app.post('/bni/api/stripe/portal', bniAuth, async (req, res) => {
     const portal = await stripe.billingPortal.sessions.create({ customer: user.stripe_customer_id, return_url: 'https://gaiaarts.org/bni/' });
     res.json({ url: portal.url });
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    console.error('[bni stripe portal]', e.message);
+    res.status(500).json({ error: 'ポータルの取得に失敗しました' });
   }
 });
 
