@@ -1055,7 +1055,24 @@ https://meet.gaiaarts.org/booking/dashboard
 // ---- 録画アップロード ----
 const recDir = path.join(__dirname, 'recordings');
 if (!fs.existsSync(recDir)) fs.mkdirSync(recDir);
-app.use('/recordings', express.static(recDir));
+
+// 録画ファイルはトークン認証でのみ配信（公開URL廃止）
+const REC_TTL = 24 * 60 * 60 * 1000;
+const recordingTokens = new Map(); // token -> { filename, expires }
+function createRecordingToken(filename) {
+  const token = crypto.randomBytes(32).toString('hex');
+  recordingTokens.set(token, { filename, expires: Date.now() + REC_TTL });
+  return `https://meet.gaiaarts.org/api/recording/${token}`;
+}
+app.get('/api/recording/:token', (req, res) => {
+  const { token } = req.params;
+  if (!/^[a-f0-9]{64}$/.test(token)) return res.status(404).send('not found');
+  const entry = recordingTokens.get(token);
+  if (!entry || Date.now() > entry.expires) return res.status(404).send('not found');
+  const filepath = path.join(recDir, entry.filename);
+  if (!fs.existsSync(filepath)) return res.status(404).send('not found');
+  res.sendFile(filepath);
+});
 
 
 // ---- 対面録音モード専用：記録種別 ----
@@ -1561,8 +1578,8 @@ async function transcribeAndSummarize(filepath, filename, roomId) {
 
     if (roomId) {
       io.to(roomId).emit('transcription-ready', {
-        transcriptUrl: `https://meet.gaiaarts.org/recordings/${transcriptFilename}`,
-        summaryUrl: `https://meet.gaiaarts.org/recordings/${summaryFilename}`,
+        transcriptUrl: createRecordingToken(transcriptFilename),
+        summaryUrl: createRecordingToken(summaryFilename),
         transcriptFilename,
         summaryFilename,
       });
@@ -1575,7 +1592,7 @@ async function transcribeAndSummarize(filepath, filename, roomId) {
 
 app.post('/api/upload-recording', uploadLimiter, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
-  const url = `https://meet.gaiaarts.org/recordings/${req.file.filename}`;
+  const url = createRecordingToken(req.file.filename);
   const roomId = typeof req.body.roomId === 'string' ? req.body.roomId.slice(0, 128) : '';
   const isActiveRoom = roomId && rooms && rooms.has(roomId);
   if (isActiveRoom) {
@@ -1590,12 +1607,16 @@ app.post('/api/upload-recording', uploadLimiter, upload.single('file'), (req, re
   if (openai && isActiveRoom) transcribeAndSummarize(req.file.path, req.file.filename, roomId);
 });
 
-// 録画ファイルを24時間後に自動削除（1時間ごとにチェック）
-const REC_TTL = 24 * 60 * 60 * 1000;
+// 録画ファイルとトークンを24時間後に自動削除（1時間ごとにチェック）
 setInterval(() => {
+  const now = Date.now();
+  // 期限切れトークンを削除
+  for (const [tok, entry] of recordingTokens) {
+    if (now > entry.expires) recordingTokens.delete(tok);
+  }
+  // 期限切れファイルを削除
   fs.readdir(recDir, (err, files) => {
     if (err) return;
-    const now = Date.now();
     files.forEach(file => {
       const fp = path.join(recDir, file);
       fs.stat(fp, (err, stat) => {
