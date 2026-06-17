@@ -2672,6 +2672,7 @@ io.on('connection', (socket) => {
     const mainId = socket.mainRoomId || socket.roomId;
     const room = rooms.get(mainId);
     if (!room || room.hostId !== socket.id) return;
+    if (!room.users.has(targetId)) return;
     room.coHosts.add(targetId);
     io.to(targetId).emit('cohost-granted', { by: socket.userName });
     io.to(mainId).emit('cohost-list', { coHosts: [...room.coHosts], hostId: room.hostId });
