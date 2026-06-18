@@ -47,6 +47,7 @@ app.use(helmet({
       workerSrc: ["'self'", "blob:"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
+      scriptSrcAttr: ["'unsafe-inline'"],
     }
   },
   crossOriginEmbedderPolicy: false, // WebRTC/MediaPipeに必要
