@@ -1034,8 +1034,23 @@ async function doJoin() {
   } catch(e) {
     console.warn('[noise-gate] AudioWorklet unavailable, using raw stream:', e);
   }
-  loadBgSettings();
-  // プレビューで選択した背景を直接引き継ぐ（localStorage経由より確実）
+  // 色・履歴だけ復元（setBgは呼ばない）
+  renderBgHistory();
+  const _bgKey = myEmail || myName;
+  if (_bgKey) {
+    try {
+      const _bgRaw = localStorage.getItem('meet_bg_' + _bgKey);
+      if (_bgRaw) {
+        const _bgS = JSON.parse(_bgRaw);
+        if (_bgS.color) {
+          bgColorVal = _bgS.color;
+          const _picker = document.getElementById('bg-color-input');
+          if (_picker) _picker.value = _bgS.color;
+        }
+      }
+    } catch(e) {}
+  }
+  // プレビューの選択を直接引き継ぐ（1回だけ）
   if (previewBgMode !== 'none') {
     if (previewBgMode === 'image' && previewBgImg) { bgImg = previewBgImg; bgImgDataUrl = previewBgImgDataUrl; }
     setBg(previewBgMode);
@@ -1346,7 +1361,8 @@ function stopPreviewEffects() {
   previewFxVideo = null; previewFxCanvas = null; previewFxCtx = null;
   previewFxMaskCanvas = null; previewFxMaskCtx = null; previewFxMaskBuf = null; previewFxPrevMask = null;
   previewFxSending = false;
-  document.getElementById('preview-video')?.classList.remove('preview-bg-active');
+  const _pv = document.getElementById('preview-video');
+  if (_pv) { _pv.srcObject = null; _pv.classList.remove('preview-bg-active'); }
 }
 async function setPreviewBg(mode) {
   previewBgMode = mode;
