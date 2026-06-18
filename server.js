@@ -59,7 +59,6 @@ const authLimiter = rateLimit({
   message: { error: 'リクエストが多すぎます。15分後に再度お試しください。' }
 });
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
-const bniApiLimiter = rateLimit({ windowMs: 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
 // アップロード系は厳しく制限（ディスク枯渇・AI費用乱用防止）
 const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'アップロード回数が多すぎます' } });
 app.use('/auth/', authLimiter);
