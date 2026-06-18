@@ -1,0 +1,1976 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1to1 Manager</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* ─── 1to1 Manager Design System ─── */
+  :root {
+    --p: #6366f1;
+    --p-dark: #4f46e5;
+    --p-light: #a5b4fc;
+    --dark: #0f172a;
+    --dark2: #1e293b;
+    --dark3: #334155;
+    --accent: #8b5cf6;
+  }
+
+  /* ─── Login ─── */
+  #loginScreen {
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%) !important;
+  }
+  #loginScreen > div {
+    background: rgba(255,255,255,0.04) !important;
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    box-shadow: 0 32px 64px rgba(0,0,0,0.6) !important;
+  }
+  #loginScreen h1 {
+    background: linear-gradient(135deg, #a5b4fc, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 1.75rem !important;
+    letter-spacing: -0.02em;
+  }
+  #loginScreen p { color: rgba(255,255,255,0.4) !important; }
+  #loginScreen input {
+    background: rgba(255,255,255,0.06) !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    color: #fff !important;
+    border-radius: 10px !important;
+  }
+  #loginScreen input::placeholder { color: rgba(255,255,255,0.3) !important; }
+  #loginScreen input:focus { border-color: var(--p) !important; box-shadow: 0 0 0 3px rgba(99,102,241,0.2) !important; outline: none; }
+  #loginScreen .bg-indigo-600 { background: linear-gradient(135deg, var(--p), var(--accent)) !important; border: none; border-radius: 10px !important; font-size: 15px !important; letter-spacing: 0.02em; }
+  #loginScreen .bg-indigo-600:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(99,102,241,0.4); }
+  #loginScreen .bg-green-600 { background: linear-gradient(135deg, #10b981, #059669) !important; border-radius: 10px !important; }
+  #loginScreen .text-indigo-600 { color: var(--p-light) !important; }
+  #loginScreen .text-gray-500 { color: rgba(255,255,255,0.4) !important; }
+  #loginScreen .text-red-500 { color: #f87171 !important; }
+
+  /* ─── Header ─── */
+  header {
+    background: var(--dark) !important;
+    border-bottom: 1px solid rgba(255,255,255,0.07) !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+  }
+  header h1 {
+    background: linear-gradient(135deg, #a5b4fc, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 1.1rem !important;
+    letter-spacing: -0.01em;
+  }
+  header .bg-indigo-500 { background: rgba(99,102,241,0.2) !important; color: #a5b4fc !important; border: 1px solid rgba(99,102,241,0.3) !important; }
+  header .bg-indigo-500:hover { background: rgba(99,102,241,0.35) !important; }
+  header .bg-white { background: linear-gradient(135deg, var(--p), var(--accent)) !important; color: #fff !important; border: none !important; }
+  header .bg-white:hover { opacity: 0.9; }
+  header .text-indigo-200 { color: rgba(255,255,255,0.4) !important; }
+  header .text-indigo-200:hover { color: rgba(255,255,255,0.8) !important; }
+
+  /* ─── Nav ─── */
+  .nav-btn { color: rgba(255,255,255,0.5); transition: all .15s; border-radius: 8px; font-size: 13px; }
+  .nav-btn:hover { background: rgba(255,255,255,0.08) !important; color: rgba(255,255,255,0.9) !important; }
+  .nav-active { background: rgba(99,102,241,0.25) !important; color: #a5b4fc !important; font-weight: 600; }
+
+  /* ─── Tabs ─── */
+  .tab-active { border-bottom: 2px solid var(--p); color: var(--p); font-weight: 600; }
+  .tab-btn { padding: 10px 14px; font-size: 13px; cursor: pointer; color: #94a3b8; white-space: nowrap; transition: color .15s; }
+  .tab-btn:hover { color: var(--p); }
+  #contactDetail .border-b.overflow-x-auto { background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+
+  /* ─── Sidebar ─── */
+  #sidebar { min-width: 280px; max-width: 280px; background: #f8fafc !important; border-right: 1px solid #e2e8f0 !important; }
+  #sidebar .border-b { border-color: #e2e8f0 !important; background: #fff; }
+  #sidebar input { border-color: #e2e8f0 !important; background: #f1f5f9 !important; border-radius: 10px !important; font-size: 13px !important; }
+  #sidebar input:focus { border-color: var(--p) !important; background: #fff !important; box-shadow: 0 0 0 3px rgba(99,102,241,0.12) !important; outline: none; }
+  .contact-item { border-bottom: 1px solid #f1f5f9; transition: background .12s; }
+  .contact-item:hover { background: #ede9fe !important; }
+  .contact-item.active { background: #e0e7ff !important; border-left: 3px solid var(--p); }
+
+  /* ─── Cards ─── */
+  .bg-white.rounded-xl.shadow,
+  .bg-white.rounded-xl.shadow-xl {
+    border: 1px solid #f1f5f9 !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04), 0 6px 20px rgba(0,0,0,0.05) !important;
+    border-radius: 14px !important;
+  }
+
+  /* ─── Dashboard stat cards ─── */
+  #view-dashboard .bg-white.rounded-xl {
+    background: linear-gradient(135deg, #fff 0%, #fafaff 100%) !important;
+  }
+
+  /* ─── Buttons (global) ─── */
+  .bg-indigo-600 { background: var(--p) !important; }
+  .bg-indigo-600:hover, .hover\:bg-indigo-700:hover { background: var(--p-dark) !important; }
+  .bg-green-600 { background: #059669 !important; }
+  .bg-green-600:hover, .hover\:bg-green-700:hover { background: #047857 !important; }
+  .bg-purple-600 { background: var(--accent) !important; }
+  .bg-purple-600:hover, .hover\:bg-purple-700:hover { background: #7c3aed !important; }
+  .text-indigo-600 { color: var(--p) !important; }
+  .text-indigo-700 { color: var(--p-dark) !important; }
+  .focus\:ring-blue-400:focus { --tw-ring-color: rgba(99,102,241,0.3); }
+  .border-indigo-400 { border-color: var(--p) !important; }
+
+  /* ─── Form inputs (global) ─── */
+  input[class*="border"], textarea[class*="border"] {
+    border-color: #e2e8f0 !important;
+    border-radius: 10px !important;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, textarea:focus { border-color: var(--p) !important; box-shadow: 0 0 0 3px rgba(99,102,241,0.12) !important; outline: none; }
+  textarea { resize: vertical; }
+
+  /* ─── Detail panel ─── */
+  #contactDetail .p-4.border-b { background: #fff; border-bottom: 1px solid #f1f5f9; }
+  #contactDetail h2 { color: #0f172a !important; letter-spacing: -0.02em; }
+
+  /* ─── Tag badges ─── */
+  .bg-yellow-100 { background: #fef3c7 !important; }
+  .bg-green-100 { background: #d1fae5 !important; }
+  .bg-gray-100 { background: #f1f5f9 !important; }
+  .text-yellow-700 { color: #b45309 !important; }
+  .text-green-700 { color: #047857 !important; }
+  .bg-purple-50 { background: #f5f3ff !important; }
+  .border-purple-100 { border-color: #ede9fe !important; }
+  .text-purple-800 { color: #4c1d95 !important; }
+  .text-purple-500 { color: var(--accent) !important; }
+  .bg-purple-100 { background: #ede9fe !important; }
+
+  /* ─── Mobile ─── */
+  @media(max-width:768px) {
+    #sidebar { min-width:100%; max-width:100%; }
+    #detail { display:none; }
+    #sidebar.hidden-mobile { display:none; }
+    #detail.show-mobile { display:block !important; }
+  }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+</style>
+</head>
+<body class="h-screen flex flex-col" style="background:#f8fafc">
+
+<!-- Login Screen -->
+<div id="loginScreen" class="fixed inset-0 flex items-center justify-center z-[100]" style="background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%)">
+  <div class="rounded-2xl p-8 w-80" style="background:rgba(255,255,255,0.06);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.15);box-shadow:0 32px 64px rgba(0,0,0,0.5)">
+    <div style="text-align:center;font-size:32px;margin-bottom:8px">🤝</div><h1 class="text-2xl font-bold text-center mb-1" style="background:linear-gradient(135deg,#a5b4fc,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">1to1 Manager</h1>
+    <p class="text-xs text-center mb-5" style="color:rgba(255,255,255,0.4);letter-spacing:.12em" style="letter-spacing:.12em">1 on 1 · RECORD · CONNECT</p>
+
+    <!-- Login Form -->
+    <div id="loginForm" class="space-y-3">
+      <input id="loginUsername" type="email" placeholder="メールアドレス" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <input id="loginPassword" type="password" placeholder="パスワード" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" onkeydown="if(event.key==='Enter')doLogin()">
+      <div id="loginError" class="text-red-500 text-xs hidden"></div>
+      <button onclick="doLogin()" class="w-full text-white font-semibold py-2.5 rounded-xl" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;cursor:pointer;font-size:15px;letter-spacing:.02em">ログイン</button>
+      <button onclick="showRegister()" class="w-full text-indigo-600 text-sm hover:underline">新規アカウントを作成</button>
+    </div>
+
+    <!-- Register Form -->
+    <div id="registerForm" class="space-y-3 hidden">
+      <p class="text-sm font-semibold" style="color:rgba(255,255,255,0.8)">新規アカウント作成</p>
+      <div>
+        <input id="regEmail" type="email" placeholder="メールアドレス（Gmail推奨）" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" oninput="onRegEmailInput(this.value)">
+        <div id="reg-gmail-tip" class="hidden mt-1.5 text-xs px-2 py-1.5 rounded-lg" style="background:rgba(74,222,128,0.1);color:#4ade80">
+          ✅ Gmailを使うとNiceMeetとのGoogle連携が可能です
+        </div>
+        <div id="reg-nongmail-tip" class="hidden mt-1.5 text-xs px-2 py-1.5 rounded-lg" style="background:rgba(251,191,36,0.1);color:#fbbf24">
+          ⚠️ Gmailにすると後でNiceMeetへのアップグレード時にGoogleカレンダーと自動同期できます。後から変更も可能です。
+        </div>
+      </div>
+      <input id="regDisplayName" type="text" placeholder="表示名（例：片桐健治）" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <input id="regPassword" type="password" placeholder="パスワード（6文字以上）" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <div id="regError" class="text-red-500 text-xs hidden"></div>
+      <button onclick="doRegister()" class="w-full bg-green-600 text-white font-semibold py-2.5 rounded-lg hover:bg-green-700">アカウント作成</button>
+      <button onclick="showLogin()" class="w-full text-gray-500 text-sm hover:underline">ログインに戻る</button>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<header class="text-white px-4 py-2.5 flex items-center justify-between" style="background:#0f172a;border-bottom:1px solid rgba(255,255,255,0.07)">
+  <div class="flex items-center gap-3">
+    <button id="backBtn" class="md:hidden text-white text-xl hidden" onclick="showList()">←</button>
+    <h1 class="font-bold text-lg" style="display:flex;align-items:center;gap:6px"><span style="font-size:18px">🤝</span><span style="background:linear-gradient(135deg,#a5b4fc,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">1to1 Manager</span></h1>
+  </div>
+  <div class="flex items-center gap-2">
+    <nav class="hidden md:flex gap-1 text-sm">
+      <button onclick="switchView('contacts')" id="nav-contacts" class="nav-btn nav-active px-3 py-1.5 rounded-lg">👥 1to1リスト</button>
+      <button onclick="switchView('dashboard')" id="nav-dashboard" class="nav-btn px-3 py-1.5 rounded-lg">📊 ダッシュボード</button>
+      <button onclick="switchView('calendar')" id="nav-calendar" class="nav-btn px-3 py-1.5 rounded-lg">📅 カレンダー</button>
+      <button onclick="switchView('myprofile')" id="nav-myprofile" class="nav-btn px-3 py-1.5 rounded-lg">👤 マイプロフィール</button>
+      <button onclick="switchView('settings')" id="nav-settings" class="nav-btn px-3 py-1.5 rounded-lg">⚙ 設定</button>
+    </nav>
+    <button onclick="openImportModal()" id="btn-import" class="bg-indigo-500 hover:bg-blue-400 text-white font-semibold text-sm px-3 py-1.5 rounded-lg">📥 取込</button>
+    <button onclick="openAddModal()" id="btn-add" class="bg-white text-indigo-600 font-semibold text-sm px-3 py-1.5 rounded-lg">+ 追加</button>
+    <button onclick="exportZip()" class="text-sm px-3 py-1.5 rounded-lg font-medium" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.3)" title="全データをZIPでダウンロード">📦 データ保存</button>
+    <button onclick="doLogout()" class="text-indigo-200 hover:text-white text-sm px-2 py-1.5">ログアウト</button>
+  </div>
+</header>
+
+<!-- Dashboard View -->
+<div id="view-dashboard" class="hidden flex-1 overflow-y-auto p-6 bg-gray-50">
+  <h2 class="text-xl font-bold text-gray-800 mb-5">ダッシュボード</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white rounded-xl shadow p-4 text-center"><div class="text-3xl font-bold text-indigo-600" id="d-total">-</div><div class="text-xs text-gray-500 mt-1">総1to1数</div></div>
+    <div class="bg-white rounded-xl shadow p-4 text-center"><div class="text-3xl font-bold text-orange-500" id="d-reminders">-</div><div class="text-xs text-gray-500 mt-1">リマインダー数</div></div>
+    <div class="bg-white rounded-xl shadow p-4 text-center"><div class="text-3xl font-bold text-green-600" id="d-chapters">-</div><div class="text-xs text-gray-500 mt-1">チャプター数</div></div>
+    <div class="bg-white rounded-xl shadow p-4 text-center"><div class="text-3xl font-bold text-purple-600" id="d-month">-</div><div class="text-xs text-gray-500 mt-1">今月の1to1</div></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="bg-white rounded-xl shadow p-4">
+      <h3 class="font-bold text-gray-700 mb-3 text-sm">月別1to1実施数</h3>
+      <div id="d-chart" class="flex items-end gap-1.5 h-32"></div>
+    </div>
+    <div class="bg-white rounded-xl shadow p-4">
+      <h3 class="font-bold text-gray-700 mb-3 text-sm">直近のリマインダー</h3>
+      <div id="d-upcoming" class="space-y-2 text-sm"></div>
+    </div>
+  </div>
+  <div class="bg-white rounded-xl shadow p-4 mt-4">
+    <h3 class="font-bold text-gray-700 mb-3 text-sm">📅 次の1on1候補（優先度順）</h3>
+    <div id="d-suggestions" class="space-y-2"></div>
+  </div>
+</div>
+
+<!-- Calendar View -->
+<div id="view-calendar" class="hidden flex-1 overflow-y-auto p-4 bg-gray-50">
+  <div class="max-w-2xl mx-auto">
+    <div class="flex items-center justify-between mb-4">
+      <button onclick="calPrev()" class="text-gray-500 hover:text-gray-800 px-3 py-1.5 rounded-lg hover:bg-gray-200 text-lg">‹</button>
+      <h2 id="cal-title" class="text-lg font-bold text-gray-800"></h2>
+      <button onclick="calNext()" class="text-gray-500 hover:text-gray-800 px-3 py-1.5 rounded-lg hover:bg-gray-200 text-lg">›</button>
+    </div>
+    <div class="flex gap-3 mb-3 text-xs flex-wrap">
+      <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-indigo-500 inline-block"></span>リマインダー</span>
+      <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>1on1実施</span>
+      <span id="cal-gcal-legend" class="items-center gap-1 hidden"><span class="w-3 h-3 rounded-full bg-orange-400 inline-block"></span>Googleカレンダー</span>
+    </div>
+    <div class="bg-white rounded-xl shadow overflow-hidden">
+      <div class="grid grid-cols-7 text-center text-xs font-semibold text-gray-500 border-b">
+        <div class="py-2">日</div><div class="py-2">月</div><div class="py-2">火</div>
+        <div class="py-2">水</div><div class="py-2">木</div><div class="py-2">金</div>
+        <div class="py-2 text-blue-400">土</div>
+      </div>
+      <div id="cal-grid" class="grid grid-cols-7"></div>
+    </div>
+    <div id="cal-detail" class="mt-4 hidden">
+      <div class="bg-white rounded-xl shadow p-4">
+        <h3 id="cal-detail-date" class="font-bold text-gray-700 mb-3 text-sm"></h3>
+        <div id="cal-detail-content" class="space-y-2"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- My Profile View -->
+<div id="view-myprofile" class="hidden flex-1 overflow-y-auto p-6 bg-gray-50">
+  <div class="max-w-2xl mx-auto">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-xl font-bold text-gray-800">マイプロフィール</h2>
+      <div class="flex gap-2">
+        <button onclick="openProfileImport()" class="bg-green-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-green-700 font-semibold">📥 シートから取込</button>
+        <button onclick="saveMyProfile()" class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 font-semibold">保存</button>
+      </div>
+    </div>
+    <div class="bg-white rounded-xl shadow p-5 space-y-4">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2"><label class="text-xs font-semibold text-gray-500">名前</label><input id="mp_name" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+        <div><label class="text-xs font-semibold text-gray-500">会社名・屋号</label><input id="mp_company" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+        <div><label class="text-xs font-semibold text-gray-500">チャプター</label><input id="mp_chapter" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+        <div class="col-span-2"><label class="text-xs font-semibold text-gray-500">職種・カテゴリー</label><input id="mp_category" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+      </div>
+      <div><label class="text-xs font-semibold text-gray-500">事業内容</label><textarea id="mp_business_description" rows="3" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+      <div><label class="text-xs font-semibold text-gray-500">独自の強み</label><textarea id="mp_selling_points" rows="3" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+      <div><label class="text-xs font-semibold text-gray-500">ターゲット顧客</label><textarea id="mp_target_customers" rows="3" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+      <div><label class="text-xs font-semibold text-gray-500">紹介の切り出し方</label><textarea id="mp_referral_intro" rows="3" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+      <hr>
+      <div class="flex items-center gap-3">
+        <div class="flex-1"><label class="text-xs font-semibold text-gray-500">公開URL スラッグ</label><div class="flex items-center gap-1 mt-1"><span class="text-xs text-gray-400">/bni/profile/</span><input id="mp_slug" type="text" placeholder="my-name" class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div></div>
+        <div class="pt-5"><label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="mp_public" class="w-4 h-4 accent-blue-600"><span class="text-sm text-gray-700">公開する</span></label></div>
+      </div>
+      <div id="mp_public_url" class="text-xs text-indigo-600 hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings View -->
+<div id="view-settings" class="hidden flex-1 overflow-y-auto p-6 bg-gray-50">
+  <div class="max-w-md mx-auto space-y-5">
+    <h2 class="text-xl font-bold text-gray-800">アカウント設定</h2>
+    <div class="bg-white rounded-xl shadow p-5 space-y-4" id="pw-change-section">
+      <h3 class="font-bold text-gray-700">📧 メールアドレス</h3>
+      <div id="s_email_current" class="text-sm text-gray-500">確認中...</div>
+      <div id="s_email_gmail_note" class="hidden text-xs px-3 py-2 rounded-lg bg-yellow-50 text-yellow-700">
+        ⚠️ GmailにするとNiceMeetへのアップグレード時にGoogleカレンダーと自動同期できます
+      </div>
+      <div id="s_email_change_form" class="space-y-2">
+        <input id="s_new_email" type="email" placeholder="新しいメールアドレス（Gmail推奨）" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <button onclick="changeEmail()" class="w-full border border-indigo-400 text-indigo-600 font-semibold py-2 rounded-lg hover:bg-indigo-50 text-sm">メールアドレスを変更</button>
+      </div>
+      <div id="s_email_msg" class="text-sm hidden"></div>
+      <hr class="border-gray-100">
+      <h3 class="font-bold text-gray-700">パスワード変更</h3>
+      <input id="s_current_pw" type="password" placeholder="現在のパスワード" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <input id="s_new_pw" type="password" placeholder="新しいパスワード（8文字以上）" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <input id="s_new_pw2" type="password" placeholder="新しいパスワード（確認）" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <div id="s_pw_msg" class="text-sm hidden"></div>
+      <button onclick="changePassword()" class="w-full bg-indigo-600 text-white font-semibold py-2 rounded-lg hover:bg-indigo-700">パスワードを変更</button>
+    </div>
+    <div class="bg-blue-50 rounded-xl p-4 hidden" id="sso-info-section">
+      <p class="text-sm text-blue-700">🔗 <strong>NiceMeet連携中</strong> — ログインはNiceMeetから自動で行われます。</p>
+    </div>
+    <div class="bg-white rounded-xl shadow p-5 space-y-3" id="plan-section">
+      <h3 class="font-bold text-gray-700">💳 プラン・お支払い</h3>
+      <div id="plan-status-display" class="text-sm text-gray-400">確認中...</div>
+      <div id="plan-free-actions" class="hidden space-y-2">
+        <p class="text-xs text-gray-500">1to1マネージャー単独プラン ¥500/月（30日間無料トライアル付き）</p>
+        <button onclick="startStripeCheckout()" id="btn-start-trial"
+          class="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-lg hover:bg-indigo-700 transition">
+          🚀 30日間無料トライアルを開始
+        </button>
+      </div>
+      <div id="plan-paid-actions" class="hidden">
+        <button onclick="openBillingPortal()" id="btn-billing-portal"
+          class="w-full border border-gray-300 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-50 transition">
+          ⚙️ プラン管理・解約
+        </button>
+      </div>
+      <div id="plan-success-msg" class="hidden text-sm text-green-600 font-medium">✅ トライアル登録が完了しました！</div>
+    </div>
+    <div class="bg-white rounded-xl shadow p-5 space-y-3">
+      <h3 class="font-bold text-gray-700">🗓 Googleカレンダー連携</h3>
+      <p class="text-xs text-gray-500">連携するとリマインダー追加時に自動でGoogleカレンダーに予定が作成されます</p>
+      <div id="gcal-status" class="text-sm text-gray-400">確認中...</div>
+      <div id="gcal-connect-btn">
+        <button onclick="connectGoogleCalendar()" class="w-full bg-white border-2 border-gray-200 hover:border-indigo-400 text-gray-700 font-semibold py-2 rounded-lg flex items-center justify-center gap-2 transition">
+          <svg class="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Googleカレンダーと連携する
+        </button>
+      </div>
+      <div id="gcal-disconnect-btn" class="hidden">
+        <button onclick="disconnectGoogleCalendar()" class="w-full text-red-500 border border-red-200 hover:bg-red-50 py-2 rounded-lg text-sm font-medium">連携を解除する</button>
+      </div>
+      <div id="gcal-msg" class="text-sm hidden"></div>
+    </div>
+  </div>
+</div>
+
+<div class="flex flex-1 overflow-hidden" id="view-contacts">
+
+  <!-- Sidebar: Contact List -->
+  <div id="sidebar" class="bg-white border-r flex flex-col overflow-hidden">
+    <div class="p-3 border-b">
+      <input id="searchInput" type="text" placeholder="名前・会社名・カテゴリーで検索..." class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" oninput="onSearch(this.value)">
+    </div>
+    <div id="contactList" class="flex-1 overflow-y-auto"></div>
+  </div>
+
+  <!-- Detail Panel -->
+  <div id="detail" class="flex-1 overflow-y-auto bg-white hidden md:block">
+    <div id="emptyState" class="flex items-center justify-center h-full text-gray-400 text-sm">
+      左のリストから人物を選択してください
+    </div>
+    <div id="contactDetail" class="hidden"></div>
+  </div>
+
+</div>
+
+<!-- Import Modal -->
+<div id="importModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 overflow-y-auto">
+  <div class="bg-white max-w-xl mx-auto my-10 rounded-xl shadow-xl overflow-hidden">
+    <div class="text-white px-6 py-4 flex items-center justify-between" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">
+      <h2 class="font-bold text-lg">📥 ファイルから取込</h2>
+      <button onclick="closeImportModal()" class="text-white text-2xl leading-none">&times;</button>
+    </div>
+    <div class="p-6 space-y-5">
+
+      <!-- Tab: File / URL -->
+      <div class="flex border-b">
+        <button id="importTabFile" onclick="switchImportTab('file')" class="tab-btn tab-active">ファイルアップロード</button>
+        <button id="importTabUrl" onclick="switchImportTab('url')" class="tab-btn">Google Docs URL</button>
+      </div>
+
+      <!-- File upload area -->
+      <div id="importFileArea">
+        <label class="block border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-400 transition" id="dropZone">
+          <div class="text-4xl mb-2">📄</div>
+          <div class="text-sm font-medium text-gray-700">PDF・Word・TXTをここにドロップ</div>
+          <div class="text-xs text-gray-400 mt-1">またはクリックして選択</div>
+          <input type="file" id="importFile" accept=".pdf,.docx,.doc,.txt" class="hidden" onchange="onFileSelect(this)">
+        </label>
+        <div id="selectedFileName" class="text-sm text-indigo-600 mt-2 hidden"></div>
+      </div>
+
+      <!-- URL input area -->
+      <div id="importUrlArea" class="hidden">
+        <label class="text-sm font-medium text-gray-700">Google Docs / Sheets の URL</label>
+        <input id="importUrl" type="text" placeholder="https://docs.google.com/document/d/..." class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <div class="text-xs text-gray-400 mt-1">※「リンクを知っている全員が閲覧可能」に設定されている必要があります</div>
+      </div>
+
+      <!-- Result preview -->
+      <div id="importPreview" class="hidden">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-sm font-bold text-gray-700">✅ 解析結果</span>
+          <span class="text-xs text-gray-400">内容を確認して「この内容で登録」を押してください</span>
+        </div>
+        <div id="importPreviewContent" class="border rounded-lg p-3 bg-gray-50 text-sm space-y-1 max-h-64 overflow-y-auto"></div>
+      </div>
+
+      <div id="importError" class="hidden text-sm text-red-600 bg-red-50 rounded-lg p-3"></div>
+    </div>
+
+    <div class="px-6 py-4 bg-gray-50 flex justify-between items-center">
+      <button onclick="closeImportModal()" class="px-4 py-2 text-sm text-gray-600 border rounded-lg hover:bg-gray-100">キャンセル</button>
+      <div class="flex gap-2">
+        <button id="importParseBtn" onclick="runImport()" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">🔍 解析</button>
+        <button id="importSaveBtn" onclick="saveImported()" class="hidden px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">✅ この内容で登録</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Profile Import Modal -->
+<div id="profileImportModal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 overflow-y-auto">
+  <div class="bg-white max-w-xl mx-auto my-10 rounded-xl shadow-xl overflow-hidden">
+    <div class="bg-green-600 text-white px-6 py-4 flex items-center justify-between">
+      <h2 class="font-bold text-lg">📥 プロフィールをシートから取込</h2>
+      <button onclick="closeProfileImport()" class="text-white text-2xl leading-none">&times;</button>
+    </div>
+    <div class="p-6 space-y-5">
+      <div class="flex border-b">
+        <button id="piTabFile" onclick="switchPiTab('file')" class="tab-btn tab-active">ファイルアップロード</button>
+        <button id="piTabUrl" onclick="switchPiTab('url')" class="tab-btn">Google Docs URL</button>
+      </div>
+      <div id="piFileArea">
+        <label class="block border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-green-400 transition" id="piDropZone">
+          <div class="text-4xl mb-2">📄</div>
+          <div class="text-sm font-medium text-gray-700">Power 1-2-1シートをここにドロップ</div>
+          <div class="text-xs text-gray-400 mt-1">PDF・Word・TXT対応</div>
+          <input type="file" id="piFile" accept=".pdf,.docx,.doc,.txt" class="hidden" onchange="onPiFileSelect(this)">
+        </label>
+        <div id="piFileName" class="text-sm text-green-600 mt-2 hidden"></div>
+      </div>
+      <div id="piUrlArea" class="hidden">
+        <label class="text-sm font-medium text-gray-700">Google Docs / Sheets の URL</label>
+        <input id="piUrl" type="text" placeholder="https://docs.google.com/document/d/..." class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">
+      </div>
+      <div id="piPreview" class="hidden">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-sm font-bold text-gray-700">✅ 解析結果</span>
+          <span class="text-xs text-gray-400">内容を確認して「プロフィールに反映」を押してください</span>
+        </div>
+        <div id="piPreviewContent" class="border rounded-lg p-3 bg-gray-50 text-sm space-y-1 max-h-56 overflow-y-auto"></div>
+      </div>
+      <div id="piError" class="hidden text-sm text-red-600 bg-red-50 rounded-lg p-3"></div>
+    </div>
+    <div class="px-6 py-4 bg-gray-50 flex justify-between">
+      <button onclick="closeProfileImport()" class="px-4 py-2 text-sm text-gray-600 border rounded-lg hover:bg-gray-100">キャンセル</button>
+      <div class="flex gap-2">
+        <button id="piParseBtn" onclick="runProfileImport()" class="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">🔍 解析</button>
+        <button id="piSaveBtn" onclick="applyProfileImport()" class="hidden px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">✅ プロフィールに反映</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div id="modal" class="fixed inset-0 bg-black bg-opacity-40 hidden z-50 overflow-y-auto">
+  <div class="bg-white max-w-2xl mx-auto my-6 rounded-xl shadow-xl overflow-hidden">
+    <div class="text-white px-6 py-4 flex items-center justify-between" style="background:linear-gradient(135deg,#4f46e5,#7c3aed)">
+      <h2 id="modalTitle" class="font-bold text-lg">人物を追加</h2>
+      <button onclick="closeModal()" class="text-white text-2xl leading-none">&times;</button>
+    </div>
+    <div class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+      <input type="hidden" id="editId">
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2">
+          <label class="text-sm font-medium text-gray-700">名前 *</label>
+          <input id="f_name" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        </div>
+        <div>
+          <label class="text-sm font-medium text-gray-700">よみがな</label>
+          <input id="f_reading" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        </div>
+        <div>
+          <label class="text-sm font-medium text-gray-700">最終1on1日</label>
+          <input id="f_last_meeting_date" type="date" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        </div>
+        <div>
+          <label class="text-sm font-medium text-gray-700">会社名</label>
+          <input id="f_company" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        </div>
+        <div>
+          <label class="text-sm font-medium text-gray-700">チャプター名</label>
+          <input id="f_chapter" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        </div>
+        <div class="col-span-2">
+          <label class="text-sm font-medium text-gray-700">カテゴリー（職種）</label>
+          <input id="f_category" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        </div>
+      </div>
+
+      <hr>
+      <p class="text-xs font-bold text-gray-500 uppercase tracking-wide">略歴</p>
+      <div class="space-y-3">
+        <div>
+          <label class="text-sm font-medium text-gray-700">事業内容</label>
+          <textarea id="f_business_description" rows="3" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="text-sm font-medium text-gray-700">活動地域</label><input id="f_area" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+          <div><label class="text-sm font-medium text-gray-700">出身地</label><input id="f_birthplace" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+          <div><label class="text-sm font-medium text-gray-700">居住地</label><input id="f_residence" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+          <div><label class="text-sm font-medium text-gray-700">経験年数</label><input id="f_experience_years" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+          <div><label class="text-sm font-medium text-gray-700">配偶者</label><input id="f_spouse" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+          <div><label class="text-sm font-medium text-gray-700">家族構成</label><input id="f_family" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+        </div>
+        <div><label class="text-sm font-medium text-gray-700">前職</label><input id="f_previous_jobs" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+        <div><label class="text-sm font-medium text-gray-700">趣味</label><input id="f_hobbies" type="text" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></div>
+      </div>
+
+      <hr>
+      <p class="text-xs font-bold text-gray-500 uppercase tracking-wide">Power 1-2-1</p>
+      <div class="space-y-3">
+        <div><label class="text-sm font-medium text-gray-700">独自のセールスポイント</label><textarea id="f_selling_points" rows="3" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+        <div><label class="text-sm font-medium text-gray-700">ターゲット顧客</label><textarea id="f_target_customers" rows="3" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+        <div><label class="text-sm font-medium text-gray-700">成功の鍵</label><textarea id="f_success_key" rows="2" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+        <div><label class="text-sm font-medium text-gray-700">紹介の切り出し方</label><textarea id="f_referral_intro" rows="3" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+        <div><label class="text-sm font-medium text-gray-700">お願いしたいこと</label><textarea id="f_request" rows="2" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+      </div>
+
+      <hr>
+      <p class="text-xs font-bold text-gray-500 uppercase tracking-wide">GAINS</p>
+      <div class="space-y-3">
+        <div><label class="text-sm font-medium text-gray-700">目標 (Goals)</label><textarea id="f_goals" rows="2" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+        <div><label class="text-sm font-medium text-gray-700">実績 (Accomplishments)</label><textarea id="f_accomplishments" rows="2" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+        <div><label class="text-sm font-medium text-gray-700">興味関心 (Interests)</label><textarea id="f_interests" rows="2" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+        <div><label class="text-sm font-medium text-gray-700">人脈 (Networks)</label><textarea id="f_networks" rows="2" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+        <div><label class="text-sm font-medium text-gray-700">スキル (Skills)</label><textarea id="f_skills" rows="2" class="mt-1 w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea></div>
+      </div>
+    </div>
+    <div class="px-6 py-4 bg-gray-50 flex justify-end gap-3">
+      <button onclick="closeModal()" class="px-4 py-2 text-sm text-gray-600 border rounded-lg hover:bg-gray-100">キャンセル</button>
+      <button onclick="saveContact()" class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let contacts = [];
+let currentId = null;
+let authToken = localStorage.getItem('bni_token') || '';
+let gcalConnected = false;
+
+// ── 認証 ──────────────────────────────────────────────────
+function showRegister() {
+  document.getElementById('loginForm').classList.add('hidden');
+  document.getElementById('registerForm').classList.remove('hidden');
+}
+function showLogin() {
+  document.getElementById('registerForm').classList.add('hidden');
+  document.getElementById('loginForm').classList.remove('hidden');
+}
+
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const pw = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.classList.add('hidden');
+  try {
+    const r = await fetch(BASE + 'api/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({username, password: pw})
+    });
+    if (!r.ok) {
+      let msg = 'ユーザー名またはパスワードが違います';
+      try { msg = (await r.json()).detail || msg; } catch {}
+      errEl.textContent = msg; errEl.classList.remove('hidden'); return;
+    }
+    const d = await r.json();
+    authToken = d.token;
+    localStorage.setItem('bni_token', authToken);
+    document.getElementById('loginScreen').classList.add('hidden');
+    loadContacts();
+    if (localStorage.getItem('bni_start_trial') === '1') {
+      localStorage.removeItem('bni_start_trial');
+      startStripeCheckout();
+    }
+  } catch(e) {
+    errEl.textContent = 'エラーが発生しました';
+    errEl.classList.remove('hidden');
+  }
+}
+
+function onRegEmailInput(val) {
+  const isGmail = val.toLowerCase().endsWith('@gmail.com');
+  const hasAt = val.includes('@');
+  document.getElementById('reg-gmail-tip').classList.toggle('hidden', !isGmail);
+  document.getElementById('reg-nongmail-tip').classList.toggle('hidden', !(hasAt && !isGmail));
+}
+
+async function doRegister() {
+  const email = document.getElementById('regEmail').value.trim().toLowerCase();
+  const display_name = document.getElementById('regDisplayName').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const errEl = document.getElementById('regError');
+  errEl.classList.add('hidden');
+  if (!email || !display_name || !password) { errEl.textContent = 'すべての項目を入力してください'; errEl.classList.remove('hidden'); return; }
+  try {
+    const r = await fetch(BASE + 'api/auth/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({email, display_name, password})
+    });
+    if (!r.ok) {
+      let msg = '登録に失敗しました';
+      try { msg = (await r.json()).detail || msg; } catch {}
+      errEl.textContent = msg; errEl.classList.remove('hidden'); return;
+    }
+    // 登録後に自動ログイン
+    const lr = await fetch(BASE + 'api/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({username: email, password})
+    });
+    if (!lr.ok) {
+      showLogin();
+      document.getElementById('loginUsername').value = email;
+      return;
+    }
+    const d = await lr.json();
+    authToken = d.token;
+    localStorage.setItem('bni_token', authToken);
+    localStorage.removeItem('bni_start_trial');
+    document.getElementById('loginScreen').classList.add('hidden');
+    loadContacts();
+    // 新規登録後は必ずStripe Checkoutへ
+    startStripeCheckout();
+  } catch(e) {
+    errEl.textContent = 'エラーが発生しました'; errEl.classList.remove('hidden');
+  }
+}
+
+async function checkAuth() {
+  if (!authToken) return false;
+  try {
+    const r = await fetch(BASE + 'api/contacts', { headers: {'Authorization': authToken} });
+    return r.status !== 401;
+  } catch { return false; }
+}
+
+function exportZip() {
+  const a = document.createElement('a');
+  a.href = BASE + 'api/export/zip';
+  // Authヘッダーはfetchのみ対応のため、クエリパラメータでトークンを渡す
+  fetch(BASE + 'api/export/zip', { headers: { 'Authorization': authToken } })
+    .then(r => {
+      if (!r.ok) { alert('エクスポートに失敗しました'); return; }
+      return r.blob();
+    })
+    .then(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const today = new Date().toISOString().slice(0,10);
+      a.href = url;
+      a.download = `1to1manager-${today}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    })
+    .catch(() => alert('ダウンロードエラーが発生しました'));
+}
+
+async function doLogout() {
+  await fetch(BASE + 'api/auth/logout', { method:'POST', headers:{'Authorization':authToken} }).catch(()=>{});
+  authToken = '';
+  localStorage.removeItem('bni_token');
+  location.reload();
+}
+
+// ── ビュー切替 ────────────────────────────────────────────
+function switchView(view) {
+  ['contacts','dashboard','calendar','myprofile','settings'].forEach(v => {
+    const el = document.getElementById('view-' + v);
+    if (el) el.classList.toggle('hidden', v !== view);
+    if (el) el.classList.toggle('flex', v === view && v === 'contacts');
+    const btn = document.getElementById('nav-' + v);
+    if (btn) btn.classList.toggle('nav-active', v === view);
+  });
+  const isContacts = view === 'contacts';
+  document.getElementById('btn-import')?.classList.toggle('hidden', !isContacts);
+  document.getElementById('btn-add')?.classList.toggle('hidden', !isContacts);
+  if (view === 'dashboard') { loadDashboard(); loadSuggestions(); }
+  if (view === 'calendar') loadCalendar();
+  if (view === 'myprofile') loadMyProfile();
+  if (view === 'settings') { loadGcalStatus(); loadSettingsAuthType(); }
+}
+
+async function loadSettingsAuthType() {
+  try {
+    const me = await api('GET', '/me');
+    const isSso = me.auth_type === 'sso';
+    document.getElementById('pw-change-section').classList.toggle('hidden', isSso);
+    document.getElementById('sso-info-section').classList.toggle('hidden', !isSso);
+    if (!isSso) {
+      const emailEl = document.getElementById('s_email_current');
+      const noteEl = document.getElementById('s_email_gmail_note');
+      const currentEmail = me.email || '未設定';
+      const isGmail = currentEmail.toLowerCase().endsWith('@gmail.com');
+      emailEl.textContent = `現在: ${currentEmail}`;
+      noteEl.classList.toggle('hidden', isGmail || currentEmail === '未設定');
+    }
+    const isPaid = me.plan === 'paid';
+    const hasStripe = me.has_stripe;
+    const statusEl = document.getElementById('plan-status-display');
+    if (isPaid && hasStripe) {
+      statusEl.innerHTML = '<span class="inline-block bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">✅ スタンダード ¥500/月</span>';
+    } else if (hasStripe) {
+      statusEl.innerHTML = '<span class="inline-block bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-1 rounded-full">🎁 30日間無料トライアル中</span>';
+    } else {
+      statusEl.innerHTML = '<span class="inline-block bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded-full">無料プラン</span>';
+    }
+    document.getElementById('plan-free-actions').classList.toggle('hidden', hasStripe);
+    document.getElementById('plan-paid-actions').classList.toggle('hidden', !hasStripe);
+  } catch(e) {}
+}
+
+async function changeEmail() {
+  const newEmail = document.getElementById('s_new_email').value.trim().toLowerCase();
+  const msgEl = document.getElementById('s_email_msg');
+  msgEl.classList.add('hidden');
+  if (!newEmail) return;
+  try {
+    await api('PUT', '/auth/email', { new_email: newEmail });
+    document.getElementById('s_new_email').value = '';
+    const isGmail = newEmail.endsWith('@gmail.com');
+    document.getElementById('s_email_current').textContent = `現在: ${newEmail}`;
+    document.getElementById('s_email_gmail_note').classList.toggle('hidden', isGmail);
+    msgEl.textContent = isGmail
+      ? '✅ Gmailに変更しました。NiceMeetとのGoogle連携が可能です！'
+      : '✅ メールアドレスを変更しました';
+    msgEl.className = 'text-sm text-green-600';
+    msgEl.classList.remove('hidden');
+  } catch(e) {
+    msgEl.textContent = 'エラー: ' + e.message;
+    msgEl.className = 'text-sm text-red-500';
+    msgEl.classList.remove('hidden');
+  }
+}
+
+async function startStripeCheckout() {
+  const btn = document.getElementById('btn-start-trial');
+  if (btn) { btn.disabled = true; btn.textContent = '準備中...'; }
+  try {
+    const data = await api('POST', '/stripe/checkout');
+    if (data && data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error('決済URLが取得できませんでした');
+    }
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = '🚀 30日間無料トライアルを開始'; }
+    alert('エラーが発生しました: ' + e.message);
+  }
+}
+
+async function openBillingPortal() {
+  const btn = document.getElementById('btn-billing-portal');
+  btn.disabled = true;
+  btn.textContent = '移動中...';
+  try {
+    const data = await api('GET', '/stripe/portal');
+    window.location.href = data.url;
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '⚙️ プラン管理・解約';
+    alert('エラーが発生しました: ' + e.message);
+  }
+}
+
+// ── ダッシュボード ─────────────────────────────────────────
+async function loadDashboard() {
+  const d = await api('GET', '/dashboard');
+  document.getElementById('d-total').textContent = d.total_contacts;
+  document.getElementById('d-reminders').textContent = d.pending_reminders;
+  document.getElementById('d-chapters').textContent = d.chapters;
+  const thisMonth = new Date().toISOString().substring(0,7);
+  const thisMonthData = d.monthly.find(m => m.month === thisMonth);
+  document.getElementById('d-month').textContent = thisMonthData ? thisMonthData.count : 0;
+
+  // 棒グラフ
+  const chart = document.getElementById('d-chart');
+  if (d.monthly.length) {
+    const max = Math.max(...d.monthly.map(m => m.count));
+    chart.innerHTML = d.monthly.map(m => `
+      <div class="flex flex-col items-center flex-1 gap-1">
+        <div class="text-xs text-gray-500">${m.count}</div>
+        <div class="w-full bg-indigo-500 rounded-t" style="height:${max>0?Math.max(4, Math.round(m.count/max*100)):4}px"></div>
+        <div class="text-xs text-gray-400 whitespace-nowrap" style="font-size:10px">${m.month.substring(5)}月</div>
+      </div>`).join('');
+  } else {
+    chart.innerHTML = '<div class="text-gray-400 text-sm">データがありません</div>';
+  }
+
+  // 直近リマインダー
+  const upcoming = document.getElementById('d-upcoming');
+  if (d.upcoming_reminders.length) {
+    upcoming.innerHTML = d.upcoming_reminders.map(r =>
+      `<div class="flex gap-2 text-sm"><span class="text-gray-500 shrink-0">${r.date}</span><span class="font-medium">${esc(r.name)}</span><span class="text-gray-500">${esc(r.message||'')}</span></div>`
+    ).join('');
+  } else {
+    upcoming.innerHTML = '<div class="text-gray-400 text-sm">リマインダーはありません</div>';
+  }
+}
+
+async function loadSuggestions() {
+  const el = document.getElementById('d-suggestions');
+  if (!el) return;
+  try {
+    const data = await api('GET', '/suggestions/next-meetings');
+    if (!data.length) { el.innerHTML = '<div class="text-sm text-gray-400">コンタクトを登録すると候補が表示されます</div>'; return; }
+    const urgencyColor = s => s >= 60 ? 'text-red-600' : s >= 35 ? 'text-orange-500' : 'text-indigo-600';
+    el.innerHTML = data.map(item => `
+      <div class="flex items-center gap-3 py-2 border-b last:border-0 cursor-pointer hover:bg-gray-50 rounded-lg px-2" onclick="switchView('contacts');setTimeout(()=>selectContact(${item.contact.id}),100)">
+        <div class="text-lg font-bold w-10 text-right shrink-0 ${urgencyColor(item.score)}">${item.score}</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-medium text-sm text-gray-900">${esc(item.contact.name)}</span>
+            ${item.contact.category ? `<span class="text-xs text-gray-500">${esc(item.contact.category)}</span>` : ''}
+          </div>
+          <div class="text-xs text-gray-500 mt-0.5">${esc(item.reason)}</div>
+          <div class="flex gap-1 mt-1 flex-wrap">
+            ${item.tags.map(t => `<span class="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5">${esc(t)}</span>`).join('')}
+          </div>
+        </div>
+        <div class="text-xs text-gray-400 shrink-0">→</div>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="text-sm text-gray-400">読み込みに失敗しました</div>';
+  }
+}
+
+// ── マイプロフィール ───────────────────────────────────────
+const MP_FIELDS = ['name','company','chapter','category','business_description','selling_points','target_customers','referral_intro'];
+
+async function loadMyProfile() {
+  const p = await api('GET', '/my-profile');
+  MP_FIELDS.forEach(f => {
+    const el = document.getElementById('mp_' + f);
+    if (el) el.value = p[f] || '';
+  });
+  document.getElementById('mp_slug').value = p.slug || '';
+  document.getElementById('mp_public').checked = p.public || false;
+  updatePublicUrl(p.slug, p.public);
+}
+
+function updatePublicUrl(slug, isPublic) {
+  const el = document.getElementById('mp_public_url');
+  if (isPublic && slug) {
+    const url = window.location.origin + BASE + 'profile/' + slug;
+    el.innerHTML = `公開URL: <a href="${url}" target="_blank" class="underline">${url}</a>`;
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+document.getElementById('mp_public')?.addEventListener('change', function() {
+  updatePublicUrl(document.getElementById('mp_slug').value, this.checked);
+});
+
+async function saveMyProfile() {
+  const data = {};
+  MP_FIELDS.forEach(f => { data[f] = document.getElementById('mp_' + f)?.value || ''; });
+  data.slug = document.getElementById('mp_slug').value.trim();
+  data.public = document.getElementById('mp_public').checked;
+  await api('PUT', '/my-profile', data);
+  updatePublicUrl(data.slug, data.public);
+  alert('保存しました');
+}
+
+// ── 設定 ─────────────────────────────────────────────────
+async function changePassword() {
+  const cur = document.getElementById('s_current_pw').value;
+  const nw = document.getElementById('s_new_pw').value;
+  const nw2 = document.getElementById('s_new_pw2').value;
+  const msg = document.getElementById('s_pw_msg');
+  if (nw.length < 8) { msg.textContent = '新しいパスワードは8文字以上にしてください'; msg.className = 'text-sm text-red-600'; msg.classList.remove('hidden'); return; }
+  if (nw !== nw2) { msg.textContent = 'パスワードが一致しません'; msg.className = 'text-sm text-red-600'; msg.classList.remove('hidden'); return; }
+  try {
+    await api('POST', '/auth/change-password', {current_password: cur, new_password: nw});
+    msg.textContent = 'パスワードを変更しました';
+    msg.className = 'text-sm text-green-600';
+    msg.classList.remove('hidden');
+    document.getElementById('s_current_pw').value = '';
+    document.getElementById('s_new_pw').value = '';
+    document.getElementById('s_new_pw2').value = '';
+  } catch(e) {
+    msg.textContent = '現在のパスワードが違います';
+    msg.className = 'text-sm text-red-600';
+    msg.classList.remove('hidden');
+  }
+}
+
+const FIELDS = ['name','reading','company','chapter','category','last_meeting_date',
+  'business_description','area','birthplace','residence','spouse','family','previous_jobs',
+  'hobbies','experience_years','success_key','selling_points','target_customers','referral_intro',
+  'request','goals','accomplishments','interests','networks','skills','introduction'];
+
+const BASE = (() => {
+  const p = window.location.pathname;
+  return p.endsWith('/') ? p : p.substring(0, p.lastIndexOf('/') + 1);
+})();
+
+async function api(method, path, body) {
+  const opts = { method, headers: {'Content-Type':'application/json', 'Authorization': authToken} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(BASE + 'api' + path, opts);
+  if (r.status === 401) { location.reload(); return; }
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function loadContacts(q='') {
+  contacts = await api('GET', '/contacts' + (q ? '?q='+encodeURIComponent(q) : ''));
+  renderList();
+}
+
+function renderList() {
+  const el = document.getElementById('contactList');
+  if (!contacts.length) {
+    el.innerHTML = '<div class="p-4 text-sm text-gray-400 text-center">登録がありません</div>';
+    return;
+  }
+  el.innerHTML = contacts.map(c => `
+    <div class="contact-item px-4 py-3 border-b cursor-pointer ${c.id===currentId?'active':''}" onclick="selectContact(${c.id})">
+      <div class="font-medium text-sm text-gray-900">${esc(c.name)} ${c.category?`<span class="text-xs text-gray-500">(${esc(c.category)})</span>`:''}</div>
+      <div class="text-xs text-gray-500 mt-0.5">${esc(c.chapter||'')} ${c.company?'/ '+esc(c.company):''}</div>
+      ${c.last_meeting_date?`<div class="text-xs text-gray-400 mt-0.5">最終: ${c.last_meeting_date}</div>`:''}
+    </div>`).join('');
+}
+
+async function selectContact(id) {
+  currentId = id;
+  renderList();
+  const [c, memos, reminders, referrals] = await Promise.all([
+    api('GET', '/contacts/'+id),
+    api('GET', '/contacts/'+id+'/memos'),
+    api('GET', '/contacts/'+id+'/reminders'),
+    api('GET', '/contacts/'+id+'/referrals')
+  ]);
+  renderDetail(c, memos, reminders, referrals);
+  document.getElementById('emptyState').classList.add('hidden');
+  document.getElementById('contactDetail').classList.remove('hidden');
+  // Mobile
+  document.getElementById('sidebar').classList.add('hidden-mobile');
+  document.getElementById('detail').classList.add('show-mobile');
+  document.getElementById('backBtn').classList.remove('hidden');
+}
+
+function showList() {
+  document.getElementById('sidebar').classList.remove('hidden-mobile');
+  document.getElementById('detail').classList.remove('show-mobile');
+  document.getElementById('backBtn').classList.add('hidden');
+}
+
+function renderDetail(c, memos, reminders, referrals=[]) {
+  currentContactName = c.name || '';
+  const el = document.getElementById('contactDetail');
+  el.innerHTML = `
+    <div class="p-4 border-b flex items-start justify-between">
+      <div>
+        <h2 class="text-xl font-bold text-gray-900">${esc(c.name)}</h2>
+        <div class="text-sm text-gray-500 mt-0.5">${esc(c.category||'')}${c.company?' — '+esc(c.company):''}</div>
+        ${c.chapter?`<div class="text-xs text-gray-400 mt-0.5">${esc(c.chapter)}</div>`:''}
+      </div>
+      <div class="flex gap-2 flex-wrap">
+        <button onclick="start121(${c.id}, '${esc(c.name)}')" class="text-sm bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-medium">🎙️ 1-2-1開始</button>
+        <button onclick="openEditModal(${c.id})" class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg">編集</button>
+        <button onclick="confirmDelete(${c.id})" class="text-sm bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg">削除</button>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b overflow-x-auto">
+      <div class="flex" id="tabs">
+        ${['略歴','Power 1-2-1','GAINS','メモ','リマインダー','紹介文','🤝 AIマッチング','📋 紹介履歴','🎙️ 1-2-1履歴'].map((t,i)=>
+          `<button class="tab-btn${i===0?' tab-active':''}" onclick="showTab(${i})">${t}</button>`
+        ).join('')}
+      </div>
+    </div>
+
+    <div id="tabContent" class="p-4">
+      ${renderTabContent(c, memos, reminders, 0, referrals)}
+    </div>
+  `;
+}
+
+function showTab(idx) {
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+    b.classList.toggle('tab-active', i===idx);
+  });
+  const c = contacts.find(x=>x.id===currentId) || {};
+  // Re-fetch full data
+  const fetchList = [
+    api('GET','/contacts/'+currentId),
+    api('GET','/contacts/'+currentId+'/memos'),
+    api('GET','/contacts/'+currentId+'/reminders'),
+    api('GET','/contacts/'+currentId+'/referrals'),
+    idx===8 ? api('GET','/contacts/'+currentId+'/one-on-ones') : Promise.resolve([])
+  ];
+  Promise.all(fetchList).then(([contact, memos, reminders, referrals, oneOnOnes])=>{
+    if (idx===8) {
+      document.getElementById('tabContent').innerHTML = renderOneOnOnes(oneOnOnes, currentId);
+    } else {
+      document.getElementById('tabContent').innerHTML = renderTabContent(contact, memos, reminders, idx, referrals);
+    }
+  });
+}
+
+function renderTabContent(c, memos, reminders, tab, referrals=[]) {
+  if (tab===0) return renderBiography(c);
+  if (tab===1) return renderPower121(c);
+  if (tab===2) return renderGains(c);
+  if (tab===3) return renderMemos(memos, c.id);
+  if (tab===4) return renderReminders(reminders, c.id);
+  if (tab===5) return renderIntroduction(c);
+  if (tab===6) return renderMatching(c);
+  if (tab===7) return renderReferrals(referrals, c.id);
+  if (tab===8) return renderOneOnOnes([], c.id);
+  return '';
+}
+
+function field(label, val) {
+  if (!val) return '';
+  return `<div class="mb-3"><div class="text-xs font-semibold text-gray-500 mb-1">${label}</div><div class="text-sm text-gray-800 whitespace-pre-wrap">${esc(val)}</div></div>`;
+}
+
+function renderBiography(c) {
+  const items = [
+    ['事業内容', c.business_description],
+    ['活動地域', c.area],
+    ['出身地', c.birthplace],
+    ['居住地', c.residence],
+    ['配偶者', c.spouse],
+    ['家族構成', c.family],
+    ['前職', c.previous_jobs],
+    ['趣味', c.hobbies],
+    ['経験年数', c.experience_years],
+  ];
+  const html = items.map(([l,v])=>field(l,v)).join('');
+  return html || '<div class="text-sm text-gray-400">データがありません</div>';
+}
+
+function renderPower121(c) {
+  const items = [
+    ['独自のセールスポイント', c.selling_points],
+    ['ターゲット顧客', c.target_customers],
+    ['成功の鍵', c.success_key],
+    ['紹介の切り出し方', c.referral_intro],
+    ['お願いしたいこと', c.request],
+  ];
+  const html = items.map(([l,v])=>field(l,v)).join('');
+  return html || '<div class="text-sm text-gray-400">データがありません</div>';
+}
+
+function renderGains(c) {
+  const items = [
+    ['目標 (Goals)', c.goals],
+    ['実績 (Accomplishments)', c.accomplishments],
+    ['興味関心 (Interests)', c.interests],
+    ['人脈 (Networks)', c.networks],
+    ['スキル (Skills)', c.skills],
+  ];
+  const html = items.map(([l,v])=>field(l,v)).join('');
+  return html || '<div class="text-sm text-gray-400">データがありません</div>';
+}
+
+function renderMemos(memos, cid) {
+  return `
+    <div class="mb-4">
+      <div class="flex gap-2">
+        <textarea id="newMemo" rows="2" placeholder="メモを入力..." class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea>
+        <button onclick="addMemo(${cid})" class="bg-indigo-600 text-white text-sm px-3 py-2 rounded-lg hover:bg-indigo-700 whitespace-nowrap">追加</button>
+      </div>
+    </div>
+    <div id="memoList">
+      ${memos.length ? memos.map(m=>`
+        <div class="border rounded-lg p-3 mb-2 bg-gray-50 flex items-start gap-2">
+          <div class="flex-1">
+            <div class="text-sm text-gray-800 whitespace-pre-wrap">${esc(m.content)}</div>
+            <div class="text-xs text-gray-400 mt-1">${m.created_at}</div>
+          </div>
+          <button onclick="deleteMemo(${m.id},${cid})" class="text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>
+        </div>`).join('')
+      : '<div class="text-sm text-gray-400">メモがありません</div>'}
+    </div>`;
+}
+
+function renderReminders(reminders, cid) {
+  return `
+    <div class="mb-4">
+      <div class="flex gap-2 flex-wrap">
+        <input type="date" id="newReminderDate" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <input type="text" id="newReminderMsg" placeholder="メモ（任意）" class="flex-1 min-w-0 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <button onclick="addReminder(${cid})" class="bg-indigo-600 text-white text-sm px-3 py-2 rounded-lg hover:bg-indigo-700 whitespace-nowrap">追加</button>
+      </div>
+    </div>
+    <div id="reminderList">
+      ${reminders.length ? reminders.map(r=>`
+        <div class="border rounded-lg p-3 mb-2 flex items-center gap-2 ${r.done?'bg-gray-100 opacity-60':'bg-gray-50'}">
+          <input type="checkbox" ${r.done?'checked':''} onchange="toggleReminder(${r.id},${cid})" class="w-4 h-4 accent-blue-600">
+          <div class="flex-1">
+            <div class="text-sm font-medium text-gray-800">${esc(r.remind_date)}</div>
+            ${r.message?`<div class="text-xs text-gray-500">${esc(r.message)}</div>`:''}
+          </div>
+          ${gcalConnected ? `<button onclick="syncReminderGoogle(${r.id})" title="Googleカレンダーに追加" class="text-blue-400 hover:text-indigo-600 text-sm px-1">🗓</button>` : ''}
+          <button onclick="deleteReminder(${r.id},${cid})" class="text-red-400 hover:text-red-600 text-lg leading-none">&times;</button>
+        </div>`).join('')
+      : '<div class="text-sm text-gray-400">リマインダーがありません</div>'}
+    </div>`;
+}
+
+function renderIntroduction(c) {
+  return `
+    <div class="mb-3">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-semibold text-gray-500">紹介文</span>
+        <button onclick="generateIntro(${c.id})" id="genBtn" class="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 flex items-center gap-1">
+          ✨ AIで自動生成
+        </button>
+      </div>
+      <textarea id="introText" rows="8" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">${esc(c.introduction||'')}</textarea>
+      <button onclick="saveIntro(${c.id})" class="mt-2 text-sm bg-gray-800 text-white px-4 py-1.5 rounded-lg hover:bg-gray-700">保存</button>
+    </div>`;
+}
+
+function renderReferrals(referrals, cid) {
+  const resultColors = {
+    '進行中': 'bg-yellow-100 text-yellow-700',
+    '成約': 'bg-green-100 text-green-700',
+    '不成立': 'bg-gray-100 text-gray-500'
+  };
+  const dirLabels = { given: '→ 相手に紹介', received: '← 紹介もらった' };
+  const dirColors = { given: 'text-indigo-600', received: 'text-purple-600' };
+
+  const totalGiven = referrals.filter(r => r.direction === 'given').length;
+  const totalReceived = referrals.filter(r => r.direction === 'received').length;
+  const totalAmount = referrals.filter(r => r.result === '成約').reduce((s, r) => s + (r.amount || 0), 0);
+
+  return `
+    <div>
+      ${referrals.length ? `
+        <div class="flex gap-4 mb-4 text-sm">
+          <div class="bg-indigo-50 rounded-lg px-3 py-2 text-center"><div class="font-bold text-indigo-600">${totalGiven}</div><div class="text-xs text-gray-500">紹介した</div></div>
+          <div class="bg-purple-50 rounded-lg px-3 py-2 text-center"><div class="font-bold text-purple-600">${totalReceived}</div><div class="text-xs text-gray-500">紹介もらった</div></div>
+          ${totalAmount ? `<div class="bg-green-50 rounded-lg px-3 py-2 text-center"><div class="font-bold text-green-600">¥${totalAmount.toLocaleString()}</div><div class="text-xs text-gray-500">成約合計</div></div>` : ''}
+        </div>` : ''}
+      <div class="mb-4 border rounded-xl p-3 bg-gray-50 space-y-2">
+        <p class="text-xs font-semibold text-gray-500">新しい紹介を記録</p>
+        <div class="grid grid-cols-2 gap-2">
+          <select id="newRefDir" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            <option value="given">→ 相手に紹介した</option>
+            <option value="received">← 紹介してもらった</option>
+          </select>
+          <input type="date" id="newRefDate" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        </div>
+        <input type="text" id="newRefDesc" placeholder="紹介内容（例：Web制作の案件を紹介）" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <div class="flex gap-2">
+          <select id="newRefResult" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            <option value="進行中">進行中</option>
+            <option value="成約">成約</option>
+            <option value="不成立">不成立</option>
+          </select>
+          <input type="number" id="newRefAmount" placeholder="成約金額（円）" class="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+          <button onclick="addReferral(${cid})" class="bg-indigo-600 text-white text-sm px-3 py-2 rounded-lg hover:bg-indigo-700 whitespace-nowrap">追加</button>
+        </div>
+      </div>
+      <div id="referralList">
+        ${referrals.length ? referrals.map(r => `
+          <div class="border rounded-lg p-3 mb-2 bg-white flex items-start gap-2">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-semibold ${dirColors[r.direction]||'text-gray-600'}">${dirLabels[r.direction]||r.direction}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full font-medium ${resultColors[r.result]||'bg-gray-100 text-gray-600'}">${esc(r.result)}</span>
+                ${r.amount ? `<span class="text-xs text-green-700 font-semibold">¥${Number(r.amount).toLocaleString()}</span>` : ''}
+                ${r.date ? `<span class="text-xs text-gray-400">${esc(r.date)}</span>` : ''}
+              </div>
+              ${r.description ? `<div class="text-sm text-gray-800 mt-1">${esc(r.description)}</div>` : ''}
+            </div>
+            <div class="flex gap-1 shrink-0">
+              <select onchange="updateReferralResult(${r.id}, this.value, ${cid})" class="text-xs border rounded px-1 py-0.5">
+                <option ${r.result==='進行中'?'selected':''}>進行中</option>
+                <option ${r.result==='成約'?'selected':''}>成約</option>
+                <option ${r.result==='不成立'?'selected':''}>不成立</option>
+              </select>
+              <button onclick="deleteReferral(${r.id}, ${cid})" class="text-red-400 hover:text-red-600 text-lg leading-none px-1">&times;</button>
+            </div>
+          </div>`).join('')
+        : '<div class="text-sm text-gray-400">紹介履歴がありません</div>'}
+      </div>
+    </div>`;
+}
+
+async function addReferral(cid) {
+  const direction = document.getElementById('newRefDir').value;
+  const date = document.getElementById('newRefDate').value;
+  const description = document.getElementById('newRefDesc').value.trim();
+  const result = document.getElementById('newRefResult').value;
+  const amount = parseInt(document.getElementById('newRefAmount').value) || 0;
+  if (!description) return alert('紹介内容を入力してください');
+  await api('POST', '/contacts/'+cid+'/referrals', {direction, date, description, result, amount});
+  showTab(7);
+}
+
+async function updateReferralResult(rid, result, cid) {
+  const refs = await api('GET', '/contacts/'+cid+'/referrals');
+  const ref = refs.find(r => r.id === rid) || {};
+  await api('PUT', '/referrals/'+rid, {
+    direction: ref.direction || 'given',
+    date: ref.date || '',
+    description: ref.description || '',
+    result,
+    amount: ref.amount || 0
+  });
+  showTab(7);
+}
+
+async function deleteReferral(rid, cid) {
+  if (!confirm('削除しますか？')) return;
+  await api('DELETE', '/referrals/'+rid);
+  showTab(7);
+}
+
+function start121(cid, cname) {
+  const user = localStorage.getItem('bni_username') || 'admin';
+  const room = '121-' + user + '-' + cid + '-' + Date.now();
+  const url = new URL('https://meet.gaiaarts.org/');
+  url.searchParams.set('system', 'bni');
+  url.searchParams.set('bni_user', user);
+  url.searchParams.set('bni_contact_id', cid);
+  url.searchParams.set('bni_contact_name', cname);
+  url.searchParams.set('name', cname);
+  url.searchParams.set('room', room);
+  window.open(url.toString(), '_blank');
+}
+
+function renderOneOnOnes(records, cid) {
+  if (!records || records.length === 0) {
+    return `<div class='text-sm text-gray-400 py-4'>1-2-1の記録はまだありません。<br><br><button onclick='start121(${cid}, currentContactName)' class='mt-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700'>🎙️ NiceMeetで1-2-1を開始</button></div>`;
+  }
+  const items = records.map(r => {
+    const date = r.meeting_date || r.created_at?.slice(0,10) || '';
+    const dur = r.duration_minutes ? Math.round(r.duration_minutes) + '分' : '';
+    return `<div class='border rounded-lg p-3 mb-3 bg-purple-50 border-purple-100'>
+      <div class='flex items-center justify-between mb-2'>
+        <div class='text-sm font-semibold text-purple-800'>${esc(date)} ${dur ? '（' + dur + '）' : ''}</div>
+        <span class='text-xs text-purple-500 bg-purple-100 px-2 py-0.5 rounded-full'>1-2-1</span>
+      </div>
+      ${r.summary ? "<div class='text-sm text-gray-700 mb-2 whitespace-pre-wrap'>" + esc(r.summary) + "</div>" : ''}
+      ${r.gains_goals||r.gains_accomplishments||r.gains_interests||r.gains_networks||r.gains_skills ? `
+      <div class='text-xs font-semibold text-gray-500 mb-1 mt-2'>GAINS</div>
+      <div class='text-xs text-gray-600 space-y-1'>
+        ${r.gains_goals ? '<div><span class=\'font-semibold\'>G:</span> ' + esc(r.gains_goals) + '</div>' : ''}
+        ${r.gains_accomplishments ? '<div><span class=\'font-semibold\'>A:</span> ' + esc(r.gains_accomplishments) + '</div>' : ''}
+        ${r.gains_interests ? '<div><span class=\'font-semibold\'>I:</span> ' + esc(r.gains_interests) + '</div>' : ''}
+        ${r.gains_networks ? '<div><span class=\'font-semibold\'>N:</span> ' + esc(r.gains_networks) + '</div>' : ''}
+        ${r.gains_skills ? '<div><span class=\'font-semibold\'>S:</span> ' + esc(r.gains_skills) + '</div>' : ''}
+      </div>` : ''}
+      ${r.referral_hints ? "<div class='text-xs text-green-700 mt-2 bg-green-50 rounded p-1.5'><span class='font-semibold'>紹介ヒント:</span> " + esc(r.referral_hints) + "</div>" : ''}
+      ${r.follow_up ? "<div class='text-xs text-orange-700 mt-1 bg-orange-50 rounded p-1.5'><span class='font-semibold'>フォローアップ:</span> " + esc(r.follow_up) + "</div>" : ''}
+    </div>`;
+  }).join('');
+  return `<div>${items}
+    <button onclick='start121(${cid}, currentContactName)' class='mt-2 w-full px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700'>🎙️ 新しい1-2-1を開始</button>
+  </div>`;
+}
+
+let currentContactName = '';
+
+function renderMatching(c) {
+  return `
+    <div>
+      <div class="flex items-start justify-between mb-4">
+        <div>
+          <div class="text-sm font-semibold text-gray-700">AIビジネスマッチング</div>
+          <div class="text-xs text-gray-400 mt-0.5">${esc(c.name)}さんと相性の良いメンバーをAIが分析します</div>
+        </div>
+        <button onclick="runMatching(${c.id})" id="matchBtn" class="text-sm bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 whitespace-nowrap">
+          🤝 マッチング分析
+        </button>
+      </div>
+      <div id="matchResult">
+        <div class="text-sm text-gray-400 text-center py-8">「マッチング分析」ボタンを押すと、AIが相性の良いメンバーを分析します</div>
+      </div>
+    </div>`;
+}
+
+async function runMatching(cid) {
+  const btn = document.getElementById('matchBtn');
+  btn.textContent = '分析中...';
+  btn.disabled = true;
+  const resultEl = document.getElementById('matchResult');
+  resultEl.innerHTML = '<div class="text-sm text-gray-400 text-center py-8">AIが分析中です...</div>';
+  try {
+    const res = await api('POST', '/contacts/' + cid + '/match');
+    if (!res.matches || res.matches.length === 0) {
+      resultEl.innerHTML = '<div class="text-sm text-gray-400 text-center py-8">マッチング候補が見つかりませんでした。<br>コンタクトを2名以上登録すると分析できます。</div>';
+      return;
+    }
+    const scoreColor = i => i === 0 ? 'text-purple-600' : i === 1 ? 'text-indigo-600' : 'text-gray-600';
+    const cardBorder = i => i === 0 ? 'border-purple-300 bg-purple-50' : 'border-gray-200 bg-gray-50';
+    resultEl.innerHTML = res.matches.map((m, i) => `
+      <div class="border rounded-xl p-4 mb-3 ${cardBorder(i)} cursor-pointer hover:shadow-sm transition" onclick="selectContact(${m.contact.id})">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-bold text-gray-900">${i+1}位: ${esc(m.contact.name)}</span>
+              ${m.contact.category ? `<span class="text-xs text-white bg-gray-500 rounded-full px-2 py-0.5">${esc(m.contact.category)}</span>` : ''}
+            </div>
+            ${m.contact.company ? `<div class="text-xs text-gray-400 mt-0.5">${esc(m.contact.company)}</div>` : ''}
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-2xl font-bold ${scoreColor(i)}">${m.score}</div>
+            <div class="text-xs text-gray-400">/ 100</div>
+          </div>
+        </div>
+        <div class="mt-2 text-sm text-gray-700">${esc(m.reason)}</div>
+        ${m.referral_opportunity ? `<div class="mt-2 text-xs text-indigo-700 bg-indigo-50 border border-blue-100 rounded-lg px-3 py-2">💡 ${esc(m.referral_opportunity)}</div>` : ''}
+        <div class="mt-2 text-xs text-gray-400 text-right">タップして詳細を表示 →</div>
+      </div>`).join('');
+  } catch(e) {
+    resultEl.innerHTML = `<div class="text-sm text-red-600 bg-red-50 rounded-lg p-3">❌ ${esc(e.message)}</div>`;
+  } finally {
+    btn.innerHTML = '🤝 マッチング分析';
+    btn.disabled = false;
+  }
+}
+
+async function addMemo(cid) {
+  const content = document.getElementById('newMemo').value.trim();
+  if (!content) return;
+  await api('POST', '/contacts/'+cid+'/memos', {content});
+  showTab(3);
+}
+
+async function deleteMemo(mid, cid) {
+  if (!confirm('削除しますか？')) return;
+  await api('DELETE', '/memos/'+mid);
+  showTab(3);
+}
+
+async function addReminder(cid) {
+  const remind_date = document.getElementById('newReminderDate').value;
+  const message = document.getElementById('newReminderMsg').value.trim();
+  if (!remind_date) return alert('日付を選択してください');
+  await api('POST', '/contacts/'+cid+'/reminders', {remind_date, message});
+  showTab(4);
+}
+
+async function toggleReminder(rid, cid) {
+  await api('PUT', '/reminders/'+rid+'/toggle');
+  showTab(4);
+}
+
+async function deleteReminder(rid, cid) {
+  if (!confirm('削除しますか？')) return;
+  await api('DELETE', '/reminders/'+rid);
+  showTab(4);
+}
+
+async function generateIntro(cid) {
+  const btn = document.getElementById('genBtn');
+  btn.textContent = '生成中...';
+  btn.disabled = true;
+  try {
+    const res = await api('POST', '/contacts/'+cid+'/generate-introduction');
+    document.getElementById('introText').value = res.introduction;
+  } catch(e) {
+    alert('生成に失敗しました: ' + e.message);
+  } finally {
+    btn.innerHTML = '✨ AIで自動生成';
+    btn.disabled = false;
+  }
+}
+
+async function saveIntro(cid) {
+  const introduction = document.getElementById('introText').value;
+  const c = await api('GET', '/contacts/'+cid);
+  await api('PUT', '/contacts/'+cid, {...c, introduction});
+  // Update local cache
+  const idx = contacts.findIndex(x=>x.id===cid);
+  if (idx>=0) contacts[idx].introduction = introduction;
+}
+
+function openAddModal() {
+  document.getElementById('modalTitle').textContent = '人物を追加';
+  document.getElementById('editId').value = '';
+  FIELDS.forEach(f => {
+    const el = document.getElementById('f_'+f);
+    if (el) el.value = '';
+  });
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+async function openEditModal(id) {
+  const c = await api('GET', '/contacts/'+id);
+  document.getElementById('modalTitle').textContent = '編集: ' + c.name;
+  document.getElementById('editId').value = id;
+  FIELDS.forEach(f => {
+    const el = document.getElementById('f_'+f);
+    if (el) el.value = c[f] || '';
+  });
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+}
+
+async function saveContact() {
+  const id = document.getElementById('editId').value;
+  const data = {};
+  FIELDS.forEach(f => {
+    const el = document.getElementById('f_'+f);
+    if (el) data[f] = el.value;
+  });
+  if (!data.name.trim()) return alert('名前は必須です');
+  if (id) {
+    await api('PUT', '/contacts/'+id, data);
+  } else {
+    await api('POST', '/contacts', data);
+  }
+  closeModal();
+  await loadContacts(document.getElementById('searchInput').value);
+  if (id) selectContact(parseInt(id));
+}
+
+async function confirmDelete(id) {
+  if (!confirm('削除しますか？この操作は元に戻せません。')) return;
+  await api('DELETE', '/contacts/'+id);
+  currentId = null;
+  document.getElementById('contactDetail').classList.add('hidden');
+  document.getElementById('emptyState').classList.remove('hidden');
+  await loadContacts(document.getElementById('searchInput').value);
+}
+
+let searchTimer;
+function onSearch(q) {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(()=>loadContacts(q), 300);
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Import ──────────────────────────────────────────────
+let importedData = null;
+let currentImportTab = 'file';
+
+function openImportModal() {
+  importedData = null;
+  document.getElementById('importModal').classList.remove('hidden');
+  document.getElementById('importPreview').classList.add('hidden');
+  document.getElementById('importError').classList.add('hidden');
+  document.getElementById('importSaveBtn').classList.add('hidden');
+  document.getElementById('importParseBtn').classList.remove('hidden');
+  document.getElementById('importFile').value = '';
+  document.getElementById('importUrl').value = '';
+  document.getElementById('selectedFileName').classList.add('hidden');
+  switchImportTab('file');
+}
+
+function closeImportModal() {
+  document.getElementById('importModal').classList.add('hidden');
+}
+
+function switchImportTab(tab) {
+  currentImportTab = tab;
+  document.getElementById('importFileArea').classList.toggle('hidden', tab !== 'file');
+  document.getElementById('importUrlArea').classList.toggle('hidden', tab !== 'url');
+  document.getElementById('importTabFile').classList.toggle('tab-active', tab === 'file');
+  document.getElementById('importTabUrl').classList.toggle('tab-active', tab === 'url');
+}
+
+function onFileSelect(input) {
+  const file = input.files[0];
+  if (file) {
+    const el = document.getElementById('selectedFileName');
+    el.textContent = '📎 ' + file.name;
+    el.classList.remove('hidden');
+  }
+}
+
+// ドロップゾーン
+document.addEventListener('DOMContentLoaded', () => {
+  const zone = document.getElementById('dropZone');
+  if (!zone) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('border-blue-500','bg-indigo-50'); });
+  zone.addEventListener('dragleave', () => { zone.classList.remove('border-blue-500','bg-indigo-50'); });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('border-blue-500','bg-indigo-50');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      document.getElementById('importFile').files = e.dataTransfer.files;
+      onFileSelect(document.getElementById('importFile'));
+    }
+  });
+  zone.addEventListener('click', () => document.getElementById('importFile').click());
+});
+
+async function runImport() {
+  const btn = document.getElementById('importParseBtn');
+  btn.textContent = '解析中...';
+  btn.disabled = true;
+  document.getElementById('importError').classList.add('hidden');
+  document.getElementById('importPreview').classList.add('hidden');
+
+  try {
+    let res;
+    if (currentImportTab === 'file') {
+      const file = document.getElementById('importFile').files[0];
+      if (!file) { alert('ファイルを選択してください'); return; }
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await fetch(BASE + 'api/import/file', { method: 'POST', body: fd, headers:{'Authorization':authToken} });
+      if (!r.ok) {
+        let msg = r.statusText;
+        try { msg = (await r.json()).detail || msg; } catch {}
+        throw new Error(msg);
+      }
+      res = await r.json();
+    } else {
+      const url = document.getElementById('importUrl').value.trim();
+      if (!url) { alert('URLを入力してください'); return; }
+      const fd = new FormData();
+      fd.append('url', url);
+      const r = await fetch(BASE + 'api/import/url', { method: 'POST', body: fd, headers:{'Authorization':authToken} });
+      if (!r.ok) {
+        let msg = r.statusText;
+        try { msg = (await r.json()).detail || msg; } catch {}
+        throw new Error(msg);
+      }
+      res = await r.json();
+    }
+
+    importedData = res.parsed;
+    renderImportPreview(res.parsed, res.raw_text);
+    document.getElementById('importPreview').classList.remove('hidden');
+    document.getElementById('importSaveBtn').classList.remove('hidden');
+  } catch(e) {
+    const el = document.getElementById('importError');
+    el.textContent = '❌ ' + e.message;
+    el.classList.remove('hidden');
+  } finally {
+    btn.textContent = '🔍 解析';
+    btn.disabled = false;
+  }
+}
+
+const FIELD_LABELS = {
+  name:'名前', reading:'よみがな', company:'会社名', chapter:'チャプター', category:'職種',
+  business_description:'事業内容', area:'活動地域', birthplace:'出身地', residence:'居住地',
+  spouse:'配偶者', family:'家族構成', previous_jobs:'前職', hobbies:'趣味', experience_years:'経験年数',
+  success_key:'成功の鍵', selling_points:'セールスポイント', target_customers:'ターゲット顧客',
+  referral_intro:'紹介の切り出し方', request:'お願いしたいこと',
+  goals:'目標', accomplishments:'実績', interests:'興味関心', networks:'人脈', skills:'スキル'
+};
+
+function renderImportPreview(data, rawText) {
+  const el = document.getElementById('importPreviewContent');
+  const rows = Object.entries(FIELD_LABELS)
+    .filter(([k]) => data[k])
+    .map(([k,label]) => `<div class="flex gap-2 py-0.5"><span class="text-gray-500 w-28 shrink-0 text-xs">${label}</span><span class="text-gray-800 text-xs">${esc(String(data[k]).substring(0,120))}${String(data[k]).length>120?'…':''}</span></div>`);
+  const rawSection = rawText ? `<details class="mt-3"><summary class="text-xs text-gray-400 cursor-pointer">▶ 抽出テキスト（先頭）</summary><pre class="text-xs text-gray-500 mt-1 whitespace-pre-wrap bg-white p-2 rounded border">${esc(rawText)}</pre></details>` : '';
+  el.innerHTML = (rows.length ? rows.join('') : '<div class="text-gray-400 text-sm">取得できたデータがありません</div>') + rawSection;
+}
+
+async function saveImported() {
+  if (!importedData) return;
+  // FIELDS にないキーを除去し、name がなければ警告
+  if (!importedData.name) {
+    const n = prompt('名前が取得できませんでした。名前を入力してください:');
+    if (!n) return;
+    importedData.name = n;
+  }
+  const data = {};
+  FIELDS.forEach(f => { data[f] = importedData[f] || ''; });
+  await api('POST', '/contacts', data);
+  closeImportModal();
+  await loadContacts();
+  // 追加した人を選択
+  if (contacts.length) selectContact(contacts[0].id);
+}
+
+// ── プロフィール取込 ──────────────────────────────────────
+let piData = null;
+let piTab = 'file';
+
+function openProfileImport() {
+  piData = null; piTab = 'file';
+  document.getElementById('profileImportModal').classList.remove('hidden');
+  document.getElementById('piPreview').classList.add('hidden');
+  document.getElementById('piError').classList.add('hidden');
+  document.getElementById('piSaveBtn').classList.add('hidden');
+  document.getElementById('piParseBtn').classList.remove('hidden');
+  document.getElementById('piFile').value = '';
+  document.getElementById('piUrl').value = '';
+  document.getElementById('piFileName').classList.add('hidden');
+  switchPiTab('file');
+}
+
+function closeProfileImport() {
+  document.getElementById('profileImportModal').classList.add('hidden');
+}
+
+function switchPiTab(tab) {
+  piTab = tab;
+  document.getElementById('piFileArea').classList.toggle('hidden', tab !== 'file');
+  document.getElementById('piUrlArea').classList.toggle('hidden', tab !== 'url');
+  document.getElementById('piTabFile').classList.toggle('tab-active', tab === 'file');
+  document.getElementById('piTabUrl').classList.toggle('tab-active', tab === 'url');
+}
+
+function onPiFileSelect(input) {
+  const file = input.files[0];
+  if (file) {
+    const el = document.getElementById('piFileName');
+    el.textContent = '📎 ' + file.name;
+    el.classList.remove('hidden');
+  }
+}
+
+async function runProfileImport() {
+  const btn = document.getElementById('piParseBtn');
+  btn.textContent = '解析中...'; btn.disabled = true;
+  document.getElementById('piError').classList.add('hidden');
+  document.getElementById('piPreview').classList.add('hidden');
+  try {
+    let res;
+    if (piTab === 'file') {
+      const file = document.getElementById('piFile').files[0];
+      if (!file) { alert('ファイルを選択してください'); return; }
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await fetch(BASE + 'api/import/file', { method: 'POST', body: fd, headers: {'Authorization': authToken} });
+      if (!r.ok) { let msg = r.statusText; try { msg = (await r.json()).detail || msg; } catch {} throw new Error(msg); }
+      res = await r.json();
+    } else {
+      const url = document.getElementById('piUrl').value.trim();
+      if (!url) { alert('URLを入力してください'); return; }
+      const fd = new FormData(); fd.append('url', url);
+      const r = await fetch(BASE + 'api/import/url', { method: 'POST', body: fd, headers: {'Authorization': authToken} });
+      if (!r.ok) { let msg = r.statusText; try { msg = (await r.json()).detail || msg; } catch {} throw new Error(msg); }
+      res = await r.json();
+    }
+    piData = res.parsed;
+    const rows = Object.entries(FIELD_LABELS)
+      .filter(([k]) => piData[k])
+      .map(([k, label]) => `<div class="flex gap-2 py-0.5"><span class="text-gray-500 w-28 shrink-0 text-xs">${label}</span><span class="text-gray-800 text-xs">${esc(String(piData[k]).substring(0, 120))}${String(piData[k]).length > 120 ? '…' : ''}</span></div>`);
+    document.getElementById('piPreviewContent').innerHTML = rows.length ? rows.join('') : '<div class="text-gray-400">取得できたデータがありません</div>';
+    document.getElementById('piPreview').classList.remove('hidden');
+    document.getElementById('piSaveBtn').classList.remove('hidden');
+  } catch(e) {
+    const el = document.getElementById('piError');
+    el.textContent = '❌ ' + e.message; el.classList.remove('hidden');
+  } finally {
+    btn.textContent = '🔍 解析'; btn.disabled = false;
+  }
+}
+
+function applyProfileImport() {
+  if (!piData) return;
+  const map = { name: 'mp_name', company: 'mp_company', chapter: 'mp_chapter',
+                category: 'mp_category', business_description: 'mp_business_description',
+                selling_points: 'mp_selling_points', target_customers: 'mp_target_customers',
+                referral_intro: 'mp_referral_intro' };
+  Object.entries(map).forEach(([field, elId]) => {
+    if (piData[field]) {
+      const el = document.getElementById(elId);
+      if (el) el.value = piData[field];
+    }
+  });
+  closeProfileImport();
+  alert('プロフィールに反映しました。内容を確認して「保存」を押してください。');
+}
+
+// ── カレンダー ────────────────────────────────────────────
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth() + 1;
+let calData = { reminders: [], meetings: [] };
+let calGoogleEvents = [];
+
+async function loadCalendar() {
+  const [bniData, gcalData] = await Promise.all([
+    api('GET', `/calendar?year=${calYear}&month=${calMonth}`),
+    gcalConnected ? api('GET', `/calendar/google?year=${calYear}&month=${calMonth}`) : Promise.resolve({ events: [], connected: false })
+  ]);
+  calData = bniData;
+  calGoogleEvents = gcalData.events || [];
+  const legend = document.getElementById('cal-gcal-legend');
+  if (legend) legend.classList.toggle('hidden', !gcalData.connected || !calGoogleEvents.length);
+  renderCalendar();
+}
+
+function calPrev() {
+  calMonth--;
+  if (calMonth < 1) { calMonth = 12; calYear--; }
+  loadCalendar();
+}
+
+function calNext() {
+  calMonth++;
+  if (calMonth > 12) { calMonth = 1; calYear++; }
+  loadCalendar();
+}
+
+function renderCalendar() {
+  document.getElementById('cal-title').textContent = `${calYear}年 ${calMonth}月`;
+  document.getElementById('cal-detail').classList.add('hidden');
+
+  // イベントを日付ごとにマップ
+  const eventMap = {};
+  calData.reminders.forEach(r => {
+    const d = r.remind_date;
+    if (!eventMap[d]) eventMap[d] = [];
+    eventMap[d].push({ type: 'reminder', ...r });
+  });
+  calData.meetings.forEach(m => {
+    const d = m.last_meeting_date;
+    if (!eventMap[d]) eventMap[d] = [];
+    eventMap[d].push({ type: 'meeting', ...m });
+  });
+  calGoogleEvents.forEach(e => {
+    const d = e.date;
+    if (!eventMap[d]) eventMap[d] = [];
+    eventMap[d].push({ type: 'gcal', ...e });
+  });
+
+  const firstDay = new Date(calYear, calMonth - 1, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+  const today = new Date().toISOString().substring(0, 10);
+
+  const grid = document.getElementById('cal-grid');
+  let html = '';
+
+  for (let i = 0; i < firstDay; i++) {
+    html += '<div class="min-h-[60px] border-b border-r border-gray-100 bg-gray-50"></div>';
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${calYear}-${String(calMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const events = eventMap[dateStr] || [];
+    const isToday = dateStr === today;
+    const dow = (firstDay + d - 1) % 7;
+    const isSun = dow === 0, isSat = dow === 6;
+
+    const reminders = events.filter(e => e.type === 'reminder');
+    const meetings = events.filter(e => e.type === 'meeting');
+
+    html += `
+      <div class="min-h-[60px] border-b border-r border-gray-100 p-1 cursor-pointer hover:bg-indigo-50 transition ${events.length ? 'bg-indigo-50/30' : ''}"
+           onclick="showCalDay('${dateStr}')">
+        <div class="text-xs font-semibold mb-1 w-6 h-6 flex items-center justify-center rounded-full
+          ${isToday ? 'bg-indigo-600 text-white' : isSun ? 'text-red-400' : isSat ? 'text-blue-400' : 'text-gray-700'}">
+          ${d}
+        </div>
+        <div class="flex flex-wrap gap-0.5">
+          ${reminders.map(() => `<span class="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>`).join('')}
+          ${meetings.map(() => `<span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>`).join('')}
+          ${events.filter(e=>e.type==='gcal').map(() => `<span class="w-2 h-2 rounded-full bg-orange-400 inline-block"></span>`).join('')}
+        </div>
+        ${events.length ? `<div class="text-xs text-gray-500 mt-0.5 truncate leading-tight">${esc(events[0].contact_name || events[0].name || events[0].title || '')}</div>` : ''}
+      </div>`;
+  }
+
+  // 残りのセルを埋める
+  const total = firstDay + daysInMonth;
+  const remaining = total % 7 === 0 ? 0 : 7 - (total % 7);
+  for (let i = 0; i < remaining; i++) {
+    html += '<div class="min-h-[60px] border-b border-r border-gray-100 bg-gray-50"></div>';
+  }
+
+  grid.innerHTML = html;
+}
+
+function showCalDay(dateStr) {
+  const eventMap = {};
+  calData.reminders.forEach(r => {
+    if (!eventMap[r.remind_date]) eventMap[r.remind_date] = [];
+    eventMap[r.remind_date].push({ type: 'reminder', ...r });
+  });
+  calData.meetings.forEach(m => {
+    if (!eventMap[m.last_meeting_date]) eventMap[m.last_meeting_date] = [];
+    eventMap[m.last_meeting_date].push({ type: 'meeting', ...m });
+  });
+  calGoogleEvents.forEach(e => {
+    if (!eventMap[e.date]) eventMap[e.date] = [];
+    eventMap[e.date].push({ type: 'gcal', ...e });
+  });
+
+  const events = eventMap[dateStr] || [];
+  const detail = document.getElementById('cal-detail');
+  const dateObj = new Date(dateStr + 'T00:00:00');
+  const label = `${dateObj.getFullYear()}年${dateObj.getMonth()+1}月${dateObj.getDate()}日`;
+
+  document.getElementById('cal-detail-date').textContent = label;
+
+  if (!events.length) {
+    document.getElementById('cal-detail-content').innerHTML =
+      '<div class="text-sm text-gray-400">この日の予定はありません</div>';
+  } else {
+    document.getElementById('cal-detail-content').innerHTML = events.map(e => {
+      if (e.type === 'reminder') {
+        return `<div class="flex items-start gap-2 p-2 rounded-lg bg-indigo-50 cursor-pointer hover:bg-indigo-100" onclick="switchView('contacts');setTimeout(()=>selectContact(${e.contact_id}),100)">
+          <span class="w-2.5 h-2.5 rounded-full bg-indigo-500 mt-1 shrink-0"></span>
+          <div>
+            <div class="text-sm font-medium text-gray-800">${esc(e.contact_name)}</div>
+            ${e.message ? `<div class="text-xs text-gray-500">${esc(e.message)}</div>` : ''}
+            <div class="text-xs text-gray-400">${e.done ? '✅ 完了' : '⏰ リマインダー'}</div>
+          </div>
+        </div>`;
+      } else if (e.type === 'meeting') {
+        return `<div class="flex items-start gap-2 p-2 rounded-lg bg-green-50 cursor-pointer hover:bg-green-100" onclick="switchView('contacts');setTimeout(()=>selectContact(${e.id}),100)">
+          <span class="w-2.5 h-2.5 rounded-full bg-green-500 mt-1 shrink-0"></span>
+          <div>
+            <div class="text-sm font-medium text-gray-800">${esc(e.name)}</div>
+            ${e.category ? `<div class="text-xs text-gray-500">${esc(e.category)}${e.company ? ' / ' + esc(e.company) : ''}</div>` : ''}
+            <div class="text-xs text-gray-400">🤝 1on1実施</div>
+          </div>
+        </div>`;
+      } else {
+        const timeStr = e.time ? new Date(e.time).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'}) : '終日';
+        return `<div class="flex items-start gap-2 p-2 rounded-lg bg-orange-50 ${e.url ? 'cursor-pointer hover:bg-orange-100' : ''}" ${e.url ? `onclick="window.open('${e.url}','_blank')"` : ''}>
+          <span class="w-2.5 h-2.5 rounded-full bg-orange-400 mt-1 shrink-0"></span>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-gray-800">${esc(e.title)}</div>
+            <div class="text-xs text-gray-400">🗓 ${timeStr}${e.url ? ' · タップで開く' : ''}</div>
+          </div>
+        </div>`;
+      }
+    }).join('');
+  }
+
+  detail.classList.remove('hidden');
+  detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Googleカレンダー連携 ──────────────────────────────────
+async function loadGcalStatus() {
+  try {
+    const d = await api('GET', '/auth/google/status');
+    gcalConnected = d.connected;
+    const statusEl = document.getElementById('gcal-status');
+    const connectBtn = document.getElementById('gcal-connect-btn');
+    const disconnectBtn = document.getElementById('gcal-disconnect-btn');
+    if (d.connected) {
+      statusEl.innerHTML = `<span class="text-green-600 font-medium">✅ 連携済み</span><span class="text-gray-400 text-xs ml-2">${d.connected_at || ''}</span>`;
+      connectBtn.classList.add('hidden');
+      disconnectBtn.classList.remove('hidden');
+    } else {
+      statusEl.textContent = '未連携';
+      connectBtn.classList.remove('hidden');
+      disconnectBtn.classList.add('hidden');
+    }
+  } catch(e) {}
+}
+
+function connectGoogleCalendar() {
+  window.location.href = BASE + 'api/auth/google/calendar?token=' + encodeURIComponent(authToken);
+}
+
+async function disconnectGoogleCalendar() {
+  if (!confirm('Googleカレンダーの連携を解除しますか？')) return;
+  await api('DELETE', '/auth/google/calendar');
+  gcalConnected = false;
+  loadGcalStatus();
+}
+
+async function syncReminderGoogle(rid) {
+  try {
+    const res = await api('POST', '/reminders/' + rid + '/sync-google');
+    if (res.event_url) {
+      if (confirm('Googleカレンダーに追加しました。カレンダーで確認しますか？')) {
+        window.open(res.event_url, '_blank');
+      }
+    }
+  } catch(e) {
+    alert('同期に失敗しました。設定画面でGoogleカレンダーを連携してください。');
+  }
+}
+
+// Init
+(async () => {
+  const params = new URLSearchParams(window.location.search);
+
+  // トライアル開始フラグ
+  if (params.get('start_trial') === '1') {
+    localStorage.setItem('bni_start_trial', '1');
+    history.replaceState({}, '', window.location.pathname);
+    showRegister();
+  }
+
+  // NiceMeet SSO自動ログイン
+  const ssoToken = params.get('sso_token');
+  if (ssoToken) {
+    try {
+      const r = await fetch(BASE + 'api/auth/sso?token=' + encodeURIComponent(ssoToken));
+      if (r.ok) {
+        const d = await r.json();
+        if (d.token) {
+          authToken = d.token;
+          localStorage.setItem('bni_token', authToken);
+          localStorage.setItem('bni_username', d.username);
+          history.replaceState({}, '', window.location.pathname);
+          document.getElementById('loginScreen').classList.add('hidden');
+          loadContacts();
+          api('GET', '/auth/google/status').then(d2 => { gcalConnected = d2.connected; }).catch(() => {});
+          return;
+        }
+      }
+    } catch(e) { console.error('SSO error:', e); }
+  }
+
+  if (authToken && await checkAuth()) {
+    document.getElementById('loginScreen').classList.add('hidden');
+    loadContacts();
+    api('GET', '/auth/google/status').then(d => { gcalConnected = d.connected; }).catch(() => {});
+    if (localStorage.getItem('bni_start_trial') === '1') {
+      localStorage.removeItem('bni_start_trial');
+      startStripeCheckout();
+    } else if (params.get('plan') === 'success') {
+      history.replaceState({}, '', window.location.pathname);
+      switchView('settings');
+      document.getElementById('plan-success-msg').classList.remove('hidden');
+    } else if (params.get('google_connected') === '1') {
+      history.replaceState({}, '', window.location.pathname);
+      switchView('settings');
+      const msg = document.getElementById('gcal-msg');
+      msg.textContent = '✅ Googleカレンダーの連携が完了しました！';
+      msg.className = 'text-sm text-green-600';
+      msg.classList.remove('hidden');
+    } else if (params.get('google_error') === '1') {
+      history.replaceState({}, '', window.location.pathname);
+      switchView('settings');
+      const msg = document.getElementById('gcal-msg');
+      msg.textContent = '❌ 連携に失敗しました。もう一度お試しください。';
+      msg.className = 'text-sm text-red-600';
+      msg.classList.remove('hidden');
+    }
+  }
+})();
+</script>
+</body>
+</html>
