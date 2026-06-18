@@ -2601,7 +2601,7 @@ io.on('connection', (socket) => {
         hostEmail = hu?.email || null;
         hostUiMode = hu?.ui_mode || 'simple';
       }
-      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode };
+      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: false, waitingList: new Map() };
       rooms.set(safeRoomId, newRoom);
       if (hostPlan === 'free') {
         newRoom.warnTimer = setTimeout(() => { io.to(safeRoomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
@@ -2615,6 +2615,16 @@ io.on('connection', (socket) => {
     // ホストが切断済みなら参加者をホストにする（リフレッシュ時の競合対策）
     if (!io.sockets.sockets.get(cur.hostId) || !cur.users.has(cur.hostId)) {
       cur.hostId = socket.id;
+    }
+    // 待機室チェック
+    if (cur.waitingRoom && cur.hostId !== socket.id) {
+      if (!cur.waitingList) cur.waitingList = new Map();
+      cur.waitingList.set(socket.id, { name: safeUserName });
+      socket.waitingRoomId = safeRoomId;
+      socket.emit('in-waiting-room', { roomId: safeRoomId });
+      const targets = [cur.hostId, ...cur.coHosts].filter(Boolean);
+      targets.forEach(tid => { if (io.sockets.sockets.get(tid)) io.to(tid).emit('waiting-participant', { id: socket.id, name: safeUserName }); });
+      return;
     }
     cur.users.set(socket.id, { name: safeUserName });
     socket.join(safeRoomId);
@@ -2640,7 +2650,57 @@ io.on('connection', (socket) => {
     console.log('[chat] from=' + socket.userName + ' room=' + socket.roomId + ' len=' + message.length);
     socket.to(socket.roomId).emit('chat-message', { from: socket.userName, message, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) });
   });
+  socket.on('set-waiting-room', ({ enabled }) => {
+    if (typeof enabled !== 'boolean') return;
+    const room = rooms.get(socket.roomId);
+    if (!room || room.hostId !== socket.id) return;
+    room.waitingRoom = enabled;
+    socket.emit('waiting-room-changed', { enabled });
+  });
+
+  socket.on('admit-participant', ({ participantId }) => {
+    if (typeof participantId !== 'string' || participantId.length > 64) return;
+    const room = rooms.get(socket.roomId);
+    if (!room || (room.hostId !== socket.id && !room.coHosts.has(socket.id))) return;
+    if (!room.waitingList || !room.waitingList.has(participantId)) return;
+    const waiting = room.waitingList.get(participantId);
+    const pSocket = io.sockets.sockets.get(participantId);
+    room.waitingList.delete(participantId);
+    if (!pSocket) return;
+    const safeRoomId = socket.roomId;
+    room.users.set(participantId, { name: waiting.name });
+    pSocket.join(safeRoomId);
+    pSocket.roomId = safeRoomId;
+    pSocket.mainRoomId = null;
+    pSocket.userName = waiting.name;
+    delete pSocket.waitingRoomId;
+    const existing = [...room.users.entries()].filter(([id]) => id !== participantId).map(([id, d]) => ({ id, name: d.name }));
+    pSocket.emit('admitted', { existingUsers: existing, transcribeMode: room.transcribeMode, isHost: false, isCoHost: room.coHosts.has(participantId), isFreeRoom: room.hostPlan === 'free', roomStartedAt: room.startedAt || Date.now(), hostUiMode: room.hostUiMode || 'simple' });
+    pSocket.to(safeRoomId).emit('user-joined', { id: participantId, name: waiting.name });
+    socket.emit('participant-admitted', { id: participantId });
+  });
+
+  socket.on('reject-participant', ({ participantId }) => {
+    if (typeof participantId !== 'string' || participantId.length > 64) return;
+    const room = rooms.get(socket.roomId);
+    if (!room || (room.hostId !== socket.id && !room.coHosts.has(socket.id))) return;
+    if (!room.waitingList || !room.waitingList.has(participantId)) return;
+    room.waitingList.delete(participantId);
+    io.to(participantId).emit('rejected');
+    socket.emit('participant-rejected', { id: participantId });
+  });
+
   socket.on('disconnect', () => {
+    if (socket.waitingRoomId) {
+      const wr = rooms.get(socket.waitingRoomId);
+      if (wr && wr.waitingList) {
+        wr.waitingList.delete(socket.id);
+        [wr.hostId, ...wr.coHosts].filter(Boolean).forEach(tid => {
+          if (io.sockets.sockets.get(tid)) io.to(tid).emit('waiting-participant-left', { id: socket.id });
+        });
+      }
+      return;
+    }
     if (!socket.roomId) return;
     const curRoomId = socket.roomId;
     const room = rooms.get(curRoomId);
