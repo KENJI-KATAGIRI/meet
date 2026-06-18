@@ -2627,9 +2627,17 @@ io.on('connection', (socket) => {
     for (const [id] of cur.users) {
       if (!io.sockets.sockets.get(id)) cur.users.delete(id);
     }
-    // ホストが切断済みなら参加者をホストにする（リフレッシュ時の競合対策）
+    // ホストが切断済みの場合の復帰処理
     if (!io.sockets.sockets.get(cur.hostId) || !cur.users.has(cur.hostId)) {
-      cur.hostId = socket.id;
+      // ログイン済み: 元ホストと同じアカウントの時のみ昇格
+      // 匿名: 部屋がホストなしのままなら昇格（既存の挙動を維持）
+      const joiningUserId = socket.request.session?.userId;
+      const joiningEmail = joiningUserId
+        ? db.prepare('SELECT email FROM users WHERE id=?').get(joiningUserId)?.email
+        : null;
+      if (!cur.hostEmail || (joiningEmail && joiningEmail === cur.hostEmail)) {
+        cur.hostId = socket.id;
+      }
     }
     // 待機室チェック
     if (cur.waitingRoom && cur.hostId !== socket.id) {
