@@ -1034,6 +1034,11 @@ async function doJoin() {
     console.warn('[noise-gate] AudioWorklet unavailable, using raw stream:', e);
   }
   loadBgSettings();
+  // プレビューで選択した背景を直接引き継ぐ（localStorage経由より確実）
+  if (previewBgMode !== 'none') {
+    if (previewBgMode === 'image' && previewBgImg) { bgImg = previewBgImg; bgImgDataUrl = previewBgImgDataUrl; }
+    setBg(previewBgMode);
+  }
   document.getElementById('lobby').style.display = 'none';
   document.getElementById('meeting').style.display = 'flex';
   document.getElementById('room-info').textContent = 'ルーム: ' + myRoomId;
