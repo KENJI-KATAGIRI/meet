@@ -546,6 +546,8 @@ function copyInappUrl() {
   <div class="effects-section">
     <h3>仮想背景</h3>
     <div class="loading-model" id="loading-model">モデル読み込み中...</div>
+    <div id="bg-debug-status" style="font-size:11px;color:#888;margin-bottom:6px;line-height:1.6;display:none"></div>
+    <button onclick="showBgDebug()" style="font-size:11px;background:#2a2a4a;border:1px solid #444;color:#aaa;padding:2px 8px;border-radius:4px;cursor:pointer;margin-bottom:6px">状態確認</button>
     <div class="effect-options">
       <div class="effect-opt selected" id="bg-none" onclick="setBg('none')">
         <div class="eff-icon">🚫</div>なし
@@ -935,6 +937,10 @@ const peerAudioSources = {};
 let _pendingPass = '', _pendingTranscribeMode = 'host_only';
 let previewMicOn = true, previewCamOn = true;
 let previewBgMode = 'none', previewBgImg = null, previewBgImgDataUrl = null;
+let previewRafId = null;
+let previewFxVideo = null, previewFxCanvas = null, previewFxCtx = null;
+let previewFxMaskCanvas = null, previewFxMaskCtx = null, previewFxMaskBuf = null, previewFxPrevMask = null;
+let previewFxSending = false;
 async function openPreview() {
   await refreshIceConfig();
   const name = document.getElementById('input-name').value.trim();
@@ -994,6 +1000,7 @@ async function openPreview() {
 }
 
 async function doJoin() {
+  stopPreviewEffects();
   const isMobile = window.innerWidth <= 640 || /Mobi|Android/i.test(navigator.userAgent);
   document.getElementById('preview-screen').classList.remove('visible');
   if (isMobile) {
@@ -1259,6 +1266,80 @@ function togglePreviewCam() {
   document.getElementById('preview-no-cam').style.display = previewCamOn ? 'none' : 'flex';
   document.getElementById('preview-video').style.display = previewCamOn ? 'block' : 'none';
 }
+async function startPreviewEffects() {
+  if (previewRafId) return;
+  previewFxVideo = document.createElement('video');
+  previewFxVideo.autoplay = true; previewFxVideo.playsInline = true; previewFxVideo.muted = true;
+  previewFxVideo.srcObject = rawStream;
+  if (previewFxVideo.readyState < 1) await new Promise(r => { previewFxVideo.onloadedmetadata = r; });
+  previewFxVideo.play();
+  const fw = previewFxVideo.videoWidth || 640, fh = previewFxVideo.videoHeight || 480;
+  previewFxCanvas = document.createElement('canvas');
+  previewFxCanvas.width = fw; previewFxCanvas.height = fh;
+  previewFxCtx = previewFxCanvas.getContext('2d');
+  document.getElementById('preview-video').srcObject = previewFxCanvas.captureStream(30);
+  function previewFxLoop() {
+    previewRafId = requestAnimationFrame(previewFxLoop);
+    if (!previewFxVideo || previewFxVideo.readyState < 2) return;
+    const w = previewFxCanvas.width, h = previewFxCanvas.height;
+    if (previewBgMode !== 'none' && mpSegmenter && mpReady && !previewFxSending) {
+      previewFxSending = true;
+      try {
+        mpSegmenter.segmentForVideo(previewFxVideo, performance.now(), (result) => {
+          const masks = result.confidenceMasks;
+          if (!masks || masks.length < 2) { result.close?.(); previewFxSending = false; return; }
+          const mw = masks[0].width, mh = masks[0].height;
+          if (!previewFxMaskCanvas || previewFxMaskCanvas.width !== mw || previewFxMaskCanvas.height !== mh) {
+            previewFxMaskCanvas = document.createElement('canvas');
+            previewFxMaskCanvas.width = mw; previewFxMaskCanvas.height = mh;
+            previewFxMaskCtx = previewFxMaskCanvas.getContext('2d');
+            previewFxMaskBuf = new Uint8ClampedArray(mw * mh * 4);
+            previewFxPrevMask = null;
+          }
+          if (!previewFxPrevMask || previewFxPrevMask.length !== mw * mh) previewFxPrevMask = new Float32Array(mw * mh);
+          const d1 = masks[1].getAsFloat32Array(), d2 = masks[2].getAsFloat32Array(), d3 = masks[3].getAsFloat32Array();
+          const d4 = masks.length > 4 ? masks[4].getAsFloat32Array() : null;
+          for (let i = 0, j = 0; i < mw * mh; i++, j += 4) {
+            const p = Math.min(1.0, d1[i] + d2[i] + d3[i] + (d4 ? d4[i] : 0));
+            const t = Math.max(0, Math.min(1, (p - 0.10) / 0.50));
+            const s = t * t * (3 - 2 * t);
+            const a = s > previewFxPrevMask[i] ? 0.05 : 0.55;
+            previewFxPrevMask[i] = a * previewFxPrevMask[i] + (1 - a) * s;
+            const out = Math.round(previewFxPrevMask[i] * 255);
+            previewFxMaskBuf[j] = previewFxMaskBuf[j+1] = previewFxMaskBuf[j+2] = previewFxMaskBuf[j+3] = out;
+          }
+          previewFxMaskCtx.putImageData(new ImageData(previewFxMaskBuf, mw, mh), 0, 0);
+          result.close(); previewFxSending = false;
+          previewFxCtx.clearRect(0, 0, w, h);
+          const bp = 30;
+          if (previewBgMode === 'blur') {
+            previewFxCtx.filter = 'blur(24px) brightness(0.7)';
+            previewFxCtx.drawImage(previewFxVideo, -bp, -bp, w + bp*2, h + bp*2);
+            previewFxCtx.filter = 'none';
+          } else if (previewBgMode === 'color') {
+            previewFxCtx.fillStyle = bgColorVal; previewFxCtx.fillRect(0, 0, w, h);
+          } else if (previewBgMode === 'image' && previewBgImg) {
+            previewFxCtx.drawImage(previewBgImg, 0, 0, w, h);
+          }
+          previewFxCtx.globalCompositeOperation = 'destination-out';
+          previewFxCtx.drawImage(previewFxMaskCanvas, 0, 0, w, h);
+          previewFxCtx.globalCompositeOperation = 'destination-over';
+          previewFxCtx.drawImage(previewFxVideo, 0, 0, w, h);
+          previewFxCtx.globalCompositeOperation = 'source-over';
+        });
+      } catch(e) { previewFxSending = false; }
+    } else {
+      previewFxCtx.drawImage(previewFxVideo, 0, 0, w, h);
+    }
+  }
+  previewFxLoop();
+}
+function stopPreviewEffects() {
+  if (previewRafId) { cancelAnimationFrame(previewRafId); previewRafId = null; }
+  previewFxVideo = null; previewFxCanvas = null; previewFxCtx = null;
+  previewFxMaskCanvas = null; previewFxMaskCtx = null; previewFxMaskBuf = null; previewFxPrevMask = null;
+  previewFxSending = false;
+}
 async function setPreviewBg(mode) {
   previewBgMode = mode;
   ['none','blur','color','image'].forEach(m => document.getElementById('pbg-' + m)?.classList.toggle('sel', m === mode));
@@ -1266,6 +1347,10 @@ async function setPreviewBg(mode) {
     document.getElementById('preview-loading-model').style.display = 'block';
     await loadSegModel();
     document.getElementById('preview-loading-model').style.display = 'none';
+    await startPreviewEffects();
+  } else {
+    stopPreviewEffects();
+    document.getElementById('preview-video').srcObject = rawStream;
   }
   savePreviewBgSettings();
 }
@@ -1289,6 +1374,7 @@ function onPreviewImgUpload(input) {
       document.getElementById('preview-loading-model').style.display = 'block';
       await loadSegModel();
       document.getElementById('preview-loading-model').style.display = 'none';
+      await startPreviewEffects();
     };
     img.src = e.target.result;
   };
@@ -1306,8 +1392,8 @@ function loadPreviewBgSettings() {
   const raw = localStorage.getItem('meet_bg_' + bgKey); if (!raw) return;
   try {
     const s = JSON.parse(raw);
-    if (s.mode === 'blur') { previewBgMode = 'blur'; document.getElementById('pbg-blur')?.classList.add('sel'); document.getElementById('pbg-none')?.classList.remove('sel'); loadSegModel(); }
-    else if (s.mode === 'color') { previewBgMode = 'color'; document.getElementById('pbg-color')?.classList.add('sel'); document.getElementById('pbg-none')?.classList.remove('sel'); loadSegModel(); }
+    if (s.mode === 'blur') { previewBgMode = 'blur'; document.getElementById('pbg-blur')?.classList.add('sel'); document.getElementById('pbg-none')?.classList.remove('sel'); loadSegModel().then(() => startPreviewEffects()); }
+    else if (s.mode === 'color') { previewBgMode = 'color'; document.getElementById('pbg-color')?.classList.add('sel'); document.getElementById('pbg-none')?.classList.remove('sel'); loadSegModel().then(() => startPreviewEffects()); }
     else if (s.mode === 'image' && s.imgDataUrl) {
       const img = new Image();
       img.onload = () => { previewBgImg = img; previewBgImgDataUrl = s.imgDataUrl; previewBgMode = 'image'; document.getElementById('pbg-image')?.classList.add('sel'); document.getElementById('pbg-none')?.classList.remove('sel'); renderPreviewBgHistory(); loadSegModel(); };
@@ -1322,12 +1408,13 @@ function renderPreviewBgHistory() {
       const d = document.createElement('div');
       d.className = 'preview-img-thumb' + (previewBgImgDataUrl === item.data ? ' sel' : '');
       d.style.backgroundImage = 'url(' + item.data + ')';
-      d.onclick = () => { const img = new Image(); img.onload = () => { previewBgImg = img; previewBgImgDataUrl = item.data; previewBgMode = 'image'; document.getElementById('pbg-image')?.classList.add('sel'); ['none','blur','color'].forEach(m => document.getElementById('pbg-' + m)?.classList.remove('sel')); savePreviewBgSettings(); loadSegModel(); renderPreviewBgHistory(); }; img.src = item.data; };
+      d.onclick = () => { const img = new Image(); img.onload = async () => { previewBgImg = img; previewBgImgDataUrl = item.data; previewBgMode = 'image'; document.getElementById('pbg-image')?.classList.add('sel'); ['none','blur','color'].forEach(m => document.getElementById('pbg-' + m)?.classList.remove('sel')); savePreviewBgSettings(); await loadSegModel(); await startPreviewEffects(); renderPreviewBgHistory(); }; img.src = item.data; };
       c.appendChild(d);
     });
   } catch(e) {}
 }
 function backToLobby() {
+  stopPreviewEffects();
   if (rawStream) { rawStream.getTracks().forEach(t => t.stop()); rawStream = null; }
   document.getElementById('preview-video').srcObject = null;
   document.getElementById('preview-screen').classList.remove('visible');
@@ -2726,6 +2813,26 @@ function updatePreviewCanvas(w, h, sx, sy, sw, sh) {
   } else {
     // 背景なし: effectsCanvasをそのままコピー（CSSのscaleX(-1)でミラー）
     previewCtx.drawImage(effectsCanvas, 0, 0, w, h);
+  }
+}
+
+async function showBgDebug() {
+  const el = document.getElementById('bg-debug-status');
+  el.style.display = 'block';
+  el.innerHTML = [
+    'mpSegmenter: ' + (mpSegmenter ? '<span style="color:#4ade80">あり</span>' : '<span style="color:#f87171">null</span>'),
+    'mpReady: ' + (mpReady ? '<span style="color:#4ade80">true</span>' : '<span style="color:#f87171">false</span>'),
+    'mpModelLoading: ' + mpModelLoading,
+    'bgMode: <strong>' + bgMode + '</strong>',
+    'effectsInited: ' + (effectsInited ? '<span style="color:#4ade80">true</span>' : '<span style="color:#f87171">false</span>'),
+    'rawStream: ' + (rawStream ? '✓' : '<span style="color:#f87171">null</span>'),
+    'effectsVideo: ' + (effectsVideo ? 'readyState=' + effectsVideo.readyState : '<span style="color:#f87171">null</span>'),
+    'rafId: ' + (rafId ? '実行中' : '<span style="color:#f87171">停止</span>'),
+  ].join('<br>');
+  if (!mpSegmenter && !mpModelLoading) {
+    el.innerHTML += '<br><span style="color:#60a5fa">→ モデル読込を手動実行...</span>';
+    await loadSegModel();
+    el.innerHTML += '<br>mpSegmenter: ' + (mpSegmenter ? '<span style="color:#4ade80">完了</span>' : '<span style="color:#f87171">失敗</span>');
   }
 }
 
