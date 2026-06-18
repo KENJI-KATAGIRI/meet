@@ -735,8 +735,8 @@ function applyOpusParams(sdp) {
 
 let socket, rawStream, localStream, screenStream;
 let screenSenders = {};
-let noiseGateNode = null, ngCtx = null, ngDest = null;
-let noiseGateEnabled = true;
+let noiseGateNode = null, ngCtx = null, ngDest = null, ngSrc = null;
+let noiseGateEnabled = true, rnnoiseActive = false;
 let myName = '', myRoomId = '';
 let welfareSettings = { mode: 'none', system: '', recordType: '', memberName: '', staffName: '' };
 const peers = {}, peerNames = {}, peerStreams = {}, peerInitiator = {};
@@ -1014,22 +1014,31 @@ async function doJoin() {
     });
   }
   localStream = rawStream;
-  // ノイズゲート（AudioWorklet）で打鍵音などを除去
+  // AI RNNoise（失敗時はノイズゲートにフォールバック）
   try {
     ngCtx = new AudioContext({ latencyHint: 'interactive' });
-    await ngCtx.audioWorklet.addModule('/noise-gate.js');
-    noiseGateNode = new AudioWorkletNode(ngCtx, 'noise-suppressor');
-    const ngSrc = ngCtx.createMediaStreamSource(rawStream);
+    ngSrc = ngCtx.createMediaStreamSource(rawStream);
     ngDest = ngCtx.createMediaStreamDestination();
+    try {
+      noiseGateNode = await initRNNoise(ngCtx);
+      rnnoiseActive = true;
+      console.log('[noise] RNNoise AI enabled');
+      const ngBtn = document.getElementById('btn-noise-gate');
+      if (ngBtn) { ngBtn.querySelector('.icon').textContent = '🤖'; ngBtn.querySelector('span').textContent = 'AIノイズ除去'; }
+    } catch(e2) {
+      console.warn('[noise] RNNoise failed, fallback to noise gate:', e2.message);
+      await ngCtx.audioWorklet.addModule('/noise-gate.js');
+      noiseGateNode = new AudioWorkletNode(ngCtx, 'noise-suppressor');
+      rnnoiseActive = false;
+    }
     ngSrc.connect(noiseGateNode);
     noiseGateNode.connect(ngDest);
     const ngStream = new MediaStream();
     ngDest.stream.getAudioTracks().forEach(t => ngStream.addTrack(t));
     rawStream.getVideoTracks().forEach(t => ngStream.addTrack(t));
     localStream = ngStream;
-    console.log('[noise-gate] enabled');
   } catch(e) {
-    console.warn('[noise-gate] AudioWorklet unavailable, using raw stream:', e);
+    console.warn('[noise] audio processing unavailable:', e);
   }
   // 色・履歴だけ復元（setBgは呼ばない）
   renderBgHistory();
@@ -1787,15 +1796,42 @@ function toggleMic() {
   document.getElementById('tile-local').classList.toggle('muted', !micOn);
 }
 
+async function initRNNoise(ctx) {
+  const hasSIMD = await WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11]));
+  const wasmUrl = hasSIMD ? '/rnnoise/rnnoise_simd.wasm' : '/rnnoise/rnnoise.wasm';
+  const wasmBinary = await fetch(wasmUrl).then(r => r.arrayBuffer());
+  // BlobURLでロードしimport.meta.urlエラーを回避
+  const workletCode = await fetch('/rnnoise/workletProcessor.js').then(r => r.text());
+  const blobUrl = URL.createObjectURL(new Blob([workletCode], { type: 'application/javascript' }));
+  await ctx.audioWorklet.addModule(blobUrl);
+  URL.revokeObjectURL(blobUrl);
+  return new AudioWorkletNode(ctx, '@sapphi-red/web-noise-suppressor/rnnoise', {
+    processorOptions: { maxChannels: 1, wasmBinary }
+  });
+}
+
 function toggleNoiseGate() {
-  if (!noiseGateNode) return;
+  if (!noiseGateNode || !ngSrc || !ngDest) return;
   noiseGateEnabled = !noiseGateEnabled;
-  // threshold: 高い値でほぼ全カット（実質バイパス）、通常値で除去ON
-  noiseGateNode.port.postMessage({ threshold: noiseGateEnabled ? 0.025 : 0.0001 });
+  if (rnnoiseActive) {
+    // RNNoise: 接続/切断でバイパス
+    if (noiseGateEnabled) {
+      try { ngSrc.disconnect(ngDest); } catch(e) {}
+      ngSrc.connect(noiseGateNode);
+      noiseGateNode.connect(ngDest);
+    } else {
+      try { ngSrc.disconnect(noiseGateNode); } catch(e) {}
+      try { noiseGateNode.disconnect(ngDest); } catch(e) {}
+      ngSrc.connect(ngDest);
+    }
+  } else {
+    noiseGateNode.port.postMessage({ threshold: noiseGateEnabled ? 0.025 : 0.0001 });
+  }
   const btn = document.getElementById('btn-noise-gate');
   if (btn) {
     btn.classList.toggle('active', !noiseGateEnabled);
-    btn.querySelector('span').textContent = noiseGateEnabled ? 'ノイズ除去' : '除去OFF';
+    const label = rnnoiseActive ? 'AIノイズ除去' : 'ノイズ除去';
+    btn.querySelector('span').textContent = noiseGateEnabled ? label : '除去OFF';
   }
 }
 
