@@ -588,15 +588,15 @@ function renderList(id, items, canDelete) {
       </div>
       <div class="booking-info">
         <div class="booking-name" style="display:flex;align-items:center;gap:6px">
-          ${b.booker_name}
+          ${escHtml(b.booker_name)}
           ${isBni
             ? '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:rgba(108,99,255,.15);color:#a78bfa;border:1px solid rgba(108,99,255,.3)">🤝 BNIモード</span>'
             : `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:rgba(100,100,100,.15);color:#94a3b8;border:1px solid rgba(100,100,100,.2)">通常モード</span>`
           }
         </div>
         <div class="booking-time">🕐 ${timeStr}</div>
-        <div class="booking-email">📧 ${b.booker_email||'メールなし'}</div>
-        ${b.purpose?`<div class="booking-purpose">💬 ${b.purpose}</div>`:''}
+        <div class="booking-email">📧 ${escHtml(b.booker_email)||'メールなし'}</div>
+        ${b.purpose?`<div class="booking-purpose">💬 ${escHtml(b.purpose)}</div>`:''}
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
           <a class="meet-link" href="${meetUrl}" target="_blank" style="margin-top:0">🎥 ビデオ通話を開く</a>
           ${!isBni && canDelete ? `<button style="font-size:11px;padding:3px 10px;background:rgba(108,99,255,.15);color:#a78bfa;border:1px solid rgba(108,99,255,.3);border-radius:20px;cursor:pointer;font-weight:700" onclick="setBniMode(${b.id},this)">🤝 BNIモードに変更</button>` : ''}

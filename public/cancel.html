@@ -55,8 +55,8 @@ async function load() {
     <p class="sub">以下の予約をキャンセルしますか？<br>キャンセル後は元に戻せません。</p>
     <div class="detail-list">
       <div class="detail-row"><div class="ico">📅</div><div><div class="lbl">日時</div><div class="val">${fd} ${ft} 〜 ${fe}</div></div></div>
-      <div class="detail-row"><div class="ico">👤</div><div><div class="lbl">ホスト</div><div class="val">${info.host_name} さん</div></div></div>
-      <div class="detail-row"><div class="ico">🙋</div><div><div class="lbl">予約者</div><div class="val">${info.booker_name}</div></div></div>
+      <div class="detail-row"><div class="ico">👤</div><div><div class="lbl">ホスト</div><div class="val">${escHtml(info.host_name)} さん</div></div></div>
+      <div class="detail-row"><div class="ico">🙋</div><div><div class="lbl">予約者</div><div class="val">${escHtml(info.booker_name)}</div></div></div>
     </div>
     <button class="btn-cancel" id="btn" onclick="doCancel()">この予約をキャンセルする</button>
     <a class="btn-back" id="back-link" href="/b/${info.slug}">← 予約ページに戻る</a>
@@ -86,6 +86,10 @@ function showDone(msg) {
 
 function showError(msg) {
   document.getElementById('content').innerHTML = `<div class="err">${msg}</div>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 load();

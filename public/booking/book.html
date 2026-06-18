@@ -256,7 +256,7 @@ function render() {
     <div class="host-card">
       <div class="avatar">${(hostName||'?')[0]}</div>
       <div class="host-info">
-        <h1>${hostName ? hostName+' さんとのオンライン面談' : '読み込み中...'}</h1>
+        <h1>${hostName ? escHtml(hostName)+' さんとのオンライン面談' : '読み込み中...'}</h1>
         <p>ご希望の日時をお選びください。予約完了後にビデオ通話URLをお送りします。</p>
         <div class="badge">🎥 ビデオ通話（アプリ不要）</div>
       </div>
@@ -315,8 +315,8 @@ async function submit() {
         <p class="sub">ご予約ありがとうございます。<br>確認メールをお送りしましたのでご確認ください。</p>
         <div class="detail-list">
           <div class="detail-row"><div class="ico">📅</div><div><div class="lbl">日時</div><div class="val">${fd} ${selectedSlot.label}</div></div></div>
-          <div class="detail-row"><div class="ico">👤</div><div><div class="lbl">お相手</div><div class="val">${hostName} さん</div></div></div>
-          ${email?`<div class="detail-row"><div class="ico">📧</div><div><div class="lbl">確認メール送付先</div><div class="val">${email}</div></div></div>`:''}
+          <div class="detail-row"><div class="ico">👤</div><div><div class="lbl">お相手</div><div class="val">${escHtml(hostName)} さん</div></div></div>
+          ${email?`<div class="detail-row"><div class="ico">📧</div><div><div class="lbl">確認メール送付先</div><div class="val">${escHtml(email)}</div></div></div>`:''}
         </div>
         <a class="meet-btn" href="${data.meet_url}" target="_blank">🎥 ビデオ通話URLを開く</a>
         <p class="meet-note">当日はこのURLをクリックするだけで入室できます。<br>アプリのインストールは不要です。</p>
@@ -325,6 +325,10 @@ async function submit() {
     alert(data.error||'予約に失敗しました。もう一度お試しください。');
     btn.disabled=false; btn.textContent='予約を確定する →';
   }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 init();
