@@ -42,7 +42,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       mediaSrc: ["'self'", "blob:", "data:"],
-      connectSrc: ["'self'", "wss:", "ws:"],
+      connectSrc: ["'self'", "wss:", "ws:", "https://storage.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
       workerSrc: ["'self'", "blob:"],
       frameSrc: ["'none'"],
