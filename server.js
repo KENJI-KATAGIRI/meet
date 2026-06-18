@@ -2720,6 +2720,9 @@ io.on('connection', (socket) => {
         }
       }
       if (room.users.size === 0) {
+        if (room.waitingList && room.waitingList.size > 0) {
+          room.waitingList.forEach((_, wid) => io.to(wid).emit('rejected'));
+        }
         if (room.warnTimer) clearTimeout(room.warnTimer);
         if (room.endTimer) clearTimeout(room.endTimer);
         if (room.facilityId && room.startedAt) {

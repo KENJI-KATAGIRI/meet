@@ -1222,6 +1222,7 @@ async function doJoin() {
     if (isFreeRoom) startFreeTimer(roomStartedAt || Date.now());
     const _w = welfareSettings && welfareSettings.mode === 'welfare';
     if (isHost && roomTranscribeMode !== 'none' && (myEmail || _w)) startAutoAudioRecording();
+    else if (!isHost && roomTranscribeMode === 'all') { if (_w) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 800); }
   });
   socket.on('rejected', () => {
     document.getElementById('waiting-overlay').classList.remove('visible');
