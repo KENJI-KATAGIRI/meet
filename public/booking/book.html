@@ -131,7 +131,7 @@ textarea{resize:vertical;min-height:80px}
           <li>✅ リマインダー・メモ機能</li>
           <li>☑️ AI文字起こし・ビデオ通話なし</li>
         </ul>
-        <a href="https://gaiaarts.org/bni/" style="display:block;text-align:center;background:#2a2a4a;color:#a78bfa;font-weight:700;font-size:13px;padding:11px;border-radius:10px;text-decoration:none;border:1px solid rgba(108,99,255,.3)">1ヶ月無料で試す →</a>
+        <a href="https://gaiaarts.org/bni/lp" target="_blank" style="display:block;text-align:center;background:#2a2a4a;color:#a78bfa;font-weight:700;font-size:13px;padding:11px;border-radius:10px;text-decoration:none;border:1px solid rgba(108,99,255,.3)">詳細・1ヶ月無料で試す →</a>
       </div>
 
     </div>
@@ -147,7 +147,7 @@ textarea{resize:vertical;min-height:80px}
 <script>
 const slug = location.pathname.split('/').pop();
 const DOW = ['日','月','火','水','木','金','土'];
-let hostName = '', weekStart = null, selectedSlot = null, slotsCache = {};
+let hostName = '', weekStart = null, selectedSlot = null, slotsCache = {}, horizonDays = 14;
 
 function getMonday(d) {
   const r = new Date(d); r.setHours(0,0,0,0);
@@ -177,6 +177,7 @@ async function load() {
       const r = await fetch(`/api/b/${slug}/slots?date=${ds}`);
       const data = await r.json();
       if (data.hostName) hostName = data.hostName;
+      if (data.horizonDays) horizonDays = data.horizonDays;
       slotsCache[ds] = data.slots || [];
     } catch { slotsCache[ds] = []; }
   }));
@@ -190,6 +191,9 @@ function render() {
   const we = new Date(weekStart); we.setDate(we.getDate()+6);
   const rangeLabel = `${weekStart.getMonth()+1}月${weekStart.getDate()}日(${DOW[weekStart.getDay()]}) 〜 ${we.getMonth()+1}月${we.getDate()}日(${DOW[we.getDay()]})`;
   const prevDisabled = weekStart.getTime() <= thisMonday.getTime();
+  const horizonDate = new Date(today); horizonDate.setDate(today.getDate() + horizonDays);
+  const nextWeekStart = new Date(weekStart); nextWeekStart.setDate(weekStart.getDate() + 7);
+  const nextDisabled = nextWeekStart >= horizonDate;
 
   const cols = days.map((d,di) => {
     const ds = dateStr(d);
@@ -259,8 +263,11 @@ function render() {
     </div>
     <div class="week-nav">
       <button onclick="changeWeek(-1)" ${prevDisabled?'disabled':''}>‹ 前の週</button>
-      <span class="week-range">${rangeLabel}</span>
-      <button onclick="changeWeek(1)">次の週 ›</button>
+      <div style="text-align:center">
+        <div class="week-range">${rangeLabel}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${horizonDays}日先まで受付中</div>
+      </div>
+      <button onclick="changeWeek(1)" ${nextDisabled?'disabled':''}>次の週 ›</button>
     </div>
     ${formHtml}
     <div class="week-wrap">

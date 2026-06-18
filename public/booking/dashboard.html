@@ -321,7 +321,7 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
     <div style="background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.25);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--text);line-height:1.7">
       📋 <strong>GAINS記録の確認は1to1Managerで</strong><br>
       <span style="color:var(--muted)">通話終了後、記録は自動的に1to1Managerに保存されます。</span><br>
-      <a href="/api/bni-sso-redirect" style="display:inline-block;margin-top:8px;padding:6px 16px;background:rgba(108,99,255,.2);color:#a78bfa;border-radius:6px;font-weight:700;text-decoration:none;font-size:12px">→ 1to1Managerを開く（自動ログイン）</a>
+      <a href="#" onclick="openBniManager(event)" style="display:inline-block;margin-top:8px;padding:6px 16px;background:rgba(108,99,255,.2);color:#a78bfa;border-radius:6px;font-weight:700;text-decoration:none;font-size:12px">→ 1to1Managerを開く（自動ログイン）</a>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
       <input id="bni-contact-name" class="bni-input" placeholder="相手の名前（例：山田 太郎）" oninput="genBniUrl()">
@@ -352,7 +352,28 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
       <p style="font-size:13px;color:var(--muted);margin-bottom:14px">受け付ける曜日をタップして、対応可能な時間帯を設定してください。Googleカレンダーと照合して、実際に空いている時間のみ予約可能になります。</p>
       <div class="dow-grid" id="dow-buttons"></div>
       <div id="time-settings"></div>
-      <button class="btn btn-primary" onclick="saveAvailability()" style="width:100%;padding:13px;font-size:14px;border-radius:10px">設定を保存する</button>
+
+      <!-- 予約受付期間 -->
+      <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--muted);white-space:nowrap">📅 予約受付期間</span>
+          <select class="slot-select" id="booking-horizon" onchange="onHorizonChange()">
+            <option value="14">2週間先まで</option>
+            <option value="21">3週間先まで</option>
+            <option value="28">4週間先まで</option>
+            <option value="60">2ヶ月先まで</option>
+            <option value="90">3ヶ月先まで</option>
+            <option value="custom">カスタム</option>
+          </select>
+          <div id="horizon-custom-wrap" style="display:none;align-items:center;gap:6px">
+            <input type="number" id="horizon-custom-days" min="3" max="365" value="30"
+              style="width:60px;border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:13px;background:var(--bg2);color:var(--text)">
+            <span style="font-size:13px;color:var(--muted)">日先まで</span>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="saveAvailability()" style="width:100%;padding:13px;font-size:14px;border-radius:10px;margin-top:16px">設定を保存する</button>
     </div>
   </div>
 
@@ -414,18 +435,30 @@ async function init() {
     trialBanner.innerHTML = isExpired
       ? '⚠️ <strong style="color:#f87171">トライアル期間が終了しました</strong><br><span style="color:#94a3b8">引き続き全機能をご利用いただくにはお支払いが必要です（¥1,980/月）。</span><br><button onclick="startUpgrade()" style="margin-top:8px;padding:8px 20px;background:#6c63ff;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">→ 支払いに進む</button>'
       : '💳 <strong style="color:#f87171">クレジットカードが未登録です</strong><br><span style="color:#94a3b8">30日間の無料トライアル中です。期間終了前にカードを登録してください。</span><br><button onclick="startUpgrade()" style="margin-top:8px;padding:8px 20px;background:#6c63ff;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">→ カードを登録する（30日間無料）</button>';
-    document.querySelector('.container').prepend(trialBanner);
+    document.querySelector('main').prepend(trialBanner);
   }
 
   if (!me.has_google) {
     const banner = document.createElement('div');
     banner.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#fca5a5;line-height:1.7';
     banner.innerHTML = '📅 <strong style="color:#f87171">Googleカレンダー未連携</strong><br><span style="color:#94a3b8">予約カレンダー機能を使うにはGoogleログインが必須です。</span><br><a href="/auth/google" style="color:#6ee7b7;font-weight:700">→ Googleアカウントを連携する</a>';
-    document.querySelector('.container').prepend(banner);
+    document.querySelector('main').prepend(banner);
   }
   document.getElementById('booking-url').textContent = `https://meet.gaiaarts.org/b/${me.slug}`;
   document.getElementById('preview-link').href = `/b/${me.slug}`;
   document.getElementById('slot-duration').value = me.slot_duration || 30;
+
+  // 予約受付期間の読み込み
+  const horizonDays = me.booking_horizon_days || 14;
+  const presets = [14, 21, 28, 60, 90];
+  const horizonSel = document.getElementById('booking-horizon');
+  if (presets.includes(horizonDays)) {
+    horizonSel.value = String(horizonDays);
+  } else {
+    horizonSel.value = 'custom';
+    document.getElementById('horizon-custom-wrap').style.display = 'flex';
+    document.getElementById('horizon-custom-days').value = horizonDays;
+  }
 
   for (const a of availRes) activeAvail[a.day_of_week] = {start:a.start_time,end:a.end_time};
   if (new URLSearchParams(location.search).get('plan') === 'success') {
@@ -503,10 +536,19 @@ function renderTimeSettings() {
   });
 }
 
+function onHorizonChange() {
+  const val = document.getElementById('booking-horizon').value;
+  document.getElementById('horizon-custom-wrap').style.display = val === 'custom' ? 'flex' : 'none';
+}
+
 async function saveAvailability() {
   const availability = Object.entries(activeAvail).map(([dow,v])=>({day_of_week:parseInt(dow),start_time:v.start,end_time:v.end}));
   const slot_duration = parseInt(document.getElementById('slot-duration').value);
-  await fetch('/api/availability',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({availability,slot_duration})});
+  const horizonSel = document.getElementById('booking-horizon').value;
+  const booking_horizon_days = horizonSel === 'custom'
+    ? parseInt(document.getElementById('horizon-custom-days').value) || 14
+    : parseInt(horizonSel);
+  await fetch('/api/availability',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({availability,slot_duration,booking_horizon_days})});
   toast('✓ 設定を保存しました');
 }
 
@@ -594,7 +636,8 @@ function showTab(name, btn) {
 
 function genRoom() {
   const id = Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b=>b.toString(16).padStart(2,'0')).join('');
-  const url = `https://meet.gaiaarts.org/?room=${id}`;
+  const systemParam = (me && me.ui_mode !== 'welfare') ? '&system=bni' : '';
+  const url = `https://meet.gaiaarts.org/?room=${id}${systemParam}`;
   document.getElementById('instant-url').textContent = url;
   const copyBtn = document.getElementById('instant-copy');
   const openBtn = document.getElementById('instant-open');
@@ -922,6 +965,23 @@ function toast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
   setTimeout(()=>el.classList.remove('show'), 2500);
+}
+
+async function openBniManager(e) {
+  e.preventDefault();
+  try {
+    const r = await fetch('/api/bni-sso-token');
+    if (r.status === 401) {
+      if (confirm('セッションが切れています。再ログインしてください。')) {
+        window.location.href = '/auth/google';
+      }
+      return;
+    }
+    const data = await r.json();
+    window.open(data.url, '_blank');
+  } catch(err) {
+    toast('エラーが発生しました');
+  }
 }
 
 init();
