@@ -2732,36 +2732,35 @@ function updatePreviewCanvas(w, h, sx, sy, sw, sh) {
 async function loadSegModel() {
   if (mpSegmenter || mpModelLoading) return;
   mpModelLoading = true;
-  document.getElementById('loading-model').style.display = 'block';
+  const ldEl = document.getElementById('loading-model');
+  if (ldEl) ldEl.style.display = 'block';
   try {
-    // MediaPipe Tasks Vision（新API）を動的ロード
-    const visionModule = await import(
-      '/mediapipe/vision_bundle.mjs'
-    );
+    const visionModule = await import('/mediapipe/vision_bundle.mjs');
     const { ImageSegmenter, FilesetResolver } = visionModule;
-    const filesetResolver = await FilesetResolver.forVisionTasks(
-      '/mediapipe/wasm'
-    );
-    // selfie_multiclass: 髪・顔・肌・服を個別に分類→高精度マスク
-    mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, {
-      baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',
-        delegate: 'GPU'
-      },
+    const filesetResolver = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
+    const opts = {
+      baseOptions: { modelAssetPath: '/mediapipe/selfie_multiclass_256x256.tflite', delegate: 'GPU' },
       runningMode: 'VIDEO',
       outputCategoryMask: false,
       outputConfidenceMasks: true
-    });
+    };
+    try {
+      mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
+    } catch(gpuErr) {
+      console.warn('loadSegModel GPU failed, retrying with CPU:', gpuErr);
+      opts.baseOptions.delegate = 'CPU';
+      mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
+    }
     mpReady = true;
     prevMaskData = null;
     mpTimestamp = 0;
   } catch(e) {
-    console.error('loadSegModel:', e);
-    notify('読込失敗: ' + (e?.message || '').slice(0, 60));
+    console.error('loadSegModel error:', e);
+    notify('背景エフェクト読込失敗: ' + (e?.message || String(e)).slice(0, 80));
     mpSegmenter = null;
   }
   mpModelLoading = false;
-  document.getElementById('loading-model').style.display = 'none';
+  if (ldEl) ldEl.style.display = 'none';
 }
 
 // --- 美肌フィルター: WebGL バイラテラルフィルター ---
