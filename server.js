@@ -39,7 +39,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", "cdn.jsdelivr.net"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       mediaSrc: ["'self'", "blob:", "data:"],
       connectSrc: ["'self'", "wss:", "ws:", "https://storage.googleapis.com"],
