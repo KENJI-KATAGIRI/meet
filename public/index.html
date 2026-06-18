@@ -1073,8 +1073,7 @@ async function doJoin() {
       updateHostUI();
       if (isFreeRoom && source !== 'breakout') startFreeTimer(roomStartedAt || Date.now());
       const _isWelfare = welfareSettings && welfareSettings.mode === 'welfare';
-      if (isHost && roomTranscribeMode !== 'none' && (myEmail || _isWelfare)) startAutoAudioRecording();
-      else if (isHost && roomTranscribeMode !== 'none' && !myEmail && !_isWelfare) setTimeout(() => showTranscribeModal(true), 800);
+      if (isHost && roomTranscribeMode !== 'none') startAutoAudioRecording();
       else if (!isHost && roomTranscribeMode === 'all') { if (_isWelfare) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 800); }
     }
   });
@@ -1246,7 +1245,7 @@ async function doJoin() {
     updateHostUI();
     if (isFreeRoom) startFreeTimer(roomStartedAt || Date.now());
     const _w = welfareSettings && welfareSettings.mode === 'welfare';
-    if (isHost && roomTranscribeMode !== 'none' && (myEmail || _w)) startAutoAudioRecording();
+    if (isHost && roomTranscribeMode !== 'none') startAutoAudioRecording();
     else if (!isHost && roomTranscribeMode === 'all') { if (_w) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 800); }
   });
   socket.on('rejected', () => {
@@ -1984,9 +1983,7 @@ function applyTranscribeMode(mode) {
       if (recEl) recEl.classList.remove('active');
     }
   } else {
-    const _iW = welfareSettings && welfareSettings.mode === 'welfare';
-    if (!audioRecorder && (myEmail || _iW)) startAutoAudioRecording();
-    else if (!audioRecorder && !myEmail && !_iW) showTranscribeModal(true);
+    if (!audioRecorder) startAutoAudioRecording();
   }
 }
 
@@ -2221,7 +2218,7 @@ function renderBrParticipants() {
 
 // タブを閉じた時もfinalize送信（sendBeacon使用）
 window.addEventListener('beforeunload', () => {
-  if (!audioRecorder || audioRecorder.state === 'inactive' || !myEmail || !audioSessionId) return;
+  if (!audioRecorder || audioRecorder.state === 'inactive' || !audioSessionId) return;
   const form = new FormData();
   form.append('sessionId', audioSessionId);
   form.append('totalChunks', String(audioChunkIndex));
@@ -2268,7 +2265,7 @@ function startAutoAudioRecording() {
   if (!rawStream || audioRecorder) return;
   audioSessionId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   audioChunkIndex = 0;
-  notify('🔴 録音開始：退出時に文字起こし・要約をメールでお届けします', 8000);
+  notify(myEmail ? '🔴 録音開始：退出時に文字起こし・要約をメールでお届けします' : '🔴 録音開始', 8000);
   const recEl = document.getElementById('rec-indicator');
   if (recEl) recEl.classList.add('active');
 
@@ -2319,7 +2316,7 @@ function startAutoAudioRecording() {
 async function stopAndFinalizeAudio() {
   const recEl2 = document.getElementById('rec-indicator');
   if (recEl2) recEl2.classList.remove('active');
-  if (!audioRecorder || audioRecorder.state === 'inactive' || !myEmail) return;
+  if (!audioRecorder || audioRecorder.state === 'inactive') return;
   if (audioRecorder.state === 'recording') {
     await new Promise(resolve => { audioRecorder.onstop = resolve; audioRecorder.stop(); });
   }
