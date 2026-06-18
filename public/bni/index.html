@@ -168,7 +168,7 @@
 
     <!-- Login Form -->
     <div id="loginForm" class="space-y-3">
-      <input id="loginUsername" type="email" placeholder="メールアドレス" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <input id="loginUsername" type="text" placeholder="ユーザー名" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
       <input id="loginPassword" type="password" placeholder="パスワード" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" onkeydown="if(event.key==='Enter')doLogin()">
       <div id="loginError" class="text-red-500 text-xs hidden"></div>
       <button onclick="doLogin()" class="w-full text-white font-semibold py-2.5 rounded-xl" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);border:none;cursor:pointer;font-size:15px;letter-spacing:.02em">ログイン</button>
@@ -177,16 +177,8 @@
 
     <!-- Register Form -->
     <div id="registerForm" class="space-y-3 hidden">
-      <p class="text-sm font-semibold" style="color:rgba(255,255,255,0.8)">新規アカウント作成</p>
-      <div>
-        <input id="regEmail" type="email" placeholder="メールアドレス（Gmail推奨）" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" oninput="onRegEmailInput(this.value)">
-        <div id="reg-gmail-tip" class="hidden mt-1.5 text-xs px-2 py-1.5 rounded-lg" style="background:rgba(74,222,128,0.1);color:#4ade80">
-          ✅ Gmailを使うとNiceMeetとのGoogle連携が可能です
-        </div>
-        <div id="reg-nongmail-tip" class="hidden mt-1.5 text-xs px-2 py-1.5 rounded-lg" style="background:rgba(251,191,36,0.1);color:#fbbf24">
-          ⚠️ Gmailにすると後でNiceMeetへのアップグレード時にGoogleカレンダーと自動同期できます。後から変更も可能です。
-        </div>
-      </div>
+      <p class="text-sm font-semibold text-gray-700">新規アカウント作成</p>
+      <input id="regUsername" type="text" placeholder="ユーザー名（半角英数字）" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
       <input id="regDisplayName" type="text" placeholder="表示名（例：片桐健治）" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
       <input id="regPassword" type="password" placeholder="パスワード（6文字以上）" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
       <div id="regError" class="text-red-500 text-xs hidden"></div>
@@ -308,17 +300,6 @@
   <div class="max-w-md mx-auto space-y-5">
     <h2 class="text-xl font-bold text-gray-800">アカウント設定</h2>
     <div class="bg-white rounded-xl shadow p-5 space-y-4" id="pw-change-section">
-      <h3 class="font-bold text-gray-700">📧 メールアドレス</h3>
-      <div id="s_email_current" class="text-sm text-gray-500">確認中...</div>
-      <div id="s_email_gmail_note" class="hidden text-xs px-3 py-2 rounded-lg bg-yellow-50 text-yellow-700">
-        ⚠️ GmailにするとNiceMeetへのアップグレード時にGoogleカレンダーと自動同期できます
-      </div>
-      <div id="s_email_change_form" class="space-y-2">
-        <input id="s_new_email" type="email" placeholder="新しいメールアドレス（Gmail推奨）" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
-        <button onclick="changeEmail()" class="w-full border border-indigo-400 text-indigo-600 font-semibold py-2 rounded-lg hover:bg-indigo-50 text-sm">メールアドレスを変更</button>
-      </div>
-      <div id="s_email_msg" class="text-sm hidden"></div>
-      <hr class="border-gray-100">
       <h3 class="font-bold text-gray-700">パスワード変更</h3>
       <input id="s_current_pw" type="password" placeholder="現在のパスワード" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
       <input id="s_new_pw" type="password" placeholder="新しいパスワード（8文字以上）" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
@@ -328,24 +309,6 @@
     </div>
     <div class="bg-blue-50 rounded-xl p-4 hidden" id="sso-info-section">
       <p class="text-sm text-blue-700">🔗 <strong>NiceMeet連携中</strong> — ログインはNiceMeetから自動で行われます。</p>
-    </div>
-    <div class="bg-white rounded-xl shadow p-5 space-y-3" id="plan-section">
-      <h3 class="font-bold text-gray-700">💳 プラン・お支払い</h3>
-      <div id="plan-status-display" class="text-sm text-gray-400">確認中...</div>
-      <div id="plan-free-actions" class="hidden space-y-2">
-        <p class="text-xs text-gray-500">1to1マネージャー単独プラン ¥500/月（30日間無料トライアル付き）</p>
-        <button onclick="startStripeCheckout()" id="btn-start-trial"
-          class="w-full bg-indigo-600 text-white font-semibold py-2.5 rounded-lg hover:bg-indigo-700 transition">
-          🚀 30日間無料トライアルを開始
-        </button>
-      </div>
-      <div id="plan-paid-actions" class="hidden">
-        <button onclick="openBillingPortal()" id="btn-billing-portal"
-          class="w-full border border-gray-300 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-50 transition">
-          ⚙️ プラン管理・解約
-        </button>
-      </div>
-      <div id="plan-success-msg" class="hidden text-sm text-green-600 font-medium">✅ トライアル登録が完了しました！</div>
     </div>
     <div class="bg-white rounded-xl shadow p-5 space-y-3">
       <h3 class="font-bold text-gray-700">🗓 Googleカレンダー連携</h3>
@@ -603,58 +566,35 @@ async function doLogin() {
     localStorage.setItem('bni_token', authToken);
     document.getElementById('loginScreen').classList.add('hidden');
     loadContacts();
-    if (localStorage.getItem('bni_start_trial') === '1') {
-      localStorage.removeItem('bni_start_trial');
-      startStripeCheckout();
-    }
   } catch(e) {
     errEl.textContent = 'エラーが発生しました';
     errEl.classList.remove('hidden');
   }
 }
 
-function onRegEmailInput(val) {
-  const isGmail = val.toLowerCase().endsWith('@gmail.com');
-  const hasAt = val.includes('@');
-  document.getElementById('reg-gmail-tip').classList.toggle('hidden', !isGmail);
-  document.getElementById('reg-nongmail-tip').classList.toggle('hidden', !(hasAt && !isGmail));
-}
-
 async function doRegister() {
-  const email = document.getElementById('regEmail').value.trim().toLowerCase();
+  const username = document.getElementById('regUsername').value.trim();
   const display_name = document.getElementById('regDisplayName').value.trim();
   const password = document.getElementById('regPassword').value;
   const errEl = document.getElementById('regError');
   errEl.classList.add('hidden');
-  if (!email || !display_name || !password) { errEl.textContent = 'すべての項目を入力してください'; errEl.classList.remove('hidden'); return; }
+  if (!username || !display_name || !password) { errEl.textContent = 'すべての項目を入力してください'; errEl.classList.remove('hidden'); return; }
   try {
     const r = await fetch(BASE + 'api/auth/register', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({email, display_name, password})
+      body: JSON.stringify({username, display_name, password})
     });
     if (!r.ok) {
       let msg = '登録に失敗しました';
       try { msg = (await r.json()).detail || msg; } catch {}
       errEl.textContent = msg; errEl.classList.remove('hidden'); return;
     }
-    // 登録後に自動ログイン
-    const lr = await fetch(BASE + 'api/auth/login', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({username: email, password})
-    });
-    if (!lr.ok) {
-      showLogin();
-      document.getElementById('loginUsername').value = email;
-      return;
-    }
-    const d = await lr.json();
-    authToken = d.token;
-    localStorage.setItem('bni_token', authToken);
-    localStorage.removeItem('bni_start_trial');
-    document.getElementById('loginScreen').classList.add('hidden');
-    loadContacts();
-    // 新規登録後は必ずStripe Checkoutへ
-    startStripeCheckout();
+    alert('アカウントを作成しました。ログインしてください。');
+    document.getElementById('regUsername').value = '';
+    document.getElementById('regDisplayName').value = '';
+    document.getElementById('regPassword').value = '';
+    showLogin();
+    document.getElementById('loginUsername').value = username;
   } catch(e) {
     errEl.textContent = 'エラーが発生しました'; errEl.classList.remove('hidden');
   }
@@ -721,80 +661,7 @@ async function loadSettingsAuthType() {
     const isSso = me.auth_type === 'sso';
     document.getElementById('pw-change-section').classList.toggle('hidden', isSso);
     document.getElementById('sso-info-section').classList.toggle('hidden', !isSso);
-    if (!isSso) {
-      const emailEl = document.getElementById('s_email_current');
-      const noteEl = document.getElementById('s_email_gmail_note');
-      const currentEmail = me.email || '未設定';
-      const isGmail = currentEmail.toLowerCase().endsWith('@gmail.com');
-      emailEl.textContent = `現在: ${currentEmail}`;
-      noteEl.classList.toggle('hidden', isGmail || currentEmail === '未設定');
-    }
-    const isPaid = me.plan === 'paid';
-    const hasStripe = me.has_stripe;
-    const statusEl = document.getElementById('plan-status-display');
-    if (isPaid && hasStripe) {
-      statusEl.innerHTML = '<span class="inline-block bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full">✅ スタンダード ¥500/月</span>';
-    } else if (hasStripe) {
-      statusEl.innerHTML = '<span class="inline-block bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-1 rounded-full">🎁 30日間無料トライアル中</span>';
-    } else {
-      statusEl.innerHTML = '<span class="inline-block bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded-full">無料プラン</span>';
-    }
-    document.getElementById('plan-free-actions').classList.toggle('hidden', hasStripe);
-    document.getElementById('plan-paid-actions').classList.toggle('hidden', !hasStripe);
   } catch(e) {}
-}
-
-async function changeEmail() {
-  const newEmail = document.getElementById('s_new_email').value.trim().toLowerCase();
-  const msgEl = document.getElementById('s_email_msg');
-  msgEl.classList.add('hidden');
-  if (!newEmail) return;
-  try {
-    await api('PUT', '/auth/email', { new_email: newEmail });
-    document.getElementById('s_new_email').value = '';
-    const isGmail = newEmail.endsWith('@gmail.com');
-    document.getElementById('s_email_current').textContent = `現在: ${newEmail}`;
-    document.getElementById('s_email_gmail_note').classList.toggle('hidden', isGmail);
-    msgEl.textContent = isGmail
-      ? '✅ Gmailに変更しました。NiceMeetとのGoogle連携が可能です！'
-      : '✅ メールアドレスを変更しました';
-    msgEl.className = 'text-sm text-green-600';
-    msgEl.classList.remove('hidden');
-  } catch(e) {
-    msgEl.textContent = 'エラー: ' + e.message;
-    msgEl.className = 'text-sm text-red-500';
-    msgEl.classList.remove('hidden');
-  }
-}
-
-async function startStripeCheckout() {
-  const btn = document.getElementById('btn-start-trial');
-  if (btn) { btn.disabled = true; btn.textContent = '準備中...'; }
-  try {
-    const data = await api('POST', '/stripe/checkout');
-    if (data && data.url) {
-      window.location.href = data.url;
-    } else {
-      throw new Error('決済URLが取得できませんでした');
-    }
-  } catch(e) {
-    if (btn) { btn.disabled = false; btn.textContent = '🚀 30日間無料トライアルを開始'; }
-    alert('エラーが発生しました: ' + e.message);
-  }
-}
-
-async function openBillingPortal() {
-  const btn = document.getElementById('btn-billing-portal');
-  btn.disabled = true;
-  btn.textContent = '移動中...';
-  try {
-    const data = await api('GET', '/stripe/portal');
-    window.location.href = data.url;
-  } catch(e) {
-    btn.disabled = false;
-    btn.textContent = '⚙️ プラン管理・解約';
-    alert('エラーが発生しました: ' + e.message);
-  }
 }
 
 // ── ダッシュボード ─────────────────────────────────────────
@@ -1915,13 +1782,6 @@ async function syncReminderGoogle(rid) {
 (async () => {
   const params = new URLSearchParams(window.location.search);
 
-  // トライアル開始フラグ
-  if (params.get('start_trial') === '1') {
-    localStorage.setItem('bni_start_trial', '1');
-    history.replaceState({}, '', window.location.pathname);
-    showRegister();
-  }
-
   // NiceMeet SSO自動ログイン
   const ssoToken = params.get('sso_token');
   if (ssoToken) {
@@ -1947,14 +1807,7 @@ async function syncReminderGoogle(rid) {
     document.getElementById('loginScreen').classList.add('hidden');
     loadContacts();
     api('GET', '/auth/google/status').then(d => { gcalConnected = d.connected; }).catch(() => {});
-    if (localStorage.getItem('bni_start_trial') === '1') {
-      localStorage.removeItem('bni_start_trial');
-      startStripeCheckout();
-    } else if (params.get('plan') === 'success') {
-      history.replaceState({}, '', window.location.pathname);
-      switchView('settings');
-      document.getElementById('plan-success-msg').classList.remove('hidden');
-    } else if (params.get('google_connected') === '1') {
+    if (params.get('google_connected') === '1') {
       history.replaceState({}, '', window.location.pathname);
       switchView('settings');
       const msg = document.getElementById('gcal-msg');
