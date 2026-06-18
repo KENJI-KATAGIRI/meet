@@ -1074,12 +1074,12 @@ async function doJoin() {
       if (isFreeRoom && source !== 'breakout') startFreeTimer(roomStartedAt || Date.now());
       const _isWelfare = welfareSettings && welfareSettings.mode === 'welfare';
       if (isHost && roomTranscribeMode !== 'none') startAutoAudioRecording();
-      else if (!isHost && roomTranscribeMode === 'all') { if (_isWelfare) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 800); }
+      else if (!isHost && roomTranscribeMode === 'all') { if (_isWelfare || myEmail) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 800); }
     }
   });
   socket.on('transcribe-mode-changed', ({ mode }) => {
     applyTranscribeMode(mode);
-    if (!isHost && mode === 'all') { const _w = welfareSettings && welfareSettings.mode === 'welfare'; if (_w) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 400); }
+    if (!isHost && mode === 'all') { const _w = welfareSettings && welfareSettings.mode === 'welfare'; if (_w || myEmail) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 400); }
   });
   socket.on('user-joined', ({ id, name }) => {
     peerNames[id] = name; createPeer(id, name, false);
@@ -1246,7 +1246,7 @@ async function doJoin() {
     if (isFreeRoom) startFreeTimer(roomStartedAt || Date.now());
     const _w = welfareSettings && welfareSettings.mode === 'welfare';
     if (isHost && roomTranscribeMode !== 'none') startAutoAudioRecording();
-    else if (!isHost && roomTranscribeMode === 'all') { if (_w) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 800); }
+    else if (!isHost && roomTranscribeMode === 'all') { if (_w || myEmail) startAutoAudioRecording(); else setTimeout(showTranscribeModal, 800); }
   });
   socket.on('rejected', () => {
     document.getElementById('waiting-overlay').classList.remove('visible');
