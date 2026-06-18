@@ -251,8 +251,11 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
 
     </div>
     <div id="plan-paid-content" style="display:none">
-      <p class="card-desc">現在は<strong>有料プラン</strong>です。通話時間無制限・AI文字起こし・要約がご利用いただけます。</p>
-      <a href="/api/stripe/portal" class="btn btn-secondary btn-sm" style="margin-top:8px;display:inline-flex">⚙️ 解約・カード変更</a>
+      <p class="card-desc" style="margin-bottom:12px">通話時間無制限・AI文字起こし・要約がご利用いただけます。</p>
+      <div id="plan-paid-details" style="font-size:13px;color:var(--text);line-height:2"></div>
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07)">
+        <a href="/api/stripe/portal" style="font-size:12px;color:var(--muted);text-decoration:none;opacity:.75;transition:opacity .2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.75">請求・支払い方法・解約はこちら →</a>
+      </div>
     </div>
   </div>
 
@@ -420,6 +423,18 @@ async function init() {
     document.getElementById('plan-badge').textContent = 'PRO';
     document.getElementById('plan-free-content').style.display = 'none';
     document.getElementById('plan-paid-content').style.display = 'block';
+    const detailEl = document.getElementById('plan-paid-details');
+    if (detailEl) {
+      const rows = [];
+      if (planRes.amount) rows.push(`月額 <strong style="color:var(--accent)">¥${planRes.amount.toLocaleString()}</strong>`);
+      if (planRes.current_period_end) {
+        const d = new Date(planRes.current_period_end * 1000);
+        const label = planRes.stripe_status === 'trialing' ? 'トライアル終了日' : '次回更新日';
+        rows.push(`${label}　<strong>${d.toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric'})}</strong>`);
+      }
+      if (planRes.stripe_status === 'trialing') rows.push(`<span style="color:#4ade80;font-size:11px">✓ トライアル期間中</span>`);
+      detailEl.innerHTML = rows.join('<br>');
+    }
   }
   // 支払い状況チェック
   const trialBanner = document.createElement('div');

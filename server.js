@@ -698,9 +698,23 @@ app.get('/api/me', requireAuth, (req, res) => {
 });
 
 // ---- API: my-plan ----
-app.get('/api/my-plan', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT plan, plan_expires FROM users WHERE id=?').get(req.session.userId);
-  res.json({ plan: u?.plan || 'free', plan_expires: u?.plan_expires || null });
+app.get('/api/my-plan', requireAuth, async (req, res) => {
+  const u = db.prepare('SELECT plan, plan_expires, stripe_customer_id FROM users WHERE id=?').get(req.session.userId);
+  const result = { plan: u?.plan || 'free', plan_expires: u?.plan_expires || null };
+  if (stripe && u?.stripe_customer_id) {
+    try {
+      const subs = await stripe.subscriptions.list({ customer: u.stripe_customer_id, limit: 1, status: 'all' });
+      const sub = subs.data[0];
+      if (sub) {
+        result.stripe_status = sub.status;
+        result.current_period_end = sub.current_period_end;
+        result.trial_end = sub.trial_end;
+        result.amount = sub.items?.data?.[0]?.price?.unit_amount;
+        result.interval = sub.items?.data?.[0]?.price?.recurring?.interval;
+      }
+    } catch(e) { console.error('my-plan stripe error:', e.message); }
+  }
+  res.json(result);
 });
 
 // ---- UTAGE/UnivaPay Webhook ----
