@@ -2616,7 +2616,7 @@ io.on('connection', (socket) => {
         hostEmail = hu?.email || null;
         hostUiMode = hu?.ui_mode || 'simple';
       }
-      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: false, waitingList: new Map() };
+      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: false, waitingList: new Map(), screenShareAllowed: false };
       rooms.set(safeRoomId, newRoom);
       if (hostPlan === 'free') {
         newRoom.warnTimer = setTimeout(() => { io.to(safeRoomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
@@ -2655,7 +2655,7 @@ io.on('connection', (socket) => {
     socket.mainRoomId = null;
     socket.userName = safeUserName;
     const existing = [...cur.users.entries()].filter(([id]) => id !== socket.id).map(([id, d]) => ({ id, name: d.name }));
-    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main', isFreeRoom: cur.hostPlan === 'free', roomStartedAt: cur.startedAt || Date.now(), hostUiMode: cur.hostUiMode || 'simple' });
+    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main', isFreeRoom: cur.hostPlan === 'free', roomStartedAt: cur.startedAt || Date.now(), hostUiMode: cur.hostUiMode || 'simple', screenShareAllowed: cur.screenShareAllowed || false });
     socket.to(safeRoomId).emit('user-joined', { id: socket.id, name: safeUserName });
   });
   function isPeerInRoom(to) {
@@ -2698,7 +2698,7 @@ io.on('connection', (socket) => {
     pSocket.userName = waiting.name;
     delete pSocket.waitingRoomId;
     const existing = [...room.users.entries()].filter(([id]) => id !== participantId).map(([id, d]) => ({ id, name: d.name }));
-    pSocket.emit('admitted', { existingUsers: existing, transcribeMode: room.transcribeMode, isHost: false, isCoHost: room.coHosts.has(participantId), isFreeRoom: room.hostPlan === 'free', roomStartedAt: room.startedAt || Date.now(), hostUiMode: room.hostUiMode || 'simple' });
+    pSocket.emit('admitted', { existingUsers: existing, transcribeMode: room.transcribeMode, isHost: false, isCoHost: room.coHosts.has(participantId), isFreeRoom: room.hostPlan === 'free', roomStartedAt: room.startedAt || Date.now(), hostUiMode: room.hostUiMode || 'simple', screenShareAllowed: room.screenShareAllowed || false });
     pSocket.to(safeRoomId).emit('user-joined', { id: participantId, name: waiting.name });
     socket.emit('participant-admitted', { id: participantId });
   });
@@ -2711,6 +2711,14 @@ io.on('connection', (socket) => {
     room.waitingList.delete(participantId);
     io.to(participantId).emit('rejected');
     socket.emit('participant-rejected', { id: participantId });
+  });
+
+  socket.on('set-screen-share-permission', ({ enabled }) => {
+    if (typeof enabled !== 'boolean') return;
+    const room = rooms.get(socket.roomId);
+    if (!room || (room.hostId !== socket.id && !room.coHosts.has(socket.id))) return;
+    room.screenShareAllowed = enabled;
+    io.to(socket.roomId).emit('screen-share-permission-changed', { enabled });
   });
 
   socket.on('disconnect', () => {

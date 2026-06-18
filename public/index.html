@@ -520,6 +520,7 @@ function copyInappUrl() {
   <div class="wp-title"><span>🚪 入室待ち</span><button class="wp-close" onclick="closeWaitingPanel()">×</button></div>
   <div id="waiting-participants-list"></div>
   <div class="wr-toggle-row"><span class="wr-toggle-label">待機室を有効にする</span><label class="wr-sw"><input type="checkbox" id="waiting-room-checkbox" onchange="setWaitingRoom(this.checked)"><span class="wr-slider"></span></label></div>
+  <div class="wr-toggle-row"><span class="wr-toggle-label">🖥️ 参加者の画面共有を許可</span><label class="wr-sw"><input type="checkbox" id="screen-share-checkbox" onchange="setScreenSharePermission(this.checked)"><span class="wr-slider"></span></label></div>
 </div>
 
 <div id="effects-panel">
@@ -737,6 +738,7 @@ let socket, rawStream, localStream, screenStream;
 let screenSenders = {};
 let noiseGateNode = null, ngCtx = null, ngDest = null, ngSrc = null;
 let noiseGateEnabled = true, rnnoiseActive = false;
+let screenShareAllowed = false;
 let myName = '', myRoomId = '';
 let welfareSettings = { mode: 'none', system: '', recordType: '', memberName: '', staffName: '' };
 const peers = {}, peerNames = {}, peerStreams = {}, peerInitiator = {};
@@ -1071,7 +1073,7 @@ async function doJoin() {
   renderBrNumBtns();
   socket = io();
   socket.on('join-error', msg => { alert(msg); location.reload(); });
-  socket.on('room-joined', ({ existingUsers, transcribeMode, isHost: h, isCoHost: c, source, isFreeRoom, roomStartedAt }) => {
+  socket.on('room-joined', ({ existingUsers, transcribeMode, isHost: h, isCoHost: c, source, isFreeRoom, roomStartedAt, screenShareAllowed: ssa }) => {
     existingUsers.forEach(({ id, name }) => { peerNames[id] = name; createPeer(id, name, true); });
     updateCount();
     if (source !== 'breakout') {
@@ -1079,6 +1081,7 @@ async function doJoin() {
       console.log('[room-joined] isHost=' + isHost + ' myEmail=' + myEmail + ' source=' + source);
       isCoHost = c || false;
       roomTranscribeMode = transcribeMode || 'host_only';
+      screenShareAllowed = ssa || false;
       updateHostUI();
       if (isFreeRoom && source !== 'breakout') startFreeTimer(roomStartedAt || Date.now());
       const _isWelfare = welfareSettings && welfareSettings.mode === 'welfare';
@@ -1246,11 +1249,12 @@ async function doJoin() {
   socket.on('admitted', (data) => {
     document.getElementById('waiting-overlay').classList.remove('visible');
     document.getElementById('meeting').style.display = 'flex';
-    const { existingUsers, transcribeMode: tm, isHost: h, isCoHost: c, isFreeRoom, roomStartedAt } = data;
+    const { existingUsers, transcribeMode: tm, isHost: h, isCoHost: c, isFreeRoom, roomStartedAt, screenShareAllowed: ssa } = data;
     existingUsers.forEach(({ id, name }) => { peerNames[id] = name; createPeer(id, name, true); });
     updateCount();
     isHost = h || false; isCoHost = c || false;
     roomTranscribeMode = tm || 'host_only';
+    screenShareAllowed = ssa || false;
     updateHostUI();
     if (isFreeRoom) startFreeTimer(roomStartedAt || Date.now());
     const _w = welfareSettings && welfareSettings.mode === 'welfare';
@@ -1266,6 +1270,14 @@ async function doJoin() {
   socket.on('waiting-participant-left', ({ id }) => { removeWaitingParticipant(id); });
   socket.on('participant-admitted', ({ id }) => { removeWaitingParticipant(id); });
   socket.on('participant-rejected', ({ id }) => { removeWaitingParticipant(id); });
+  socket.on('screen-share-permission-changed', ({ enabled }) => {
+    screenShareAllowed = enabled;
+    updateScreenShareBtn();
+    const cb2 = document.getElementById('screen-share-checkbox');
+    if (cb2) cb2.checked = enabled;
+    if (!enabled && !isHost && !isCoHost && screenStream) toggleScreen();
+    if (enabled && !isHost && !isCoHost) notify('🖥️ ホストが画面共有を許可しました', 4000);
+  });
   socket.on('waiting-room-changed', ({ enabled }) => {
     const cb = document.getElementById('waiting-room-checkbox');
     if (cb) cb.checked = enabled;
@@ -1477,6 +1489,14 @@ function removeWaitingParticipant(id) {
 function admitParticipant(btn) { if (socket) socket.emit('admit-participant', { participantId: btn.dataset.id }); }
 function rejectParticipant(btn) { if (socket) socket.emit('reject-participant', { participantId: btn.dataset.id }); }
 function setWaitingRoom(enabled) { if (socket) socket.emit('set-waiting-room', { enabled }); }
+function setScreenSharePermission(enabled) { if (socket) socket.emit('set-screen-share-permission', { enabled }); }
+function updateScreenShareBtn() {
+  const show = isHost || isCoHost || screenShareAllowed;
+  ['btn-screen', 'btn-screen-m'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? '' : 'none';
+  });
+}
 function leaveWaitingRoom() { location.reload(); }
 
 function createPeer(peerId, peerName, isInitiator) {
@@ -1986,6 +2006,7 @@ function updateHostUI() {
   const tBtn = document.getElementById('btn-transcribe-toggle');
   if (tBtn) tBtn.style.display = isHost ? '' : 'none';
   updateTranscribeLabel();
+  updateScreenShareBtn();
 }
 
 function updateTranscribeLabel() {
