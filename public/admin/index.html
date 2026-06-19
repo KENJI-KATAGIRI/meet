@@ -345,12 +345,15 @@ async function loadUsers() {
                   </span>
                 </td>
                 <td class="px-4 py-3">
-                  <span class="text-xs px-2 py-0.5 rounded-full ${
-                    u.plan==='paid'  ? 'bg-green-100 text-green-700'  :
-                    u.plan==='trial' ? 'bg-yellow-100 text-yellow-700' :
-                                       'bg-gray-100 text-gray-500'}">
-                    ${esc(u.plan||'free')}${u.plan==='trial'&&u.plan_expires?'（'+u.plan_expires.slice(0,10)+'まで）':''}
-                  </span>
+                  <div class="flex items-center gap-1.5">
+                    <select onchange="changePlan(${u.id}, this)"
+                      class="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+                      <option value="free"  ${(!u.plan||u.plan==='free') ?'selected':''}>⬜ free</option>
+                      <option value="trial" ${u.plan==='trial'?'selected':''}>🟡 trial</option>
+                      <option value="paid"  ${u.plan==='paid' ?'selected':''}>🟢 paid</option>
+                    </select>
+                    ${u.plan==='trial'&&u.plan_expires?`<span class="text-xs text-gray-400">${u.plan_expires.slice(0,10)}まで</span>`:''}
+                  </div>
                 </td>
                 <td class="px-4 py-3 text-gray-400 text-xs">${(u.registered_at||'').slice(0,10)||'—'}</td>
                 <td class="px-4 py-3 text-gray-400 text-xs">${u.last_login_at?u.last_login_at.slice(0,10):'未'}</td>
@@ -415,6 +418,30 @@ function toast(msg, isError = false) {
   el.style.opacity = '1';
   clearTimeout(el._t);
   el._t = setTimeout(() => el.style.opacity = '0', 2500);
+}
+
+async function changePlan(id, sel) {
+  const plan = sel.value;
+  let plan_expires = null;
+
+  if (plan === 'trial') {
+    const def = new Date(); def.setDate(def.getDate() + 30);
+    const input = prompt('trial の有効期限を入力してください（YYYY-MM-DD）', def.toISOString().slice(0,10));
+    if (!input) { await loadUsers(); return; }
+    plan_expires = input.trim();
+  }
+
+  const label = plan === 'paid' ? '有料（課金なし特別仕様）' : plan === 'trial' ? `トライアル（${plan_expires}まで）` : '無料';
+  if (!confirm(`プランを「${label}」に変更しますか？`)) { await loadUsers(); return; }
+
+  try {
+    await api('user/' + id + '/plan', 'PATCH', { plan, plan_expires });
+    toast(`プランを ${label} に変更しました`);
+    await loadUsers();
+  } catch(e) {
+    toast('変更に失敗しました: ' + e.message, true);
+    await loadUsers();
+  }
 }
 
 async function deleteUser(id, email) {

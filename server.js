@@ -2714,6 +2714,25 @@ app.get('/api/admin/nm-users', (req, res) => {
   res.json({ users });
 });
 
+app.patch('/api/admin/user/:id/plan', express.json({ limit: '2kb' }), (req, res) => {
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  const user = db.prepare('SELECT id, email FROM users WHERE id=? AND facility_id IS NULL').get(id);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  const { plan, plan_expires } = req.body;
+  if (!['free', 'trial', 'paid'].includes(plan)) return res.status(400).json({ error: 'invalid plan' });
+  if (plan === 'trial') {
+    const exp = plan_expires ? String(plan_expires).slice(0, 10) : null;
+    if (!exp || isNaN(new Date(exp).getTime())) return res.status(400).json({ error: 'trial には plan_expires (YYYY-MM-DD) が必要です' });
+    db.prepare("UPDATE users SET plan='trial', plan_expires=? WHERE id=?").run(exp + ' 00:00:00', id);
+  } else {
+    db.prepare('UPDATE users SET plan=?, plan_expires=NULL WHERE id=?').run(plan, id);
+  }
+  console.log(`[admin] user ${id} (${user.email}) plan -> ${plan}${plan_expires ? ' until ' + plan_expires : ''}`);
+  res.json({ ok: true });
+});
+
 app.delete('/api/admin/user/:id', (req, res) => {
   if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
   const id = parseInt(req.params.id, 10);
