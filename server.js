@@ -2714,6 +2714,22 @@ app.get('/api/admin/nm-users', (req, res) => {
   res.json({ users });
 });
 
+app.delete('/api/admin/user/:id', (req, res) => {
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  const user = db.prepare('SELECT id, email, facility_id FROM users WHERE id=?').get(id);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  if (user.facility_id) return res.status(400).json({ error: '施設ユーザーは施設削除から行ってください' });
+  const meetingCount = db.prepare('SELECT COUNT(*) as cnt FROM nm_meetings WHERE host_email=?').get(user.email)?.cnt || 0;
+  if (meetingCount > 0 && !req.query.force) {
+    return res.status(409).json({ error: `${meetingCount}件の会議記録があります`, meetingCount, requireForce: true });
+  }
+  db.prepare('DELETE FROM users WHERE id=?').run(id);
+  console.log(`[admin] deleted user id=${id} email=${user.email}`);
+  res.json({ ok: true, email: user.email });
+});
+
 // ─────────────────────────────────────────────────────────────────
 // ---- Socket.io (video chat) ----
 const rooms = new Map();

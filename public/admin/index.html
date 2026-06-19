@@ -329,11 +329,12 @@ async function loadUsers() {
               <th class="px-4 py-3 text-left font-semibold">プラン</th>
               <th class="px-4 py-3 text-left font-semibold">登録日</th>
               <th class="px-4 py-3 text-left font-semibold">最終ログイン</th>
+              <th class="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
             ${users.map(u => `
-              <tr class="hover:bg-gray-50 transition">
+              <tr id="urow-${u.id}" class="hover:bg-gray-50 transition">
                 <td class="px-4 py-3">
                   <div class="font-medium text-gray-900">${esc(u.email||'')}</div>
                   ${u.name ? `<div class="text-gray-400 text-xs mt-0.5">${esc(u.name)}</div>` : ''}
@@ -353,6 +354,10 @@ async function loadUsers() {
                 </td>
                 <td class="px-4 py-3 text-gray-400 text-xs">${(u.registered_at||'').slice(0,10)||'—'}</td>
                 <td class="px-4 py-3 text-gray-400 text-xs">${u.last_login_at?u.last_login_at.slice(0,10):'未'}</td>
+                <td class="px-4 py-3">
+                  <button onclick="deleteUser(${u.id}, '${esc(u.email||'')}')"
+                    class="text-xs text-red-400 hover:text-red-600 hover:underline transition">削除</button>
+                </td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -410,6 +415,28 @@ function toast(msg, isError = false) {
   el.style.opacity = '1';
   clearTimeout(el._t);
   el._t = setTimeout(() => el.style.opacity = '0', 2500);
+}
+
+async function deleteUser(id, email) {
+  if (!confirm(`「${email}」を削除しますか？\nこの操作は取り消せません。`)) return;
+  try {
+    const r = await api('user/' + id, 'DELETE');
+    document.getElementById('urow-' + id)?.remove();
+    toast(`${email} を削除しました`);
+  } catch(e) {
+    if (e.message.includes('requireForce') || e.message.includes('会議記録')) {
+      const parsed = JSON.parse(e.message.includes('{') ? e.message : '{}');
+      const cnt = parsed.meetingCount || '複数';
+      if (!confirm(`${cnt}件の会議記録があります。それでも削除しますか？`)) return;
+      try {
+        await api('user/' + id + '?force=1', 'DELETE');
+        document.getElementById('urow-' + id)?.remove();
+        toast(`${email} を削除しました`);
+      } catch(e2) { toast('削除に失敗しました: ' + e2.message, true); }
+    } else {
+      toast('削除に失敗しました: ' + e.message, true);
+    }
+  }
 }
 
 function esc(s) {
