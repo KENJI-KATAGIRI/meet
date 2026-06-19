@@ -2243,6 +2243,8 @@ app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'b
 
 // 施設登録（トライアル開始）
 app.post('/api/facility/register', requireAuth, async (req, res) => {
+  if (Buffer.byteLength(JSON.stringify(req.body), 'utf8') > 20000)
+    return res.status(400).json({ error: 'リクエストが大きすぎます（20KB以内）' });
   const { facility_name, contact_name, phone, locations } = req.body;
   const cleanFacName = safeStr(facility_name, 100);
   const cleanContact = safeStr(contact_name, 50);
@@ -2297,6 +2299,8 @@ app.get('/api/facility/status', requireAuth, (req, res) => {
 
 // 拠点追加
 app.post('/api/facility/location', requireAuth, (req, res) => {
+  if (Buffer.byteLength(JSON.stringify(req.body), 'utf8') > 2000)
+    return res.status(400).json({ error: 'リクエストが大きすぎます（2KB以内）' });
   const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
   if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
   const cleanLocName = safeStr(req.body.name, 100);
@@ -2323,6 +2327,8 @@ app.delete('/api/facility/location/:id', requireAuth, (req, res) => {
 
 // 有料申込フォーム
 app.post('/api/facility/inquiry', requireAuth, async (req, res) => {
+  if (Buffer.byteLength(JSON.stringify(req.body), 'utf8') > 20000)
+    return res.status(400).json({ error: 'リクエストが大きすぎます（20KB以内）' });
   const u = db.prepare('SELECT email, facility_id FROM users WHERE id=?').get(req.session.userId);
   const cleanMsg = safeStr(req.body.message, 2000);
   const fac = u?.facility_id ? db.prepare('SELECT name FROM nm_facilities WHERE id=?').get(u.facility_id) : null;
