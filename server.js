@@ -2616,7 +2616,30 @@ app.patch('/api/admin/confirm-draft/:id', express.json(), (req, res) => {
 // ---- Socket.io (video chat) ----
 const rooms = new Map();
 const breakouts = new Map();
+// プロトタイプ汚染防止: Socket.IO 受信データから危険キーを除去
+function sanitizeSocketData(data) {
+  if (data === null || typeof data !== 'object') return data;
+  if (Array.isArray(data)) return data.map(sanitizeSocketData);
+  const DANGEROUS = new Set(['__proto__', 'constructor', 'prototype']);
+  const out = {};
+  for (const key of Object.keys(data)) {
+    if (DANGEROUS.has(key)) continue;
+    out[key] = sanitizeSocketData(data[key]);
+  }
+  return out;
+}
+
 io.on('connection', (socket) => {
+  // 全イベントの引数をサニタイズ（プロトタイプ汚染対策）
+  socket.use(([event, ...args], next) => {
+    try {
+      const sanitized = args.map(sanitizeSocketData);
+      args.splice(0, args.length, ...sanitized);
+    } catch (e) {
+      console.warn('[socket] sanitize error:', e.message);
+    }
+    next();
+  });
   socket.on('join-room', ({ roomId, password, userName, transcribeMode, system }) => {
     if (typeof roomId !== 'string' || roomId.length > 128 || typeof userName !== 'string') return;
     const safeRoomId = roomId.trim();
