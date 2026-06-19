@@ -626,7 +626,7 @@ app.get('/auth/google/callback', async (req, res) => {
       let slug = data.name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
       let base = slug, i = 1;
       while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
-      const r = db.prepare("INSERT INTO users (google_id, name, email, access_token, refresh_token, slug, registered_at) VALUES (?,?,?,?,?,?,datetime('now'))")
+      const r = db.prepare("INSERT INTO users (google_id, name, email, access_token, refresh_token, slug, registered_at, plan, plan_expires) VALUES (?,?,?,?,?,?,datetime('now'),'trial',datetime('now','+30 days'))")
         .run(data.id, data.name, data.email, tokens.access_token, tokens.refresh_token, slug);
       await regenerateSession(req);
       req.session.userId = r.lastInsertRowid;
@@ -656,7 +656,7 @@ app.post('/auth/register', async (req, res) => {
   let base = slug, i = 1;
   while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
   const password_hash = await hashPassword(password);
-  const r = db.prepare("INSERT INTO users (name, email, password_hash, slug, registered_at) VALUES (?,?,?,?,datetime('now'))")
+  const r = db.prepare("INSERT INTO users (name, email, password_hash, slug, registered_at, plan, plan_expires) VALUES (?,?,?,?,datetime('now'),'trial',datetime('now','+30 days'))")
     .run(cleanName, email, password_hash, slug);
   await regenerateSession(req);
   req.session.userId = r.lastInsertRowid;
@@ -683,6 +683,16 @@ app.post('/auth/login', async (req, res) => {
   res.json({ ok: true });
 });
 
+function isActivePlan(u) {
+  if (!u) return false;
+  if (u.plan === 'paid') return true;
+  if (u.plan === 'trial' && u.plan_expires) {
+    const exp = new Date(String(u.plan_expires).replace(' ', 'T') + 'Z');
+    if (exp > new Date()) return true;
+  }
+  return false;
+}
+
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'unauthorized' });
   next();
@@ -699,6 +709,11 @@ app.get('/api/me', requireAuth, (req, res) => {
 app.get('/api/my-plan', requireAuth, async (req, res) => {
   const u = db.prepare('SELECT plan, plan_expires, stripe_customer_id FROM users WHERE id=?').get(req.session.userId);
   const result = { plan: u?.plan || 'free', plan_expires: u?.plan_expires || null };
+  if (u?.plan === 'trial' && u?.plan_expires) {
+    const exp = new Date(String(u.plan_expires).replace(' ', 'T') + 'Z');
+    result.trial_days_left = Math.max(0, Math.ceil((exp - Date.now()) / 86400000));
+    result.is_trial_active = exp > new Date();
+  }
   if (stripe && u?.stripe_customer_id) {
     try {
       const subs = await stripe.subscriptions.list({ customer: u.stripe_customer_id, limit: 1, status: 'all' });
@@ -797,7 +812,6 @@ app.post('/api/stripe/checkout', requireAuth, async (req, res) => {
       payment_method_types: ['card'],
       line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
       mode: 'subscription',
-      subscription_data: { trial_period_days: 30 },
       payment_method_collection: 'always',
       success_url: 'https://meet.gaiaarts.org/booking/dashboard?plan=success',
       cancel_url: 'https://meet.gaiaarts.org/booking/dashboard',
@@ -1791,7 +1805,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
       console.log('[audio-finalize] facility expired:', email);
     }
   } else {
-    canUseAI = fUser?.plan === 'paid';
+    canUseAI = isActivePlan(fUser);
   }
   if (!canUseAI) {
     console.log('[audio-finalize] no AI access for:', email);
@@ -2414,7 +2428,7 @@ app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'
       canUseAI = usedMin < limitMin;
     }
   } else {
-    canUseAI = u?.plan === 'paid';
+    canUseAI = isActivePlan(u);
   }
   if (!canUseAI) {
     fs.unlink(req.file.path, () => {});
@@ -2614,8 +2628,8 @@ io.on('connection', (socket) => {
       let hostEmail = null;
       let hostUiMode = 'simple';
       if (userId) {
-        const hu = db.prepare('SELECT plan, facility_id, email, ui_mode FROM users WHERE id=?').get(userId);
-        hostPlan = hu?.plan || 'free';
+        const hu = db.prepare('SELECT plan, plan_expires, facility_id, email, ui_mode FROM users WHERE id=?').get(userId);
+        hostPlan = (hu && isActivePlan(hu)) ? 'paid' : 'free';
         hostFacilityId = hu?.facility_id || null;
         hostEmail = hu?.email || null;
         hostUiMode = hu?.ui_mode || 'simple';
