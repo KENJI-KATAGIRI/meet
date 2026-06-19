@@ -2651,13 +2651,15 @@ app.get('/api/admin/facilities', (req, res) => {
     const lc   = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(f.id)?.cnt || 0;
     const status   = getFacilityStatus(f);
     const daysLeft = getTrialDaysLeft(f);
+    const uid = db.prepare('SELECT id FROM users WHERE facility_id=? ORDER BY id LIMIT 1').get(f.id);
     return {
       id: f.id, name: f.name, admin_email: f.admin_email, contact_name: f.contact_name,
       status, daysLeft, locationCount: lc,
       usedMinThisMonth: Math.round(getMonthlyUsageMinutes(f.id)),
       admin_notes: f.admin_notes || '',
       last_login_at: user?.last_login_at || null,
-      trial_started_at: f.trial_started_at
+      trial_started_at: f.trial_started_at,
+      user_id: uid?.id || null
     };
   });
   res.json({ facilities: result });
@@ -2704,6 +2706,36 @@ app.post('/api/admin/facility', express.json({ limit: '10kb' }), async (req, res
   ).run(cleanName, cleanEmail, pwHash, facilityId, slug);
   console.log(`[admin] created facility: ${cleanName} <${cleanEmail}> status=${cleanStatus}`);
   res.json({ ok: true, facilityId, email: cleanEmail, password: pw, message: `施設「${cleanName}」を作成しました` });
+});
+
+// 管理者ワンクリックログイン（トークン発行→セッション作成）
+const adminLoginTokens = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [t, v] of adminLoginTokens) { if (v.expires < now) adminLoginTokens.delete(t); }
+}, 60 * 60 * 1000);
+
+app.get('/api/admin/login-link/:userId', async (req, res) => {
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const userId = parseInt(req.params.userId, 10);
+  const user = db.prepare('SELECT id, slug, facility_id FROM users WHERE id=?').get(userId);
+  if (!user || !user.facility_id) return res.status(404).json({ error: 'facility user not found' });
+  const token = crypto.randomBytes(24).toString('hex');
+  adminLoginTokens.set(token, { userId, expires: Date.now() + 30 * 60 * 1000 }); // 30分有効
+  res.json({ url: '/auth/admin-login?t=' + token });
+});
+
+app.get('/auth/admin-login', async (req, res) => {
+  const token = String(req.query.t || '').replace(/[^a-f0-9]/g, '');
+  const entry = adminLoginTokens.get(token);
+  if (!entry || entry.expires < Date.now()) { adminLoginTokens.delete(token); return res.redirect('/booking/'); }
+  adminLoginTokens.delete(token);
+  const user = db.prepare('SELECT id, slug FROM users WHERE id=?').get(entry.userId);
+  if (!user) return res.redirect('/booking/');
+  await regenerateSession(req);
+  req.session.userId = user.id;
+  req.session.slug = user.slug;
+  req.session.save(err => res.redirect(err ? '/booking/' : '/booking/dashboard'));
 });
 
 app.get('/api/admin/nm-users', (req, res) => {

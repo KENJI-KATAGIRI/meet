@@ -252,6 +252,7 @@ async function loadFacilities() {
               <th class="px-4 py-3 text-left font-semibold">今月使用</th>
               <th class="px-4 py-3 text-left font-semibold">最終ログイン</th>
               <th class="px-4 py-3 text-left font-semibold">管理メモ</th>
+              <th class="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100">
@@ -300,7 +301,18 @@ function facilityRow(f) {
           class="border rounded-lg px-2 py-1 text-xs w-44 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
           placeholder="メモを追加...">
       </td>
+      <td class="px-4 py-3">
+        ${f.user_id ? `<button onclick="adminLogin(${f.user_id})"
+          class="text-xs text-blue-500 hover:text-blue-700 hover:underline transition whitespace-nowrap">ログイン</button>` : '—'}
+      </td>
     </tr>`;
+}
+
+async function adminLogin(userId) {
+  try {
+    const { url } = await api('login-link/' + userId);
+    window.open(url, '_blank');
+  } catch(e) { toast('ログインリンク生成失敗: ' + e.message, true); }
 }
 
 async function updateStatus(id, status) {
