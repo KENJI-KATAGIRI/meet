@@ -4,3 +4,5 @@ data/
 recordings/
 service-account.json
 public/index.html.bak*
+*.db
+backups/

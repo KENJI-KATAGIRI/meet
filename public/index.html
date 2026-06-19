@@ -799,10 +799,10 @@ if (systemParam === 'bni') {
     mode: 'bni',
     system: 'bni',
     recordType: '1-2-1ミーティング記録',
-    memberName: urlParams.get('bni_contact_name') || urlParams.get('name') || '',
-    staffName: urlParams.get('bni_user') || '',
+    memberName: urlParams.get('bn') || urlParams.get('bni_contact_name') || urlParams.get('name') || '',
+    staffName: urlParams.get('bu') || urlParams.get('bni_user') || '',
   };
-  const bniContactName = urlParams.get('bni_contact_name') || '';
+  const bniContactName = urlParams.get('bn') || urlParams.get('bni_contact_name') || '';
   if (bniContactName) {
     const nameBadge = document.createElement('div');
     nameBadge.style.cssText = 'background:#2d1a3a;border:1px solid #6a2d9f;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#c89dff;text-align:center;font-weight:600';
@@ -814,7 +814,7 @@ if (systemParam === 'bni') {
   document.querySelector('.optional-label').style.display = 'none';
   document.getElementById('input-pass').value = '';
   // 事前情報フォームを表示（bni_user がある = ホスト発行URLを他者が開いた）
-  if (urlParams.get('bni_user')) {
+  if (urlParams.get('bu') || urlParams.get('bni_user')) {
     document.getElementById('bni-prejoin').style.display = 'flex';
     document.getElementById('lobby').style.display = 'none';
   }
@@ -878,7 +878,7 @@ async function submitPrejoin() {
     await fetch('/api/bni/contact-capture', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        bni_user: urlParams.get('bni_user'),
+        bni_user: urlParams.get('bu') || urlParams.get('bni_user'),
         name, email,
         is_bni_member: pjType === 'bni',
         category,
@@ -2286,7 +2286,7 @@ window.addEventListener('beforeunload', () => {
   form.append('welfareRecordType', welfareSettings.recordType);
   form.append('memberName', welfareSettings.memberName);
   form.append('staffName', welfareSettings.staffName);
-  form.append('bniContactId', urlParams.get('bni_contact_id') || '');
+  form.append('bniContactId', urlParams.get('bi') || urlParams.get('bni_contact_id') || '');
   navigator.sendBeacon('/api/audio-finalize', form);
 });
 
@@ -2395,7 +2395,7 @@ async function stopAndFinalizeAudio() {
   form.append('welfareRecordType', welfareSettings.recordType);
   form.append('memberName', welfareSettings.memberName);
   form.append('staffName', welfareSettings.staffName);
-  form.append('bniContactId', urlParams.get('bni_contact_id') || '');
+  form.append('bniContactId', urlParams.get('bi') || urlParams.get('bni_contact_id') || '');
   fetch('/api/audio-finalize', { method: 'POST', body: form }).catch(() => {});
 }
 
