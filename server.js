@@ -1778,7 +1778,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
   console.log(`[audio-finalize] session=${sessionId} email=${email} openai=${!!openai}`);
   if (!email || !sessionId || !openai) return;
   if (!isValidEmail(email) || !/^[\w-]{5,60}$/.test(sessionId)) return;
-  const fUser = db.prepare('SELECT plan, facility_id FROM users WHERE email=?').get(email);
+  const fUser = db.prepare('SELECT plan, plan_expires, facility_id FROM users WHERE email=?').get(email);
   const recordMode = safeStr(req.body.recordMode, 20);
   const welfareSystem = safeStr(req.body.welfareSystem, 20);
   const welfareRecordType = safeStr(req.body.welfareRecordType, 50);
@@ -2406,7 +2406,7 @@ const faceRecordUpload = multer({
 app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no audio file' });
   if (!openai) return res.status(503).json({ error: 'AI unavailable' });
-  const u = db.prepare('SELECT plan, facility_id FROM users WHERE id=?').get(req.session.userId);
+  const u = db.prepare('SELECT plan, plan_expires, facility_id FROM users WHERE id=?').get(req.session.userId);
   const memberName = safeStr(req.body.memberName, 100);
   const staffName = safeStr(req.body.staffName, 100);
   const welfareSystem = safeStr(req.body.welfareSystem, 20);
