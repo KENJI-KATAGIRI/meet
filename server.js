@@ -236,6 +236,8 @@ try { db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT'); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN status TEXT DEFAULT 'confirmed'"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN source TEXT DEFAULT 'video'"); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN booking_horizon_days INTEGER DEFAULT 14"); } catch(e) {}
+try { db.exec("ALTER TABLE nm_facilities ADD COLUMN admin_notes TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT"); } catch(e) {}
 
 // ── 施設サブスク ヘルパー ────────────────────────────────────────
 function calcMonthlyAmount(locationCount, isEarlyAdopter) {
@@ -246,7 +248,10 @@ function calcMonthlyAmount(locationCount, isEarlyAdopter) {
 }
 function getFacilityStatus(facility) {
   if (!facility) return 'none';
+  if (facility.trial_status === 'custom') return 'custom';
   if (facility.trial_status === 'active') return 'active';
+  if (facility.trial_status === 'expired') return 'expired';
+  if (!facility.trial_started_at) return 'expired';
   const daysSince = (Date.now() - new Date(facility.trial_started_at).getTime()) / 86400000;
   return daysSince > 30 ? 'expired' : 'trial';
 }
@@ -258,6 +263,9 @@ function getMonthlyUsageMinutes(facilityId) {
   return row?.total || 0;
 }
 function getTrialDaysLeft(facility) {
+  if (!facility) return 0;
+  if (facility.trial_status === 'custom' || facility.trial_status === 'active') return null;
+  if (!facility.trial_started_at) return 0;
   const daysSince = (Date.now() - new Date(facility.trial_started_at).getTime()) / 86400000;
   return Math.max(0, Math.ceil(30 - daysSince));
 }
@@ -686,6 +694,7 @@ app.post('/auth/login', async (req, res) => {
   await regenerateSession(req);
   req.session.userId = user.id;
   req.session.slug = user.slug;
+  db.prepare("UPDATE users SET last_login_at=datetime('now') WHERE id=?").run(user.id);
   res.json({ ok: true });
 });
 
@@ -2616,6 +2625,93 @@ app.patch('/api/admin/confirm-draft/:id', express.json(), (req, res) => {
   if (!rec) return res.status(404).json({ error: 'draft not found' });
   db.prepare("UPDATE nm_call_records SET status='confirmed' WHERE id=?").run(id);
   res.json({ ok: true });
+});
+
+
+// ─────────────────────────────────────────────────────────────────
+// ── 施設管理 Admin API ────────────────────────────────────────────
+
+app.get('/api/admin/summary', (req, res) => {
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const facs = db.prepare('SELECT * FROM nm_facilities').all();
+  const counts = { trial: 0, active: 0, custom: 0, expired: 0, total: facs.length };
+  for (const f of facs) {
+    const s = getFacilityStatus(f);
+    if (s in counts) counts[s]++; else counts.expired++;
+  }
+  const nmUsers = db.prepare("SELECT COUNT(*) as cnt FROM users WHERE facility_id IS NULL").get().cnt;
+  res.json({ facilities: counts, nmUsers });
+});
+
+app.get('/api/admin/facilities', (req, res) => {
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const facs = db.prepare('SELECT * FROM nm_facilities ORDER BY id DESC').all();
+  const result = facs.map(f => {
+    const user = db.prepare('SELECT last_login_at FROM users WHERE facility_id=? ORDER BY id LIMIT 1').get(f.id);
+    const lc   = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(f.id)?.cnt || 0;
+    const status   = getFacilityStatus(f);
+    const daysLeft = getTrialDaysLeft(f);
+    return {
+      id: f.id, name: f.name, admin_email: f.admin_email, contact_name: f.contact_name,
+      status, daysLeft, locationCount: lc,
+      usedMinThisMonth: Math.round(getMonthlyUsageMinutes(f.id)),
+      admin_notes: f.admin_notes || '',
+      last_login_at: user?.last_login_at || null,
+      trial_started_at: f.trial_started_at
+    };
+  });
+  res.json({ facilities: result });
+});
+
+app.patch('/api/admin/facility/:id', express.json({ limit: '10kb' }), (req, res) => {
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  if (!db.prepare('SELECT id FROM nm_facilities WHERE id=?').get(id)) return res.status(404).json({ error: 'not found' });
+  const { status, notes } = req.body;
+  if (status !== undefined) {
+    if (!['trial', 'active', 'custom', 'expired'].includes(status)) return res.status(400).json({ error: 'invalid status' });
+    db.prepare('UPDATE nm_facilities SET trial_status=? WHERE id=?').run(status, id);
+    console.log(`[admin] facility ${id} status -> ${status}`);
+  }
+  if (notes !== undefined) db.prepare('UPDATE nm_facilities SET admin_notes=? WHERE id=?').run(String(notes).slice(0, 1000), id);
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/facility', express.json({ limit: '10kb' }), async (req, res) => {
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const { name, email, contact_name, phone, status, notes, location_name } = req.body;
+  if (!name || !email) return res.status(400).json({ error: '施設名とメールは必須です' });
+  if (!isValidEmail(email)) return res.status(400).json({ error: '無効なメールアドレスです' });
+  const cleanName   = safeStr(name, 100);
+  const cleanEmail  = email.toLowerCase().trim();
+  const cleanStatus = ['trial', 'active', 'custom'].includes(status) ? status : 'trial';
+  if (db.prepare('SELECT id FROM users WHERE email=?').get(cleanEmail))
+    return res.status(409).json({ error: 'このメールアドレスは既に登録されています' });
+  const fac = db.prepare(
+    "INSERT INTO nm_facilities (name, admin_email, contact_name, phone, admin_notes, trial_status, trial_started_at) VALUES (?,?,?,?,?,?,datetime('now'))"
+  ).run(cleanName, cleanEmail, safeStr(contact_name||'',50), safeStr(phone||'',20), safeStr(notes||'',1000), cleanStatus);
+  const facilityId = fac.lastInsertRowid;
+  const cleanLoc = safeStr(location_name || '本事業所', 100);
+  db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(facilityId, cleanLoc);
+  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(facilityId, 1, '管理者作成');
+  const pw = crypto.randomBytes(8).toString('hex');
+  const pwHash = await hashPassword(pw);
+  let slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20) || 'facility';
+  if (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = slug + facilityId;
+  db.prepare(
+    "INSERT INTO users (name, email, password_hash, plan, ui_mode, facility_id, slug, registered_at) VALUES (?,?,?,'free','welfare',?,?,datetime('now'))"
+  ).run(cleanName, cleanEmail, pwHash, facilityId, slug);
+  console.log(`[admin] created facility: ${cleanName} <${cleanEmail}> status=${cleanStatus}`);
+  res.json({ ok: true, facilityId, email: cleanEmail, password: pw, message: `施設「${cleanName}」を作成しました` });
+});
+
+app.get('/api/admin/nm-users', (req, res) => {
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const users = db.prepare(
+    "SELECT id, name, email, plan, plan_expires, ui_mode, registered_at, last_login_at FROM users WHERE facility_id IS NULL ORDER BY id DESC LIMIT 300"
+  ).all();
+  res.json({ users });
 });
 
 // ─────────────────────────────────────────────────────────────────

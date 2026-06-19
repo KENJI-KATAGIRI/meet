@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NiceMeet Admin</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800">
+
+<!-- ログイン画面 -->
+<div id="login-screen" class="min-h-screen flex items-center justify-center">
+  <div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm">
+    <div class="text-center mb-6">
+      <div class="text-2xl font-bold text-gray-900">NiceMeet</div>
+      <div class="text-sm text-gray-400 mt-1">管理者ダッシュボード</div>
+    </div>
+    <input type="password" id="secret-input"
+      class="w-full border rounded-xl px-4 py-3 mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+      placeholder="ADMIN_SECRET を入力"
+      onkeydown="if(event.key==='Enter') doLogin()">
+    <button onclick="doLogin()"
+      class="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition text-sm">
+      ログイン
+    </button>
+    <p id="login-error" class="text-red-500 text-xs text-center mt-3 hidden">ADMIN_SECRET が正しくありません</p>
+  </div>
+</div>
+
+<!-- 管理画面 -->
+<div id="admin-screen" class="hidden">
+  <!-- ヘッダー -->
+  <header class="bg-gray-900 text-white px-6 py-4 flex items-center justify-between sticky top-0 z-40">
+    <span class="font-bold text-lg tracking-tight">NiceMeet Admin</span>
+    <button onclick="logout()" class="text-gray-400 hover:text-white text-sm transition">ログアウト</button>
+  </header>
+
+  <!-- タブ -->
+  <div class="bg-white border-b px-6 flex gap-1">
+    <button onclick="showTab('dashboard')" id="tb-dashboard"
+      class="tab-btn py-4 px-2 border-b-2 border-blue-600 text-blue-600 font-semibold text-sm mr-4">
+      ダッシュボード
+    </button>
+    <button onclick="showTab('facilities')" id="tb-facilities"
+      class="tab-btn py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-semibold text-sm mr-4">
+      施設管理
+    </button>
+    <button onclick="showTab('users')" id="tb-users"
+      class="tab-btn py-4 px-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-semibold text-sm">
+      ユーザー管理
+    </button>
+  </div>
+
+  <main class="p-6 max-w-7xl mx-auto">
+
+    <!-- ── ダッシュボード ── -->
+    <div id="tab-dashboard">
+      <div id="summary-cards" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div class="bg-white rounded-xl border p-5 animate-pulse col-span-2 md:col-span-5 h-24"></div>
+      </div>
+      <div class="bg-white rounded-xl border p-5">
+        <h2 class="font-semibold text-gray-700 mb-4">⚠️ 期限が近い施設（7日以内）</h2>
+        <div id="expiring-list" class="text-sm text-gray-400">読み込み中...</div>
+      </div>
+    </div>
+
+    <!-- ── 施設管理 ── -->
+    <div id="tab-facilities" class="hidden">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="font-semibold text-gray-700">施設一覧</h2>
+        <button onclick="showCreateModal()"
+          class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition">
+          ＋ 新規施設追加
+        </button>
+      </div>
+      <div id="facilities-wrap" class="bg-white rounded-xl border overflow-hidden">
+        <p class="text-gray-400 text-sm p-6">読み込み中...</p>
+      </div>
+    </div>
+
+    <!-- ── ユーザー管理 ── -->
+    <div id="tab-users" class="hidden">
+      <h2 class="font-semibold text-gray-700 mb-4">NiceMeet / BNI ユーザー</h2>
+      <div id="users-wrap" class="bg-white rounded-xl border overflow-hidden">
+        <p class="text-gray-400 text-sm p-6">読み込み中...</p>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- 新規施設作成モーダル -->
+<div id="create-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md">
+    <h2 class="font-bold text-lg mb-4">新規施設追加</h2>
+    <div class="space-y-3">
+      <input type="text" id="fn-name" placeholder="施設名 *"
+        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <input type="email" id="fn-email" placeholder="メールアドレス *"
+        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <div class="grid grid-cols-2 gap-3">
+        <input type="text" id="fn-contact" placeholder="担当者名"
+          class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <input type="text" id="fn-phone" placeholder="電話番号"
+          class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+      </div>
+      <input type="text" id="fn-location" placeholder="事業所名（省略: 本事業所）"
+        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <select id="fn-status"
+        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <option value="trial">🟡 トライアル（30日）</option>
+        <option value="custom">🟢 カスタム契約（期限なし）</option>
+        <option value="active">🔵 有効（承認済み）</option>
+      </select>
+      <textarea id="fn-notes" placeholder="管理メモ（契約内容・特記事項など）" rows="3"
+        class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"></textarea>
+    </div>
+    <div id="create-result" class="mt-3 hidden"></div>
+    <div class="flex gap-3 mt-4">
+      <button onclick="createFacility()"
+        class="flex-1 bg-blue-600 text-white py-2.5 rounded-lg font-semibold text-sm hover:bg-blue-700 transition">
+        作成する
+      </button>
+      <button onclick="closeModal()"
+        class="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-lg font-semibold text-sm hover:bg-gray-200 transition">
+        キャンセル
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- トースト通知 -->
+<div id="toast" class="fixed bottom-6 right-6 px-4 py-2.5 rounded-xl shadow-lg text-white text-sm z-50 opacity-0 transition-opacity duration-300 pointer-events-none"></div>
+
+<script>
+let secret = sessionStorage.getItem('nm_admin') || '';
+let currentTab = 'dashboard';
+
+if (secret) tryAutoLogin();
+
+async function api(path, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Authorization': 'Bearer ' + secret, 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch('/api/admin/' + path, opts);
+  if (r.status === 403) throw new Error('auth');
+  const text = await r.text();
+  try { return JSON.parse(text); } catch { throw new Error(text); }
+}
+
+async function tryAutoLogin() {
+  try {
+    await api('summary');
+    enterAdmin();
+  } catch (e) {
+    if (e.message === 'auth') { sessionStorage.removeItem('nm_admin'); secret = ''; }
+  }
+}
+
+async function doLogin() {
+  secret = document.getElementById('secret-input').value.trim();
+  if (!secret) return;
+  document.getElementById('login-error').classList.add('hidden');
+  try {
+    await api('summary');
+    sessionStorage.setItem('nm_admin', secret);
+    enterAdmin();
+  } catch (e) {
+    document.getElementById('login-error').classList.remove('hidden');
+    secret = '';
+  }
+}
+
+function enterAdmin() {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('admin-screen').classList.remove('hidden');
+  loadDashboard();
+}
+
+function logout() {
+  sessionStorage.removeItem('nm_admin');
+  secret = '';
+  location.reload();
+}
+
+function showTab(tab) {
+  ['dashboard','facilities','users'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('hidden', t !== tab);
+    const btn = document.getElementById('tb-' + t);
+    btn.className = 'tab-btn py-4 px-2 border-b-2 font-semibold text-sm mr-4 transition ' +
+      (t === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700');
+  });
+  currentTab = tab;
+  if (tab === 'dashboard') loadDashboard();
+  else if (tab === 'facilities') loadFacilities();
+  else if (tab === 'users') loadUsers();
+}
+
+// ── ダッシュボード ─────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const [sum, { facilities }] = await Promise.all([api('summary'), api('facilities')]);
+    const { facilities: fc, nmUsers } = sum;
+    const cardDefs = [
+      { label: 'トライアル中', val: fc.trial,   color: 'yellow' },
+      { label: 'カスタム契約', val: fc.custom,  color: 'green'  },
+      { label: '有効（承認済）', val: fc.active, color: 'blue'   },
+      { label: '期限切れ',     val: fc.expired, color: 'red'    },
+      { label: 'NiceMeet/BNIユーザー', val: nmUsers, color: 'gray' },
+    ];
+    document.getElementById('summary-cards').innerHTML = cardDefs.map(c => `
+      <div class="bg-white rounded-xl border p-5">
+        <div class="text-3xl font-bold text-${c.color}-500 mb-1">${c.val}</div>
+        <div class="text-xs text-gray-500">${c.label}</div>
+      </div>`).join('');
+
+    const expiring = facilities.filter(f => f.status === 'trial' && f.daysLeft !== null && f.daysLeft <= 7);
+    const el = document.getElementById('expiring-list');
+    if (!expiring.length) {
+      el.innerHTML = '<p class="text-gray-400 text-sm">期限が迫っている施設はありません ✓</p>';
+    } else {
+      el.innerHTML = expiring.sort((a,b) => a.daysLeft - b.daysLeft).map(f => `
+        <div class="flex items-center justify-between py-2.5 border-b last:border-0">
+          <div>
+            <span class="font-medium text-gray-800">${esc(f.name)}</span>
+            <span class="text-gray-400 ml-2 text-xs">${f.admin_email}</span>
+          </div>
+          <span class="text-xs font-semibold px-2 py-1 rounded-full ${f.daysLeft <= 3 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}">
+            残り${f.daysLeft}日
+          </span>
+        </div>`).join('');
+    }
+  } catch(e) { console.error(e); }
+}
+
+// ── 施設管理 ──────────────────────────────────────────────────────
+async function loadFacilities() {
+  try {
+    const { facilities } = await api('facilities');
+    const wrap = document.getElementById('facilities-wrap');
+    if (!facilities.length) {
+      wrap.innerHTML = '<p class="text-gray-400 text-sm p-6">施設が登録されていません</p>';
+      return;
+    }
+    wrap.innerHTML = `
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+            <tr>
+              <th class="px-4 py-3 text-left font-semibold">施設名</th>
+              <th class="px-4 py-3 text-left font-semibold">ステータス</th>
+              <th class="px-4 py-3 text-left font-semibold">拠点</th>
+              <th class="px-4 py-3 text-left font-semibold">今月使用</th>
+              <th class="px-4 py-3 text-left font-semibold">最終ログイン</th>
+              <th class="px-4 py-3 text-left font-semibold">管理メモ</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            ${facilities.map(f => facilityRow(f)).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } catch(e) { console.error(e); }
+}
+
+function statusBadge(status, daysLeft) {
+  const conf = {
+    custom:  ['bg-green-100 text-green-700',  '🟢 カスタム契約'],
+    active:  ['bg-blue-100  text-blue-700',   '🔵 有効'],
+    trial:   ['bg-yellow-100 text-yellow-700', `🟡 トライアル（残${daysLeft ?? '?'}日）`],
+    expired: ['bg-red-100   text-red-700',    '🔴 無効'],
+  };
+  const [cls, label] = conf[status] || ['bg-gray-100 text-gray-500', status];
+  return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${cls}">${label}</span>`;
+}
+
+function facilityRow(f) {
+  const usedH = (f.usedMinThisMonth / 60).toFixed(1);
+  const ll = f.last_login_at ? f.last_login_at.slice(0,10) : '未ログイン';
+  return `
+    <tr class="hover:bg-gray-50 transition">
+      <td class="px-4 py-3">
+        <div class="font-medium text-gray-900">${esc(f.name)}</div>
+        <div class="text-gray-400 text-xs mt-0.5">${esc(f.admin_email)}</div>
+      </td>
+      <td class="px-4 py-3">
+        <select onchange="updateStatus(${f.id}, this.value)"
+          class="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+          <option value="trial"   ${f.status==='trial'   ?'selected':''}>🟡 トライアル</option>
+          <option value="active"  ${f.status==='active'  ?'selected':''}>🔵 有効</option>
+          <option value="custom"  ${f.status==='custom'  ?'selected':''}>🟢 カスタム契約</option>
+          <option value="expired" ${f.status==='expired' ?'selected':''}>🔴 無効</option>
+        </select>
+      </td>
+      <td class="px-4 py-3 text-gray-500 text-xs">${f.locationCount}拠点</td>
+      <td class="px-4 py-3 text-gray-500 text-xs">${usedH}h / 月</td>
+      <td class="px-4 py-3 text-gray-500 text-xs">${ll}</td>
+      <td class="px-4 py-3">
+        <input type="text" value="${esc(f.admin_notes)}"
+          onblur="updateNotes(${f.id}, this.value)"
+          class="border rounded-lg px-2 py-1 text-xs w-44 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+          placeholder="メモを追加...">
+      </td>
+    </tr>`;
+}
+
+async function updateStatus(id, status) {
+  try { await api('facility/' + id, 'PATCH', { status }); toast('ステータスを更新しました'); }
+  catch(e) { toast('更新に失敗しました', true); }
+}
+
+async function updateNotes(id, notes) {
+  try { await api('facility/' + id, 'PATCH', { notes }); toast('メモを保存しました'); }
+  catch(e) { toast('保存に失敗しました', true); }
+}
+
+// ── ユーザー管理 ──────────────────────────────────────────────────
+async function loadUsers() {
+  try {
+    const { users } = await api('nm-users');
+    const wrap = document.getElementById('users-wrap');
+    if (!users.length) { wrap.innerHTML = '<p class="text-gray-400 text-sm p-6">ユーザーが見つかりません</p>'; return; }
+    wrap.innerHTML = `
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+            <tr>
+              <th class="px-4 py-3 text-left font-semibold">メール / 名前</th>
+              <th class="px-4 py-3 text-left font-semibold">モード</th>
+              <th class="px-4 py-3 text-left font-semibold">プラン</th>
+              <th class="px-4 py-3 text-left font-semibold">登録日</th>
+              <th class="px-4 py-3 text-left font-semibold">最終ログイン</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            ${users.map(u => `
+              <tr class="hover:bg-gray-50 transition">
+                <td class="px-4 py-3">
+                  <div class="font-medium text-gray-900">${esc(u.email||'')}</div>
+                  ${u.name ? `<div class="text-gray-400 text-xs mt-0.5">${esc(u.name)}</div>` : ''}
+                </td>
+                <td class="px-4 py-3">
+                  <span class="text-xs px-2 py-0.5 rounded-full ${u.ui_mode==='welfare'?'bg-purple-100 text-purple-700':'bg-gray-100 text-gray-500'}">
+                    ${esc(u.ui_mode||'simple')}
+                  </span>
+                </td>
+                <td class="px-4 py-3">
+                  <span class="text-xs px-2 py-0.5 rounded-full ${
+                    u.plan==='paid'  ? 'bg-green-100 text-green-700'  :
+                    u.plan==='trial' ? 'bg-yellow-100 text-yellow-700' :
+                                       'bg-gray-100 text-gray-500'}">
+                    ${esc(u.plan||'free')}${u.plan==='trial'&&u.plan_expires?'（'+u.plan_expires.slice(0,10)+'まで）':''}
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-gray-400 text-xs">${(u.registered_at||'').slice(0,10)||'—'}</td>
+                <td class="px-4 py-3 text-gray-400 text-xs">${u.last_login_at?u.last_login_at.slice(0,10):'未'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } catch(e) { console.error(e); }
+}
+
+// ── 施設作成 ──────────────────────────────────────────────────────
+function showCreateModal() {
+  ['fn-name','fn-email','fn-contact','fn-phone','fn-location','fn-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('fn-status').value = 'trial';
+  document.getElementById('create-result').classList.add('hidden');
+  document.getElementById('create-modal').classList.remove('hidden');
+}
+function closeModal() { document.getElementById('create-modal').classList.add('hidden'); }
+
+async function createFacility() {
+  const name  = document.getElementById('fn-name').value.trim();
+  const email = document.getElementById('fn-email').value.trim();
+  if (!name || !email) { toast('施設名とメールは必須です', true); return; }
+  try {
+    const result = await api('facility', 'POST', {
+      name, email,
+      contact_name:  document.getElementById('fn-contact').value.trim(),
+      phone:         document.getElementById('fn-phone').value.trim(),
+      location_name: document.getElementById('fn-location').value.trim(),
+      status:        document.getElementById('fn-status').value,
+      notes:         document.getElementById('fn-notes').value.trim(),
+    });
+    const el = document.getElementById('create-result');
+    el.className = 'mt-3 bg-green-50 border border-green-200 rounded-xl p-4 text-sm';
+    el.innerHTML = `
+      <div class="font-semibold text-green-700 mb-2">✅ ${esc(result.message)}</div>
+      <div class="text-gray-600 space-y-1">
+        <div>メール: <span class="font-mono font-semibold">${esc(result.email)}</span></div>
+        <div>初期パスワード: <span class="font-mono font-semibold bg-yellow-50 px-1 rounded">${esc(result.password)}</span></div>
+      </div>
+      <div class="text-xs text-gray-400 mt-2">※このパスワードはこの画面にしか表示されません。担当者に伝えてください。</div>`;
+    el.classList.remove('hidden');
+    toast(`${name} を作成しました`);
+    if (currentTab === 'facilities') setTimeout(loadFacilities, 500);
+  } catch(e) {
+    const el = document.getElementById('create-result');
+    el.className = 'mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700';
+    el.textContent = '作成失敗: ' + e.message;
+    el.classList.remove('hidden');
+  }
+}
+
+// ── トースト ──────────────────────────────────────────────────────
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.backgroundColor = isError ? '#ef4444' : '#10b981';
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.style.opacity = '0', 2500);
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+</script>
+</body>
+</html>
