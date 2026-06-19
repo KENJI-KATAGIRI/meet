@@ -481,11 +481,17 @@ async function hashPassword(password) {
   return salt + ':' + hash;
 }
 async function verifyPassword(password, stored) {
-  const [salt, hash] = stored.split(':');
-  const attempt = await new Promise((res, rej) =>
-    crypto.scrypt(password, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex')))
-  );
-  return crypto.timingSafeEqual(Buffer.from(attempt, 'hex'), Buffer.from(hash, 'hex'));
+  try {
+    const [salt, hash] = stored.split(':');
+    if (!salt || !hash || hash.length !== 128) return false;
+    const attempt = await new Promise((res, rej) =>
+      crypto.scrypt(password, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex')))
+    );
+    return crypto.timingSafeEqual(Buffer.from(attempt, 'hex'), Buffer.from(hash, 'hex'));
+  } catch (e) {
+    console.error('[verifyPassword] format error:', e.message);
+    return false;
+  }
 }
 
 // ---- 入力検証ユーティリティ ----
