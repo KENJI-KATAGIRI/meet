@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NiceMeet 施設ダッシュボード</title>
+<style>
+:root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#2a2a4a;--accent:#6c63ff;--text:#fff;--muted:#888;--border:#2a2a4a;--success:#4ade80;--danger:#e94560}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+header{background:#16162a;padding:0 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);height:60px;position:sticky;top:0;z-index:10}
+.brand{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700}
+.brand-icon{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.header-right{display:flex;align-items:center;gap:10px}
+.avatar-sm{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b82ff);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+.user-name{font-size:14px;color:var(--muted)}
+.btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#7b73ff}
+.btn-secondary{background:var(--bg3);color:var(--muted)}.btn-secondary:hover{color:var(--text)}
+.btn-danger{background:rgba(233,69,96,.15);color:var(--danger);border:1px solid rgba(233,69,96,.3)}.btn-danger:hover{background:var(--danger);color:#fff}
+.btn-sm{padding:5px 12px;font-size:12px}
+main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
+.card{background:var(--bg2);border-radius:16px;padding:24px;border:1px solid var(--border);margin-bottom:20px}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.card-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:flex;align-items:center;gap:6px}
+.card-desc{font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.5}
+.url-display{background:var(--bg3);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:10px;border:1px solid var(--border)}
+.url-text{flex:1;color:var(--accent);font-size:13px;word-break:break-all;font-weight:500}
+.fac-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.fac-stat{background:rgba(255,255,255,.04);border-radius:10px;padding:12px 14px}
+.fac-stat-label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.fac-stat-value{font-size:18px;font-weight:700}
+.plan-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700}
+.plan-badge.trial{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid #22c55e}
+.plan-badge.active{background:rgba(108,99,255,.15);color:#a78bfa;border:1px solid #6c63ff}
+.plan-badge.expired{background:rgba(239,68,68,.15);color:#f87171;border:1px solid #ef4444}
+.trial-banner{border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:13px;display:flex;align-items:center;gap:10px}
+.trial-banner.warn{background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);color:#fde047}
+.trial-banner.danger{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171}
+.trial-banner.expired{background:rgba(239,68,68,.15);border:1px solid #ef4444;color:#f87171}
+.usage-bar-wrap{margin:10px 0 4px}
+.usage-bar-bg{background:rgba(255,255,255,.08);border-radius:6px;height:8px;overflow:hidden}
+.usage-bar-fill{height:100%;border-radius:6px;transition:width .4s;background:#4ade80}
+.usage-bar-fill.warn{background:#fde047}
+.usage-bar-fill.danger{background:#f87171}
+.section-card{background:var(--bg2);border-radius:16px;border:1px solid var(--border);margin-bottom:20px;overflow:hidden}
+.section-head{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.section-head h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.section-body{padding:20px 24px}
+.empty{color:var(--muted);font-size:14px;text-align:center;padding:32px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.empty-icon{font-size:36px;opacity:.4}
+.toast{position:fixed;bottom:24px;right:24px;background:#2a2a4a;border:1px solid #3a3a5a;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.show{opacity:1}
+.records-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.records-filter select,.records-filter input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:7px 10px;font-size:13px}
+.records-filter input{width:160px}
+.rec-row{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden}
+.rec-head{padding:11px 14px;cursor:pointer;transition:background .15s}
+.rec-head:hover{background:rgba(255,255,255,.04)}
+.rec-meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px;align-items:center}
+.rec-tag{font-size:11px;background:rgba(255,255,255,.08);border-radius:4px;padding:2px 7px;color:var(--muted)}
+.rec-date{font-size:12px;color:var(--muted)}
+.rec-name{font-size:13px;font-weight:600}
+.rec-preview{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px}
+.rec-body{display:none;padding:0 14px 14px;border-top:1px solid var(--border)}
+.rec-body.open{display:block}
+.rec-full{font-size:13px;line-height:1.75;white-space:pre-wrap;margin-top:10px;background:rgba(255,255,255,.03);border-radius:8px;padding:12px}
+.rec-badge-draft{background:rgba(251,191,36,.15);border:1px solid rgba(251,191,36,.4);color:#fde047;font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700}
+.rec-badge-face{background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.35);color:#4ade80;font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700}
+.btn-confirm-rec{margin-top:10px;width:100%;padding:11px;background:#4ade80;border:none;border-radius:9px;color:#0f1a0f;font-size:13px;font-weight:700;cursor:pointer}
+.btn-confirm-rec:hover{opacity:.85}
+.loc-row{display:flex;gap:8px;margin-bottom:6px}
+.loc-row input{flex:1}
+.inquiry-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
+.inquiry-modal.show{display:flex}
+.inquiry-box{background:var(--bg2);border-radius:16px;padding:28px;width:min(480px,90vw);border:1px solid var(--border)}
+.inquiry-box h3{margin:0 0 12px;font-size:16px}
+.inquiry-box textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:10px;font-size:13px;resize:vertical;min-height:80px;box-sizing:border-box}
+.reg-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
+.reg-modal.show{display:flex}
+.reg-box{background:var(--bg2);border-radius:16px;padding:28px;width:min(520px,92vw);border:1px solid var(--border);max-height:90vh;overflow-y:auto}
+.reg-box h3{margin:0 0 16px;font-size:16px}
+.reg-field{margin-bottom:12px}
+.reg-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.reg-field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:9px 12px;font-size:13px;box-sizing:border-box}
+.mode-badge{font-size:10px;font-weight:700;letter-spacing:.8px;padding:3px 8px;border-radius:20px;border:1px solid;background:rgba(74,222,128,.1);color:#4ade80;border-color:rgba(74,222,128,.25)}
+@media(max-width:640px){.fac-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="brand-icon">🏥</div>NiceMeet</div>
+  <div class="header-right">
+    <div class="avatar-sm" id="hdr-avatar">?</div>
+    <span class="mode-badge">🏥 施設モード</span>
+    <span class="user-name" id="hdr-name">読み込み中...</span>
+    <button id="mode-switch-btn" onclick="switchToBni()" style="display:none;font-size:11px;padding:4px 10px;border-radius:20px;border:1px dashed #6c63ff;background:transparent;color:#a78bfa;cursor:pointer;font-weight:600">↔ BNIモードへ</button>
+    <a href="/auth/logout" class="btn btn-secondary btn-sm">ログアウト</a>
+  </div>
+</header>
+
+<main>
+  <!-- トライアルバナー（JS で制御） -->
+  <div id="trial-banner" class="trial-banner" style="display:none"></div>
+
+  <!-- 施設プランカード -->
+  <div id="facility-card" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🏥 施設プラン</div>
+        <span id="fac-badge" class="plan-badge trial">TRIAL</span>
+      </div>
+      <div class="fac-grid">
+        <div class="fac-stat"><div class="fac-stat-label">ステータス</div><div class="fac-stat-value" id="fac-status-text">—</div></div>
+        <div class="fac-stat"><div class="fac-stat-label">拠点数</div><div class="fac-stat-value" id="fac-loc-count">—</div></div>
+        <div class="fac-stat"><div class="fac-stat-label">月額（目安）</div><div class="fac-stat-value" id="fac-amount">—</div></div>
+        <div class="fac-stat"><div class="fac-stat-label">単価/拠点</div><div class="fac-stat-value" id="fac-unit">—</div></div>
+      </div>
+      <div class="usage-bar-wrap">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px">
+          <span>今月のAI文字起こし利用時間</span>
+          <span id="usage-text">0h / —h</span>
+        </div>
+        <div class="usage-bar-bg"><div id="usage-bar" class="usage-bar-fill" style="width:0%"></div></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">※ 月間上限（拠点数×50h）に達した場合のみAI要約が停止します。通話自体は継続できます。</div>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+        <a href="/api/facility/export/csv" class="btn btn-secondary btn-sm">📥 会議記録CSV</a>
+        <button class="btn btn-secondary btn-sm" onclick="window.open('/api/facility/export/csv','_blank')">🖨️ 要約印刷/PDF</button>
+        <button id="fac-inquiry-btn" class="btn btn-primary btn-sm" onclick="openInquiry()" style="display:none">📩 有料プランを申し込む</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:10px">解約後もデータは削除されません。いつでも閲覧・エクスポート可能です。</p>
+      <details style="margin-top:14px">
+        <summary style="font-size:12px;color:var(--muted);cursor:pointer">拠点の追加・削除</summary>
+        <div id="loc-list" style="margin-top:10px"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="new-loc-name" placeholder="拠点名を入力" style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:7px 10px;font-size:13px">
+          <button class="btn btn-secondary btn-sm" onclick="addLocation()">＋ 追加</button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <!-- 施設未登録の場合 -->
+  <div id="facility-register-card" style="display:none">
+    <div class="card">
+      <div class="card-header"><div class="card-title">🏥 施設アカウント登録</div></div>
+      <p class="card-desc" style="margin-bottom:16px">施設プランを利用するには、はじめに施設情報を登録してください。<br>登録後、<strong>30日間の無料トライアル</strong>が即座に開始されます。</p>
+      <ul style="font-size:13px;color:var(--muted);margin-bottom:18px;padding-left:18px;line-height:2">
+        <li>AI文字起こし・要約（通話・対面録音）</li>
+        <li>業態別の法定記録様式への自動変換</li>
+        <li>面談記録の蓄積・CSVエクスポート</li>
+        <li>複数拠点対応（1拠点 ¥2,980/月〜）</li>
+      </ul>
+      <button class="btn btn-primary" onclick="openRegModal()" style="width:100%;padding:14px;font-size:15px">🚀 施設登録して30日無料トライアルを開始</button>
+    </div>
+  </div>
+
+  <!-- 面談記録一覧 -->
+  <div id="call-records-section" style="display:none;margin-bottom:20px">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 面談記録一覧</div>
+        <a id="records-csv-btn" href="/api/facility/call-records/csv" class="btn btn-secondary btn-sm">📥 CSV</a>
+      </div>
+      <div class="records-filter">
+        <select id="rec-filter-system" onchange="loadCallRecords()">
+          <option value="">全業態</option>
+          <option value="houdei">放課後等デイ</option>
+          <option value="houmon">訪問介護</option>
+          <option value="shuro">就労継続支援</option>
+          <option value="kaigo">介護グループホーム</option>
+          <option value="seikatsu">生活訓練</option>
+          <option value="keikaku">計画相談支援</option>
+        </select>
+        <input id="rec-filter-member" placeholder="対象者名で絞込" oninput="recDebounce()">
+      </div>
+      <div id="records-list"><p style="font-size:13px;color:var(--muted);padding:8px 0">読み込み中…</p></div>
+    </div>
+  </div>
+
+  <!-- 面談ルームを作成 -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🚪 面談ルームを作成</div>
+      <button class="btn btn-secondary btn-sm" onclick="genWelfareRoom()">新しいルームを生成</button>
+    </div>
+    <p class="card-desc">ルームIDを相手に共有するだけで面談を開始できます。AI文字起こし・要約は通話終了後にメールでお届けします。</p>
+    <div id="welfare-room-wrap">
+      <div style="background:var(--bg3);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--muted)">
+        ルームID: <span id="welfare-room-id" style="font-family:monospace;color:var(--text)">—</span>
+      </div>
+      <!-- ビデオ通話 -->
+      <div style="margin-bottom:10px">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px">🎥 ビデオ通話（AI文字起こし）</div>
+        <div class="url-display">
+          <span class="url-text" id="welfare-video-url" style="font-size:11px">ルームを生成してください</span>
+          <button class="btn btn-primary btn-sm" onclick="copyWelfareUrl('video')">コピー</button>
+          <a class="btn btn-secondary btn-sm" id="welfare-video-open" href="#" target="_blank" style="pointer-events:none;opacity:.4">開く</a>
+        </div>
+      </div>
+      <!-- 対話録音 -->
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px">🎙️ 対話録音（カメラなし・AI文字起こし）</div>
+        <div class="url-display">
+          <span class="url-text" id="welfare-audio-url" style="font-size:11px">ルームを生成してください</span>
+          <button class="btn btn-primary btn-sm" onclick="copyWelfareUrl('audio')">コピー</button>
+          <a class="btn btn-secondary btn-sm" id="welfare-audio-open" href="#" target="_blank" style="pointer-events:none;opacity:.4">開く</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- インスタント通話 -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🎥 インスタント通話</div>
+      <button class="btn btn-secondary btn-sm" onclick="genRoom()">新しいURLを生成</button>
+    </div>
+    <p class="card-desc">文字起こし不要な気軽な通話に使えます。URLを相手に共有するだけで入室できます。</p>
+    <div class="url-display">
+      <span class="url-text" id="instant-url">—</span>
+      <button class="btn btn-primary btn-sm" id="instant-copy" onclick="copyInstant()" disabled>コピー</button>
+      <a class="btn btn-secondary btn-sm" id="instant-open" href="#" target="_blank" style="pointer-events:none;opacity:.4">今すぐ開く</a>
+    </div>
+  </div>
+</main>
+
+<!-- 施設登録モーダル -->
+<div class="reg-modal" id="reg-modal" onclick="if(event.target===this)closeRegModal()">
+  <div class="reg-box">
+    <h3>🏥 施設アカウント登録（30日無料トライアル）</h3>
+    <div class="reg-field"><label>施設名 *</label><input id="reg-fac-name" placeholder="例：〇〇就労継続支援事業所"></div>
+    <div class="reg-field"><label>担当者名</label><input id="reg-contact" placeholder="例：山田 太郎"></div>
+    <div class="reg-field"><label>電話番号</label><input id="reg-phone" placeholder="例：03-0000-0000"></div>
+    <div class="reg-field">
+      <label>拠点名（1つ以上） *</label>
+      <div id="reg-loc-list"><div class="loc-row"><input class="reg-loc-input" placeholder="例：本店" value=""></div></div>
+      <button class="btn btn-secondary btn-sm" onclick="addRegLoc()" style="margin-top:4px">＋ 拠点を追加</button>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+      ※ 登録後30日間は全機能（AI要約込み）を無料でご利用いただけます。<br>
+      ※ 先行価格が適用されます（1拠点: ¥2,980/月〜）。
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="registerFacility()" style="flex:1">登録してトライアルを開始</button>
+      <button class="btn btn-secondary" onclick="closeRegModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- 有料申込モーダル -->
+<div class="inquiry-modal" id="inquiry-modal" onclick="if(event.target===this)closeInquiry()">
+  <div class="inquiry-box">
+    <h3>📩 有料プランのお申込み</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">送信後、担当者よりご連絡いたします（通常1〜2営業日）。</p>
+    <textarea id="inquiry-msg" placeholder="ご質問・ご要望などがあればご記入ください（任意）"></textarea>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-primary" onclick="submitInquiry()" style="flex:1">申し込む</button>
+      <button class="btn btn-secondary" onclick="closeInquiry()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let me = null;
+let _welfareRoomId = null;
+let _welfareStaffName = '';
+
+async function init() {
+  const [meRes] = await Promise.all([
+    fetch('/api/me').then(r => r.json())
+  ]);
+  me = meRes;
+  document.getElementById('hdr-avatar').textContent = (me.name || '?')[0].toUpperCase();
+  document.getElementById('hdr-name').textContent = me.name;
+  if (me.isOwner) {
+    document.getElementById('mode-switch-btn').style.display = '';
+  }
+  _welfareStaffName = me.name || '';
+  genWelfareRoom();
+  await loadFacilityStatus();
+}
+
+function genWelfareRoom() {
+  _welfareRoomId = Array.from(crypto.getRandomValues(new Uint8Array(5))).map(b => b.toString(16).padStart(2,'0')).join('');
+  const videoUrl = `https://meet.gaiaarts.org/?room=${_welfareRoomId}`;
+  const audioUrl = `https://meet.gaiaarts.org/?room=${_welfareRoomId}&audioonly=1`;
+  const namePart = _welfareStaffName ? '&name=' + encodeURIComponent(_welfareStaffName) : '';
+  const videoOpenUrl = videoUrl + namePart + '&system=booking';
+  const audioOpenUrl = audioUrl + namePart + '&system=booking';
+  document.getElementById('welfare-room-id').textContent = _welfareRoomId;
+  document.getElementById('welfare-video-url').textContent = videoUrl;
+  document.getElementById('welfare-audio-url').textContent = audioUrl;
+  const voBtn = document.getElementById('welfare-video-open');
+  const aoBtn = document.getElementById('welfare-audio-open');
+  voBtn.href = videoOpenUrl;
+  voBtn.style.pointerEvents = '';
+  voBtn.style.opacity = '';
+  aoBtn.href = audioOpenUrl;
+  aoBtn.style.pointerEvents = '';
+  aoBtn.style.opacity = '';
+}
+
+function copyWelfareUrl(type) {
+  if (!_welfareRoomId) return;
+  const url = type === 'video'
+    ? `https://meet.gaiaarts.org/?room=${_welfareRoomId}`
+    : `https://meet.gaiaarts.org/?room=${_welfareRoomId}&audioonly=1`;
+  navigator.clipboard.writeText(url);
+  toast(type === 'video' ? '✓ ビデオ通話URLをコピーしました' : '✓ 対話録音URLをコピーしました');
+}
+
+function genRoom() {
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2,'0')).join('');
+  const url = `https://meet.gaiaarts.org/?room=${id}`;
+  const openUrl = url + '&system=booking';
+  document.getElementById('instant-url').textContent = url;
+  const copyBtn = document.getElementById('instant-copy');
+  const openBtn = document.getElementById('instant-open');
+  copyBtn.disabled = false;
+  copyBtn.onclick = () => { navigator.clipboard.writeText(url); toast('✓ 通話URLをコピーしました'); };
+  openBtn.href = openUrl;
+  openBtn.style.pointerEvents = '';
+  openBtn.style.opacity = '';
+}
+
+function copyInstant() {}
+
+async function loadFacilityStatus() {
+  try {
+    const r = await fetch('/api/facility/status').then(r => r.json());
+    if (r.registered) {
+      document.getElementById('facility-card').style.display = '';
+      document.getElementById('facility-register-card').style.display = 'none';
+
+      const badge = document.getElementById('fac-badge');
+      const s = r.status;
+      badge.textContent = s === 'trial' ? 'TRIAL' : s === 'active' ? 'PRO' : 'EXPIRED';
+      badge.className = 'plan-badge ' + s;
+
+      const statusText = { trial: `トライアル（残${r.daysLeft}日）`, active: '有料契約中', expired: '期限切れ' };
+      document.getElementById('fac-status-text').textContent = statusText[s] || s;
+      document.getElementById('fac-loc-count').textContent = r.locations.length + '拠点';
+      document.getElementById('fac-amount').textContent = r.amount.total === 0 ? '—' : '¥' + r.amount.total.toLocaleString() + '/月';
+      document.getElementById('fac-unit').textContent = '¥' + r.amount.unit.toLocaleString() + '/拠点';
+
+      const pct = r.usage.percent;
+      const bar = document.getElementById('usage-bar');
+      bar.style.width = pct + '%';
+      bar.className = 'usage-bar-fill' + (pct >= 100 ? ' danger' : pct >= 80 ? ' warn' : '');
+      document.getElementById('usage-text').textContent = r.usage.hours + 'h / ' + r.usage.limitHours + 'h（拠点数×50h）';
+
+      const banner = document.getElementById('trial-banner');
+      if (s === 'trial' && r.daysLeft <= 7) {
+        banner.style.display = 'flex';
+        banner.className = 'trial-banner ' + (r.daysLeft <= 3 ? 'danger' : 'warn');
+        banner.innerHTML = (r.daysLeft === 0 ? '⚠️ 本日' : `⏰ 残り${r.daysLeft}日`) +
+          `でトライアルが終了します。引き続きAI要約をご利用の場合は有料プランへお進みください。` +
+          `<button class="btn btn-primary btn-sm" onclick="openInquiry()" style="margin-left:auto;white-space:nowrap">申し込む</button>`;
+      } else if (s === 'expired') {
+        banner.style.display = 'flex';
+        banner.className = 'trial-banner expired';
+        banner.innerHTML = '🔴 トライアル期間が終了しました。AI要約は停止中です。過去記録の閲覧・エクスポートは引き続きご利用できます。' +
+          `<button class="btn btn-primary btn-sm" onclick="openInquiry()" style="margin-left:auto;white-space:nowrap">申し込む</button>`;
+      }
+
+      if (s === 'expired' || (s === 'trial' && r.daysLeft <= 7)) {
+        document.getElementById('fac-inquiry-btn').style.display = '';
+      }
+
+      if (pct >= 100) toast('⚠️ 今月のAI使用時間が上限に達しました。AI要約が停止されています。');
+      else if (pct >= 80) toast('📊 今月のAI使用時間が80%に達しました。');
+
+      renderLocations(r.locations);
+      window._facilityData = r;
+      document.getElementById('call-records-section').style.display = '';
+      await loadCallRecords();
+    } else {
+      document.getElementById('facility-card').style.display = 'none';
+      document.getElementById('facility-register-card').style.display = '';
+    }
+  } catch(e) {
+    console.error('facility status error:', e);
+  }
+}
+
+function renderLocations(locs) {
+  const el = document.getElementById('loc-list');
+  if (!locs.length) { el.innerHTML = '<p style="font-size:12px;color:var(--muted)">拠点なし</p>'; return; }
+  el.innerHTML = locs.map(l =>
+    `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-size:13px">${l.name}</span>
+      <button class="btn btn-danger btn-sm" onclick="deleteLocation(${l.id},'${l.name.replace(/'/g,"\\'")}')">削除</button>
+    </div>`
+  ).join('');
+}
+
+async function addLocation() {
+  const input = document.getElementById('new-loc-name');
+  const name = input.value.trim();
+  if (!name) return;
+  const r = await fetch('/api/facility/location', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name }) }).then(r => r.json());
+  if (r.ok) { toast('拠点を追加しました'); input.value = ''; loadFacilityStatus(); }
+  else toast('エラー: ' + (r.error || ''));
+}
+
+async function deleteLocation(id, name) {
+  if (!confirm(`「${name}」を削除しますか？`)) return;
+  const r = await fetch('/api/facility/location/' + id, { method: 'DELETE' }).then(r => r.json());
+  if (r.ok) { toast('拠点を削除しました'); loadFacilityStatus(); }
+  else toast('エラー: ' + (r.error || ''));
+}
+
+function openInquiry() { document.getElementById('inquiry-modal').classList.add('show'); }
+function closeInquiry() { document.getElementById('inquiry-modal').classList.remove('show'); }
+async function submitInquiry() {
+  const msg = document.getElementById('inquiry-msg').value;
+  const r = await fetch('/api/facility/inquiry', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ message: msg }) }).then(r => r.json());
+  if (r.ok) { toast('✓ 申込を送信しました。担当者よりご連絡します。'); closeInquiry(); }
+  else toast('送信エラー');
+}
+
+function openRegModal() { document.getElementById('reg-modal').classList.add('show'); }
+function closeRegModal() { document.getElementById('reg-modal').classList.remove('show'); }
+function addRegLoc() {
+  const div = document.createElement('div'); div.className = 'loc-row';
+  div.innerHTML = '<input class="reg-loc-input" placeholder="拠点名">';
+  document.getElementById('reg-loc-list').appendChild(div);
+}
+async function registerFacility() {
+  const name = document.getElementById('reg-fac-name').value.trim();
+  const contact = document.getElementById('reg-contact').value.trim();
+  const phone = document.getElementById('reg-phone').value.trim();
+  const locInputs = document.querySelectorAll('.reg-loc-input');
+  const locations = [...locInputs].map(i => i.value.trim()).filter(Boolean);
+  if (!name || !locations.length) { toast('施設名と拠点名は必須です'); return; }
+  try {
+    const res = await fetch('/api/facility/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ facility_name: name, contact_name: contact, phone, locations })
+    });
+    const r = await res.json();
+    if (r.ok) {
+      toast('🎉 施設登録完了！30日間のトライアルを開始します。');
+      closeRegModal();
+      await loadFacilityStatus();
+    } else if (r.error === 'already registered') {
+      toast('施設はすでに登録されています。');
+      closeRegModal();
+      await loadFacilityStatus();
+    } else {
+      toast('エラー: ' + (r.error || '登録できませんでした'));
+    }
+  } catch(e) {
+    toast('通信エラーが発生しました。再度お試しください。');
+  }
+}
+
+let _recDebounceTimer = null;
+function recDebounce() {
+  clearTimeout(_recDebounceTimer);
+  _recDebounceTimer = setTimeout(loadCallRecords, 400);
+}
+
+async function loadCallRecords() {
+  const sys = document.getElementById('rec-filter-system')?.value || '';
+  const member = (document.getElementById('rec-filter-member')?.value || '').trim();
+  const params = new URLSearchParams();
+  if (sys) params.set('system', sys);
+  if (member) params.set('member', member);
+  const qs = params.toString();
+  const csvBtn = document.getElementById('records-csv-btn');
+  if (csvBtn) csvBtn.href = '/api/facility/call-records/csv' + (qs ? '?' + qs : '');
+  const el = document.getElementById('records-list');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/facility/call-records' + (qs ? '?' + qs : '')).then(r => r.json());
+    renderCallRecords(r.records || []);
+  } catch(e) {
+    el.innerHTML = '<p style="font-size:13px;color:#f87171;padding:8px 0">読み込みエラー</p>';
+  }
+}
+
+const SYS_LABELS = { houdei:'放課後等デイ', houmon:'訪問介護', shuro:'就労継続支援', kaigo:'介護グループホーム', seikatsu:'生活訓練', keikaku:'計画相談支援' };
+
+function renderCallRecords(records) {
+  const el = document.getElementById('records-list');
+  if (!records.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📂</div>面談記録がありません</div>';
+    return;
+  }
+  el.innerHTML = records.map(function(rec, i) {
+    const date = (rec.interview_date || rec.created_at || '').substring(0, 10) || '—';
+    const sysLabel = SYS_LABELS[rec.welfare_system] || rec.welfare_system || '—';
+    const fullText = rec.summary_text || '';
+    const preview = fullText.replace(/\n/g, ' ').substring(0, 80) + (fullText.length > 80 ? '…' : '');
+    const isDraft = rec.status === 'draft';
+    const isFace = rec.source === 'face';
+    const draftBadge = isDraft ? '<span class="rec-badge-draft">⚠ 下書き</span>' : '';
+    const faceBadge = isFace ? '<span class="rec-badge-face">🎤 対面録音</span>' : '';
+    const confirmBtn = isDraft
+      ? '<button class="btn-confirm-rec" onclick="event.stopPropagation();confirmFromDash(' + rec.id + ',' + i + ')">✓ 確定する</button>'
+      : '';
+    return '<div class="rec-row">' +
+      '<div class="rec-head" onclick="toggleRecord(' + i + ')">' +
+        '<div class="rec-meta">' + draftBadge + faceBadge +
+          '<span class="rec-tag">' + escHtml(sysLabel) + '</span>' +
+          '<span class="rec-tag">' + escHtml(rec.record_type || '—') + '</span>' +
+          '<span class="rec-date">' + date + '</span>' +
+        '</div>' +
+        '<div class="rec-name">👤 ' + escHtml(rec.member_name || '未記入') + '　担当: ' + escHtml(rec.staff_name || '—') + '</div>' +
+        '<div class="rec-preview">' + escHtml(preview) + '</div>' +
+      '</div>' +
+      '<div class="rec-body" id="rec-body-' + i + '">' +
+        (isDraft ? '<p style="font-size:12px;color:#fde047;margin-bottom:8px">⚠ 下書きです。内容を確認して確定してください。</p>' : '') +
+        '<div class="rec-full" id="rec-full-' + i + '">' + escHtml(fullText || '（要約なし）') + '</div>' +
+        confirmBtn +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function toggleRecord(i) {
+  const body = document.getElementById('rec-body-' + i);
+  if (body) body.classList.toggle('open');
+}
+
+async function confirmFromDash(id, i) {
+  if (!confirm('この記録を確定しますか？確定後は正式記録として扱われます。')) return;
+  const fullEl = document.getElementById('rec-full-' + i);
+  const summary = fullEl ? fullEl.textContent : '';
+  try {
+    const r = await fetch('/api/face-record/confirm/' + id, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ summary })
+    }).then(r => r.json());
+    if (r.ok) { toast('✓ 記録を確定しました'); loadCallRecords(); }
+    else toast('エラー: ' + (r.error || ''));
+  } catch(e) { toast('通信エラー'); }
+}
+
+async function switchToBni() {
+  if (!confirm('BNIモードに切り替えますか？\n（セッション中のみ・DBは変更されません）')) return;
+  try {
+    const r = await fetch('/api/me/preview-mode', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ mode: 'simple' })
+    });
+    if (!r.ok) throw new Error('failed');
+    location.href = '/booking/dashboard';
+  } catch(e) { toast('切替に失敗しました'); }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+init();
+</script>
+</body>
+</html>

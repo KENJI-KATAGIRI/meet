@@ -136,6 +136,7 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
   <div class="header-right">
     <div class="avatar-sm" id="hdr-avatar">?</div>
     <span class="mode-badge bni" id="hdr-mode-badge" style="margin-right:4px"></span><span class="user-name" id="hdr-name">読み込み中...</span>
+    <button id="mode-switch-btn" onclick="switchToWelfare()" style="display:none;font-size:11px;padding:4px 10px;border-radius:20px;border:1px dashed #6c63ff;background:transparent;color:#a78bfa;cursor:pointer;font-weight:600">↔ 施設モードへ</button>
     <a href="/" class="btn btn-secondary btn-sm">🎥 通話</a>
     <a href="/auth/logout" class="btn btn-secondary btn-sm">ログアウト</a>
   </div>
@@ -143,7 +144,7 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
 
 <main>
   <!-- 予約URL + 統計 -->
-  <div class="grid-2">
+  <div class="grid-2" id="booking-url-card">
     <div class="card" style="grid-column:1/-1">
       <div class="card-header">
         <div class="card-title">🔗 あなたの予約URL</div>
@@ -299,13 +300,13 @@ main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
   </div>
 
   <!-- インスタント通話 -->
-  <div class="card" style="margin-bottom:20px">
+  <div class="card" id="instant-card" style="margin-bottom:20px">
     <div class="card-header">
       <div class="card-title">🎥 インスタント通話</div>
       <button class="btn btn-secondary btn-sm" onclick="genRoom()">新しいURLを生成</button>
     </div>
-    <p class="card-desc">予約なしですぐにビデオ通話を始めたいときに使えます。URLを相手に共有するだけで入室できます。</p>
-    <p style="font-size:11px;color:#f87171;margin-bottom:10px;line-height:1.6">⚠️ インスタント通話では1to1マネージャーへの自動書き込みは行われません。</p>
+    <p class="card-desc" id="instant-desc">予約なしですぐにビデオ通話を始めたいときに使えます。URLを相手に共有するだけで入室できます。</p>
+    <p id="instant-bni-note" style="font-size:11px;color:#f87171;margin-bottom:10px;line-height:1.6">⚠️ インスタント通話では1to1マネージャーへの自動書き込みは行われません。</p>
     <div class="url-display">
       <span class="url-text" id="instant-url">—</span>
       <button class="btn btn-primary btn-sm" id="instant-copy" onclick="copyInstant()" disabled>コピー</button>
@@ -415,6 +416,10 @@ async function init() {
   const initial = (me.name||'?')[0].toUpperCase();
   document.getElementById('hdr-avatar').textContent = initial;
   document.getElementById('hdr-name').textContent = me.name;
+  // オーナーのみ: 施設モード切替ボタンを表示
+  if (me.isOwner) {
+    document.getElementById('mode-switch-btn').style.display = '';
+  }
   // プランカード表示
   const planCard = document.getElementById('plan-card');
   planCard.style.display = 'block';
@@ -495,38 +500,13 @@ async function init() {
     history.replaceState({}, '', '/booking/dashboard');
   }
 
-  // ui_mode に応じて表示切替
-  if (me.ui_mode === 'welfare') {
-    // 施設モード: BNIカード・空き時間・予約一覧を非表示
-    document.getElementById('plan-card').style.display = 'none';
-    document.getElementById('bni-card').style.display = 'none';
-    document.getElementById('avail-section').style.display = 'none';
-    document.getElementById('booking-section').style.display = 'none';
-    document.getElementById('hdr-mode-badge').textContent = '🏥 施設モード';
-    document.getElementById('hdr-mode-badge').className = 'mode-badge welfare';
-    await loadFacilityStatus(me);
-  } else {
-    // BNIモード: 施設カード非表示、BNI 1-2-1カード表示
-    document.getElementById('plan-card').style.display = 'none';
-    document.getElementById('facility-card').style.display = 'none';
-    document.getElementById('bni-card').style.display = '';
-    document.getElementById('hdr-mode-badge').textContent = '🤝 BNIモード';
-    document.getElementById('hdr-mode-badge').className = 'mode-badge bni';
-    genBniRoom();
-    // ?mode=welfare で来た場合は施設登録モーダルを自動表示
-    const urlParams = new URLSearchParams(location.search);
-    if (urlParams.get('mode') === 'welfare') {
-      history.replaceState({}, '', '/booking/dashboard');
-      setTimeout(() => openRegModal(), 600);
-    }
-    // ?preview=welfare で開発者向け施設ダッシュボードプレビュー
-    if (urlParams.get('preview') === 'welfare') {
-      document.getElementById('bni-card').style.display = 'none';
-      document.getElementById('hdr-mode-badge').textContent = '🏥 施設モード（プレビュー）';
-      document.getElementById('hdr-mode-badge').className = 'mode-badge welfare';
-      await loadFacilityStatus(me);
-    }
-  }
+  // BNIモード専用
+  document.getElementById('plan-card').style.display = 'none';
+  document.getElementById('facility-card').style.display = 'none';
+  document.getElementById('bni-card').style.display = '';
+  document.getElementById('hdr-mode-badge').textContent = '🤝 BNIモード';
+  document.getElementById('hdr-mode-badge').className = 'mode-badge bni';
+  genBniRoom();
   renderDow();
   renderBookings(bookRes);
 }
@@ -665,10 +645,24 @@ function showTab(name, btn) {
   document.getElementById('tab-'+name).classList.add('show');
 }
 
+async function switchToWelfare() {
+  if (!confirm('施設モードに切り替えますか？\n（セッション中のみ・DBは変更されません）')) return;
+  try {
+    const r = await fetch('/api/me/preview-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'welfare' })
+    });
+    if (!r.ok) throw new Error('failed');
+    location.href = '/booking/welfare';
+  } catch(e) {
+    toast('切替に失敗しました');
+  }
+}
+
 function genRoom() {
   const id = Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b=>b.toString(16).padStart(2,'0')).join('');
-  const systemParam = (me && me.ui_mode !== 'welfare') ? '&system=bni' : '';
-  const url = `https://meet.gaiaarts.org/?room=${id}${systemParam}`;
+  const url = `https://meet.gaiaarts.org/?room=${id}`;
   document.getElementById('instant-url').textContent = url;
   const copyBtn = document.getElementById('instant-copy');
   const openBtn = document.getElementById('instant-open');

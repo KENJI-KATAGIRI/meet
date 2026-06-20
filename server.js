@@ -526,9 +526,14 @@ app.use(express.json({
   limit: '50kb',
   verify: (req, res, buf) => { if (req.path === '/api/stripe/webhook') req.rawBody = buf; }
 }));
+const WELFARE_SYSTEMS = new Set(['shuro','kaigo','houmon','houdei','roukin','beauty','seikatsu','keikaku','booking']);
 app.get('/', (req, res, next) => {
+  const sys = req.query.system;
+  if (sys && WELFARE_SYSTEMS.has(sys)) {
+    return res.sendFile(path.join(__dirname, 'public', 'welfare-call.html'));
+  }
   if (!req.query.room) return res.redirect('/bni.html');
-  next();
+  next(); // static serves index.html (BNI用)
 });
 app.use(express.static(path.join(__dirname, 'public')));
 if (!process.env.SESSION_SECRET) { console.error('[FATAL] SESSION_SECRET is not set in .env — exiting'); process.exit(1); }
@@ -715,9 +720,28 @@ function requireAuth(req, res, next) {
 
 
 // ---- API: me ----
+const OWNER_EMAIL = process.env.OWNER_EMAIL || 'kenji.kys@gmail.com';
+
 app.get('/api/me', requireAuth, (req, res) => {
   const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode, registered_at, stripe_customer_id, plan, booking_horizon_days, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
-  res.json(u);
+  if (!u) return res.status(404).json({ error: 'not found' });
+  const isOwner = u.email === OWNER_EMAIL;
+  // オーナーのみ: セッションレベルのモードオーバーライドを適用
+  const result = { ...u, isOwner };
+  if (isOwner && req.session.uiModeOverride) {
+    result.ui_mode = req.session.uiModeOverride;
+  }
+  res.json(result);
+});
+
+// オーナー専用: セッション内モード切替（DBは変更しない）
+app.post('/api/me/preview-mode', requireAuth, express.json({ limit: '1kb' }), (req, res) => {
+  const u = db.prepare('SELECT email FROM users WHERE id=?').get(req.session.userId);
+  if (!u || u.email !== OWNER_EMAIL) return res.status(403).json({ error: 'forbidden' });
+  const { mode } = req.body;
+  if (!['simple', 'welfare'].includes(mode)) return res.status(400).json({ error: 'invalid mode' });
+  req.session.uiModeOverride = mode;
+  req.session.save(() => res.json({ ok: true, mode }));
 });
 
 // ---- API: my-plan ----
@@ -2249,7 +2273,14 @@ app.get('/record', (req, res) => res.sendFile(path.join(__dirname, 'public', 're
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/booking/dashboard', (req, res) => {
   if (!req.session.userId) return res.redirect('/auth/google');
+  const u = db.prepare('SELECT ui_mode FROM users WHERE id=?').get(req.session.userId);
+  const mode = req.session.uiModeOverride || (u && u.ui_mode) || 'simple';
+  if (mode === 'welfare') return res.redirect('/booking/welfare');
   res.sendFile(path.join(__dirname, 'public', 'booking', 'dashboard.html'));
+});
+app.get('/booking/welfare', (req, res) => {
+  if (!req.session.userId) return res.redirect('/auth/google');
+  res.sendFile(path.join(__dirname, 'public', 'booking', 'welfare.html'));
 });
 app.get('/', (req, res) => res.redirect('/bni.html'));
 app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'index.html')));
@@ -2631,6 +2662,21 @@ app.patch('/api/admin/confirm-draft/:id', express.json(), (req, res) => {
 // ─────────────────────────────────────────────────────────────────
 // ── 施設管理 Admin API ────────────────────────────────────────────
 
+// ── 施設プラン 公開問い合わせ ────────────────────────────────────
+app.post('/api/public/facility-inquiry', apiLimiter, express.json({ limit: '10kb' }), async (req, res) => {
+  const { name, email, facility_name, phone, location_count, message } = req.body;
+  if (!name || !email || !facility_name) return res.status(400).json({ error: '必須項目を入力してください' });
+  if (!isValidEmail(email)) return res.status(400).json({ error: '無効なメールアドレスです' });
+  const lc = Math.min(Math.max(parseInt(location_count) || 1, 1), 99);
+  const unit = lc === 1 ? 2980 : lc <= 3 ? 2480 : 1980;
+  await sendMail(process.env.GMAIL_USER || '',
+    `【NiceMeet施設プラン】お申込み: ${safeStr(facility_name, 100)}`,
+    `施設名: ${safeStr(facility_name, 100)}\n担当者: ${safeStr(name, 50)}\nメール: ${email}\n電話: ${safeStr(phone||'',20)}\n拠点数: ${lc}拠点\n月額目安: ¥${(lc * unit).toLocaleString()}\nメッセージ: ${safeStr(message||'',500)}\n申込日時: ${new Date().toLocaleString('ja-JP')}`
+  );
+  console.log(`[facility-inquiry] ${email} ${safeStr(facility_name,100)} ${lc}拠点`);
+  res.json({ ok: true });
+});
+
 app.get('/api/admin/summary', (req, res) => {
   if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
   const facs = db.prepare('SELECT * FROM nm_facilities').all();
@@ -2762,6 +2808,19 @@ app.patch('/api/admin/user/:id/plan', express.json({ limit: '2kb' }), (req, res)
     db.prepare('UPDATE users SET plan=?, plan_expires=NULL WHERE id=?').run(plan, id);
   }
   console.log(`[admin] user ${id} (${user.email}) plan -> ${plan}${plan_expires ? ' until ' + plan_expires : ''}`);
+  res.json({ ok: true });
+});
+
+app.patch('/api/admin/user/:id/mode', express.json({ limit: '1kb' }), (req, res) => {
+  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  const { mode } = req.body;
+  if (!['simple', 'welfare'].includes(mode)) return res.status(400).json({ error: 'invalid mode' });
+  const user = db.prepare('SELECT id, email FROM users WHERE id=?').get(id);
+  if (!user) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE users SET ui_mode=? WHERE id=?').run(mode, id);
+  console.log(`[admin] user ${id} (${user.email}) mode -> ${mode}`);
   res.json({ ok: true });
 });
 
