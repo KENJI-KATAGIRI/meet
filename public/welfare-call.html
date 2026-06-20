@@ -2247,7 +2247,7 @@ function startAutoAudioRecording() {
   if (!rawStream || audioRecorder) return;
   audioSessionId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   audioChunkIndex = 0;
-  notify(myEmail ? '🔴 録音開始：退出時に文字起こし・要約をメールでお届けします' : '🔴 録音開始', 8000);
+  notify('🔴 録音開始', 8000);
   const recEl = document.getElementById('rec-indicator');
   if (recEl) recEl.classList.add('active');
 
@@ -2325,15 +2325,8 @@ async function stopAndFinalizeAudio() {
 }
 
 function showTranscribeModal(forHost = false) {
-  document.getElementById('modal-email').value = localStorage.getItem('meetEmail') || '';
-  if (forHost) {
-    document.getElementById('modal-title').textContent = '📝 要約メールを受け取りますか？';
-    document.getElementById('modal-desc').textContent = '会議終了後にAI要約をメールでお届けします。あとから設定することはできません。';
-  } else {
-    document.getElementById('modal-title').textContent = '📝 文字起こしが有効になりました';
-    document.getElementById('modal-desc').textContent = '会議終了後、内容の要約をメールでお届けします。';
-  }
-  document.getElementById('transcribe-modal').style.display = 'flex';
+  // 福祉モードではメールモーダルを表示しない（自動録音のみ）
+  startAutoAudioRecording();
 }
 
 function registerTranscribeEmail() {
