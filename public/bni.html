@@ -129,6 +129,23 @@ footer{background:var(--dark);border-top:1px solid var(--dark3);padding:32px 24p
   .hero-price-box .divider{display:none}
 }
 </style>
+<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '1762127734765949');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=1762127734765949&ev=PageView&noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code -->
 </head>
 <body>
 
@@ -471,6 +488,16 @@ footer{background:var(--dark);border-top:1px solid var(--dark3);padding:32px 24p
     <p style="font-size:12px"><a href="https://meet.gaiaarts.org" style="color:var(--muted);text-decoration:none">meet.gaiaarts.org</a></p>
   </div>
 </footer>
+
+<script>
+document.querySelectorAll('a[href*="booking/?tab=register"]').forEach(function(el){
+  el.addEventListener('click', function(){
+    if (typeof fbq === 'function') {
+      fbq('track', 'Lead');
+    }
+  });
+});
+</script>
 
 </body>
 </html>

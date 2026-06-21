@@ -633,6 +633,7 @@ app.get('/auth/google/callback', async (req, res) => {
     client.setCredentials(tokens);
     const { data } = await google.oauth2({ version: 'v2', auth: client }).userinfo.get();
 
+    let isNewUser = false;
     const existing = db.prepare('SELECT id, slug, refresh_token FROM users WHERE google_id = ?').get(data.id);
     if (existing) {
       const rt = tokens.refresh_token || existing.refresh_token;
@@ -649,9 +650,10 @@ app.get('/auth/google/callback', async (req, res) => {
         .run(data.id, data.name, data.email, tokens.access_token, tokens.refresh_token, slug);
       await regenerateSession(req);
       req.session.userId = r.lastInsertRowid;
+      isNewUser = true;
       req.session.slug = slug;
     }
-    res.redirect('/booking/dashboard');
+    res.redirect(isNewUser ? "/booking/dashboard?registered=1" : "/booking/dashboard");
   } catch (e) {
     console.error(e);
     res.redirect('/booking?error=1');
