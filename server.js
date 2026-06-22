@@ -39,11 +39,11 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", "cdn.jsdelivr.net", "cdn.tailwindcss.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", "cdn.jsdelivr.net", "cdn.tailwindcss.com", "https://connect.facebook.net"],
       styleSrc: ["'self'", "'unsafe-inline'", "cdn.tailwindcss.com", "fonts.googleapis.com"],
       mediaSrc: ["'self'", "blob:", "data:"],
-      connectSrc: ["'self'", "wss:", "ws:", "https://storage.googleapis.com"],
-      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "wss:", "ws:", "https://storage.googleapis.com", "https://www.facebook.com", "https://connect.facebook.net"],
+      imgSrc: ["'self'", "data:", "blob:", "https://www.facebook.com"],
       workerSrc: ["'self'", "blob:"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
