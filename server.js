@@ -1977,9 +1977,23 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
     // BNIモード: 記録者自身のGAINSプロフィールを読み込み（コンタクトのGAINSと混同しないため）
     let hostGainsSection = '';
     if (isBniRecord) {
-      const hostUser = db.prepare('SELECT own_gains FROM users WHERE email=?').get(email);
+      // BNI Managerのprofile_dataを優先、なければmeet DBのown_gainsを使用
       let hostGains = {};
-      try { hostGains = JSON.parse(hostUser?.own_gains || '{}'); } catch(e) {}
+      try {
+        const bniUser = bniDb.prepare('SELECT profile_data FROM users WHERE email=? OR username=?').get(email, email);
+        const pd = JSON.parse(bniUser?.profile_data || '{}');
+        // BNI Managerのマイプロフィール GAINS（gains_* キー）
+        if (pd.gains_goals || pd.gains_accomplishments || pd.gains_interests || pd.gains_networks || pd.gains_skills) {
+          hostGains = { goals: pd.gains_goals, accomplishments: pd.gains_accomplishments, interests: pd.gains_interests, networks: pd.gains_networks, skills: pd.gains_skills };
+        }
+      } catch(e) {}
+      // フォールバック: meet DBのown_gains
+      if (!Object.values(hostGains).some(v => v && v.trim())) {
+        try {
+          const hostUser = db.prepare('SELECT own_gains FROM users WHERE email=?').get(email);
+          hostGains = JSON.parse(hostUser?.own_gains || '{}');
+        } catch(e) {}
+      }
       const hasHostGains = Object.values(hostGains).some(v => v && v.trim());
       if (hasHostGains) {
         hostGainsSection = `\n\n【記録者（${staffName || 'BNIメンバー'}）自身のGAINS（参考情報・GAINSに含めないこと）】\n`
@@ -1989,7 +2003,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
           + (hostGains.networks ? `N-Networks: ${hostGains.networks}\n` : '')
           + (hostGains.skills ? `S-Skills: ${hostGains.skills}\n` : '')
           + `上記は記録者自身の情報です。コンタクト（${memberName || '相手方'}）のGAINSとして記録しないこと。`;
-        console.log('[bni-finalize] host gains loaded, will exclude from contact GAINS');
+        console.log('[bni-finalize] host gains loaded from BNI Manager profile');
       }
     }
 

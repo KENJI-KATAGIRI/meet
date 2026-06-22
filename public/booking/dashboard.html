@@ -340,8 +340,8 @@ src="https://www.facebook.com/tr?id=1762127734765949&ev=PageView&noscript=1"
     </div>
     <p class="card-desc">1-2-1ミーティング専用モードです。通話終了後にGAINS情報が自動抽出され、1to1 Managerに保存されます。</p>
     <div style="background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.25);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--text);line-height:1.7">
-      📋 <strong>GAINS記録の確認は1to1Managerで</strong><br>
-      <span style="color:var(--muted)">通話終了後、記録は自動的に1to1Managerに保存されます。</span><br>
+      📋 <strong>GAINS記録の確認・自分のプロフィール設定は1to1Managerで</strong><br>
+      <span style="color:var(--muted)">通話終了後、記録は自動的に1to1Managerに保存されます。1to1Managerの「マイプロフィール」で自分のGAINSを登録しておくと、AIが相手のGAINSだけを正確に記録します。</span><br>
       <a href="#" onclick="openBniManager(event)" style="display:inline-block;margin-top:8px;padding:6px 16px;background:rgba(108,99,255,.2);color:#a78bfa;border-radius:6px;font-weight:700;text-decoration:none;font-size:12px">→ 1to1Managerを開く（自動ログイン）</a>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
@@ -353,40 +353,6 @@ src="https://www.facebook.com/tr?id=1762127734765949&ev=PageView&noscript=1"
       <a class="btn btn-secondary btn-sm" id="bni-open-btn" href="#" target="_blank" style="pointer-events:none;opacity:.4">参加する</a>
     </div>
     <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6">※ URLをコピーして相手に共有してください。相手は入室前に名前・連絡先を入力します。<br>※ 予約カレンダーから予約された場合も自動でBNIモードで記録されます。</p>
-  </div>
-
-  <!-- 自分のGAINSプロフィール（BNIユーザー専用） -->
-  <div class="card" id="my-gains-card" style="margin-bottom:20px;display:none">
-    <div class="card-header">
-      <div class="card-title">👤 自分のGAINSプロフィール</div>
-    </div>
-    <p class="card-desc">1-2-1の文字起こしをAIが分析するとき、あなた自身のGAINSが登録されていると、<strong>「これは自分の情報」と判断して除外</strong>し、相手のGAINSだけを正確に記録します。<br>未入力の場合、AIが話者を誤認して自分の情報が相手として記録されることがあります。</p>
-    <div style="display:grid;gap:10px">
-      <div>
-        <label style="font-size:12px;color:var(--muted);font-weight:600">G - Goals（自分の目標・夢）</label>
-        <textarea id="my-gains-goals" class="bni-input" rows="2" placeholder="例：BNIを通じて年間○件のリファーラルを獲得する" style="width:100%;resize:vertical;margin-top:4px"></textarea>
-      </div>
-      <div>
-        <label style="font-size:12px;color:var(--muted);font-weight:600">A - Accomplishments（自分の実績）</label>
-        <textarea id="my-gains-accomplishments" class="bni-input" rows="2" placeholder="例：○○業界で15年、売上○億円達成" style="width:100%;resize:vertical;margin-top:4px"></textarea>
-      </div>
-      <div>
-        <label style="font-size:12px;color:var(--muted);font-weight:600">I - Interests（自分の趣味・関心）</label>
-        <textarea id="my-gains-interests" class="bni-input" rows="2" placeholder="例：ゴルフ、読書、旅行" style="width:100%;resize:vertical;margin-top:4px"></textarea>
-      </div>
-      <div>
-        <label style="font-size:12px;color:var(--muted);font-weight:600">N - Networks（自分の人脈・所属）</label>
-        <textarea id="my-gains-networks" class="bni-input" rows="2" placeholder="例：BNI○○チャプター、○○商工会議所" style="width:100%;resize:vertical;margin-top:4px"></textarea>
-      </div>
-      <div>
-        <label style="font-size:12px;color:var(--muted);font-weight:600">S - Skills（自分のスキル・専門）</label>
-        <textarea id="my-gains-skills" class="bni-input" rows="2" placeholder="例：Webマーケティング、SNS運用、SEO" style="width:100%;resize:vertical;margin-top:4px"></textarea>
-      </div>
-    </div>
-    <div style="margin-top:12px;display:flex;align-items:center;gap:12px">
-      <button class="btn btn-primary btn-sm" onclick="saveMyGains()">保存</button>
-      <span id="my-gains-status" style="font-size:12px;color:var(--muted)"></span>
-    </div>
   </div>
 
   <!-- 空き時間設定 -->
@@ -555,7 +521,6 @@ async function init() {
   document.getElementById('plan-card').style.display = 'none';
   document.getElementById('facility-card').style.display = 'none';
   document.getElementById('bni-card').style.display = '';
-  document.getElementById('my-gains-card').style.display = '';
   document.getElementById('hdr-mode-badge').textContent = '🤝 BNIモード';
   document.getElementById('hdr-mode-badge').className = 'mode-badge bni';
   loadMyGains();
@@ -727,43 +692,6 @@ function genRoom() {
 }
 
 function copyInstant() {}
-
-// ── 自分のGAINSプロフィール ──
-async function loadMyGains() {
-  try {
-    const g = await fetch('/api/my-gains').then(r => r.json());
-    document.getElementById('my-gains-goals').value = g.goals || '';
-    document.getElementById('my-gains-accomplishments').value = g.accomplishments || '';
-    document.getElementById('my-gains-interests').value = g.interests || '';
-    document.getElementById('my-gains-networks').value = g.networks || '';
-    document.getElementById('my-gains-skills').value = g.skills || '';
-  } catch(e) {}
-}
-async function saveMyGains() {
-  const btn = document.querySelector('#my-gains-card .btn-primary');
-  const status = document.getElementById('my-gains-status');
-  btn.disabled = true;
-  try {
-    await fetch('/api/my-gains', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        goals: document.getElementById('my-gains-goals').value,
-        accomplishments: document.getElementById('my-gains-accomplishments').value,
-        interests: document.getElementById('my-gains-interests').value,
-        networks: document.getElementById('my-gains-networks').value,
-        skills: document.getElementById('my-gains-skills').value
-      })
-    });
-    status.textContent = '✓ 保存しました';
-    status.style.color = '#4ade80';
-    setTimeout(() => { status.textContent = ''; }, 3000);
-  } catch(e) {
-    status.textContent = '保存に失敗しました';
-    status.style.color = '#f87171';
-  }
-  btn.disabled = false;
-}
 
 // ── BNI 1-2-1 mode ──
 let bniRoomId = null;
