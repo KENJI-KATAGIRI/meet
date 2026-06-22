@@ -2058,6 +2058,7 @@ async function handleBniFinalize({ email, sessionId, staffName, memberName, bniC
       headers: { 'Content-Type': 'application/json', 'x-nicemeet-secret': bniSecret },
       body: JSON.stringify({
         bni_user: staffName,
+        bni_email: email,
         contact_id: bniContactId,
         contact_name: memberName,
         duration_minutes: durMin,
@@ -2835,11 +2836,12 @@ app.get('/auth/admin-login', async (req, res) => {
   const entry = adminLoginTokens.get(token);
   if (!entry || entry.expires < Date.now()) { adminLoginTokens.delete(token); return res.redirect('/booking/'); }
   adminLoginTokens.delete(token);
-  const user = db.prepare('SELECT id, slug FROM users WHERE id=?').get(entry.userId);
+  const user = db.prepare('SELECT id, slug, facility_id FROM users WHERE id=?').get(entry.userId);
   if (!user) return res.redirect('/booking/');
   await regenerateSession(req);
   req.session.userId = user.id;
   req.session.slug = user.slug;
+  if (user.facility_id) req.session.uiModeOverride = 'welfare';
   req.session.save(err => res.redirect(err ? '/booking/' : '/booking/dashboard'));
 });
 
