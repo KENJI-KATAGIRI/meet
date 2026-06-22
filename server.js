@@ -1956,7 +1956,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
     const welfarePrompt = isWelfareRecord ? (VIDEO_CALL_PROMPTS[welfareSystem]?.[welfareRecordType] || WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null) : null;
     const systemPrompt = isBniRecord
       ? BNI_PROMPT + (staffName || memberName
-          ? `\n\n【参加者情報】\nBNIメンバー（記録者）: ${staffName || '不明'} / コンタクト（相手方）: ${memberName || '不明'}\n話者A・話者Bのどちらがどちらかは文脈（名前の呼び合い・職業紹介等）から判断し、それぞれの情報を統合してGAINSを抽出してください。`
+          ? `\n\n【参加者情報】\nBNIメンバー（記録者・自分）: ${staffName || '不明'}\nコンタクト（相手方・GAINSの対象）: ${memberName || '不明'}\n\n【重要】GAINSはコンタクト（${memberName || '相手方'}）の情報のみを抽出してください。BNIメンバー自身の情報はGAINSに含めないこと。話者A・話者Bのどちらがコンタクトかは、職業や自己紹介の文脈から判断してください。`
           : '')
       : welfarePrompt
         ? `${welfarePrompt}
