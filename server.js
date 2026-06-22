@@ -2745,7 +2745,7 @@ app.get('/api/admin/summary', (req, res) => {
     const s = getFacilityStatus(f);
     if (s in counts) counts[s]++; else counts.expired++;
   }
-  const nmUsers = db.prepare("SELECT COUNT(*) as cnt FROM users WHERE facility_id IS NULL").get().cnt;
+  const nmUsers = db.prepare("SELECT COUNT(*) as cnt FROM users WHERE ui_mode != 'welfare'").get().cnt;
   res.json({ facilities: counts, nmUsers });
 });
 
@@ -2848,7 +2848,7 @@ app.get('/auth/admin-login', async (req, res) => {
 app.get('/api/admin/nm-users', (req, res) => {
   if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
   const users = db.prepare(
-    "SELECT id, name, email, plan, plan_expires, ui_mode, registered_at, last_login_at FROM users WHERE facility_id IS NULL ORDER BY id DESC LIMIT 300"
+    "SELECT id, name, email, plan, plan_expires, ui_mode, registered_at, last_login_at FROM users WHERE ui_mode != 'welfare' ORDER BY id DESC LIMIT 300"
   ).all();
   res.json({ users });
 });
@@ -2857,7 +2857,7 @@ app.patch('/api/admin/user/:id/plan', express.json({ limit: '2kb' }), (req, res)
   if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'invalid id' });
-  const user = db.prepare('SELECT id, email FROM users WHERE id=? AND facility_id IS NULL').get(id);
+  const user = db.prepare("SELECT id, email FROM users WHERE id=? AND ui_mode != 'welfare'").get(id);
   if (!user) return res.status(404).json({ error: 'not found' });
   const { plan, plan_expires } = req.body;
   if (!['free', 'trial', 'paid'].includes(plan)) return res.status(400).json({ error: 'invalid plan' });
