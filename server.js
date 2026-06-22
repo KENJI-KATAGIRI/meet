@@ -238,6 +238,7 @@ try { db.exec("ALTER TABLE nm_call_records ADD COLUMN source TEXT DEFAULT 'video
 try { db.exec("ALTER TABLE users ADD COLUMN booking_horizon_days INTEGER DEFAULT 14"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_facilities ADD COLUMN admin_notes TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT"); } catch(e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN own_gains TEXT DEFAULT '{}'"); } catch(e) {}
 
 // ── 施設サブスク ヘルパー ────────────────────────────────────────
 function calcMonthlyAmount(locationCount, isEarlyAdopter) {
@@ -734,6 +735,24 @@ app.get('/api/me', requireAuth, (req, res) => {
     result.ui_mode = req.session.uiModeOverride;
   }
   res.json(result);
+});
+
+// ---- 自分のGAINSプロフィール ----
+app.get('/api/my-gains', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT own_gains FROM users WHERE id=?').get(req.session.userId);
+  try { res.json(JSON.parse(u?.own_gains || '{}')); } catch(e) { res.json({}); }
+});
+app.put('/api/my-gains', requireAuth, express.json({ limit: '10kb' }), (req, res) => {
+  const { goals, accomplishments, interests, networks, skills } = req.body;
+  const gains = {
+    goals: safeStr(goals, 500),
+    accomplishments: safeStr(accomplishments, 500),
+    interests: safeStr(interests, 500),
+    networks: safeStr(networks, 500),
+    skills: safeStr(skills, 500)
+  };
+  db.prepare('UPDATE users SET own_gains=? WHERE id=?').run(JSON.stringify(gains), req.session.userId);
+  res.json({ ok: true });
 });
 
 // オーナー専用: セッション内モード切替（DBは変更しない）
@@ -1954,10 +1973,30 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
     }
 
     const welfarePrompt = isWelfareRecord ? (VIDEO_CALL_PROMPTS[welfareSystem]?.[welfareRecordType] || WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null) : null;
+
+    // BNIモード: 記録者自身のGAINSプロフィールを読み込み（コンタクトのGAINSと混同しないため）
+    let hostGainsSection = '';
+    if (isBniRecord) {
+      const hostUser = db.prepare('SELECT own_gains FROM users WHERE email=?').get(email);
+      let hostGains = {};
+      try { hostGains = JSON.parse(hostUser?.own_gains || '{}'); } catch(e) {}
+      const hasHostGains = Object.values(hostGains).some(v => v && v.trim());
+      if (hasHostGains) {
+        hostGainsSection = `\n\n【記録者（${staffName || 'BNIメンバー'}）自身のGAINS（参考情報・GAINSに含めないこと）】\n`
+          + (hostGains.goals ? `G-Goals: ${hostGains.goals}\n` : '')
+          + (hostGains.accomplishments ? `A-Accomplishments: ${hostGains.accomplishments}\n` : '')
+          + (hostGains.interests ? `I-Interests: ${hostGains.interests}\n` : '')
+          + (hostGains.networks ? `N-Networks: ${hostGains.networks}\n` : '')
+          + (hostGains.skills ? `S-Skills: ${hostGains.skills}\n` : '')
+          + `上記は記録者自身の情報です。コンタクト（${memberName || '相手方'}）のGAINSとして記録しないこと。`;
+        console.log('[bni-finalize] host gains loaded, will exclude from contact GAINS');
+      }
+    }
+
     const systemPrompt = isBniRecord
       ? BNI_PROMPT + (staffName || memberName
           ? `\n\n【参加者情報】\nBNIメンバー（記録者・自分）: ${staffName || '不明'}\nコンタクト（相手方・GAINSの対象）: ${memberName || '不明'}\n\n【重要】GAINSはコンタクト（${memberName || '相手方'}）の情報のみを抽出してください。BNIメンバー自身の情報はGAINSに含めないこと。話者A・話者Bのどちらがコンタクトかは、職業や自己紹介の文脈から判断してください。`
-          : '')
+          : '') + hostGainsSection
       : welfarePrompt
         ? `${welfarePrompt}
 
