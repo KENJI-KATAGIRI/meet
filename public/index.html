@@ -1728,19 +1728,19 @@ function applyLayout() {
 }
 
 function startSpeakerDetection() {
-  speakerInterval = setInterval(async () => {
+  speakerInterval = setInterval(() => {
     if (layoutMode !== 'speaker') return;
     if (Object.keys(peers).length === 0) return;
     let maxLevel = 0.015;
     let newSpeaker = null;
     for (const [peerId, pc] of Object.entries(peers)) {
       try {
-        const stats = await pc.getStats();
-        stats.forEach(r => {
-          if (r.type === 'inbound-rtp' && r.kind === 'audio' && (r.audioLevel || 0) > maxLevel) {
-            maxLevel = r.audioLevel; newSpeaker = peerId;
-          }
-        });
+        for (const receiver of pc.getReceivers()) {
+          if (receiver.track?.kind !== 'audio') continue;
+          const sources = receiver.getSynchronizationSources();
+          const level = sources[0]?.audioLevel ?? 0;
+          if (level > maxLevel) { maxLevel = level; newSpeaker = peerId; }
+        }
       } catch(e) {}
     }
     // ビジュアルインジケーター更新
