@@ -1991,7 +1991,11 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
 // ================================================================
 async function handleBniFinalize({ email, sessionId, staffName, memberName, bniContactId, durMin, transcript, summary }) {
   let bniData = { summary, gains: {}, referral_hints: '', follow_up: '' };
-  try { bniData = Object.assign(bniData, JSON.parse(summary)); } catch(e) {}
+  try {
+    const cleaned = summary.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    bniData = Object.assign(bniData, JSON.parse(cleaned));
+    console.log('[bni-finalize] JSON parse OK, gains keys:', Object.keys(bniData.gains || {}));
+  } catch(e) { console.warn('[bni-finalize] JSON parse failed:', e.message, '| raw:', summary.slice(0, 100)); }
 
   const bniWebhookUrl = process.env.BNI_WEBHOOK_URL || 'http://localhost:8300/api/nicemeet-webhook';
   const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
