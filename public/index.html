@@ -2665,14 +2665,15 @@ async function initEffectsStream() {
 }
 
 function startEffectsLoop() {
-  let lastTime = 0;
-  const TARGET_FPS = 30;
-  const INTERVAL = 1000 / TARGET_FPS;
-  const loop = (now) => {
+  let inferFrame = 0;
+  const INFER_EVERY = 2; // 60fps表示 / 2 = 30fps推論
+  const loop = () => {
     rafId = requestAnimationFrame(loop);
-    if (now - lastTime < INTERVAL) return;
-    lastTime = now;
-    renderFrame();
+    if (!effectsVideo || effectsVideo.readyState < 2) return;
+    inferFrame++;
+    // 推論は2フレームに1回（GPU負荷を抑えつつ30fps維持）
+    const doInfer = inferFrame % INFER_EVERY === 0;
+    renderFrame(doInfer);
   };
   rafId = requestAnimationFrame(loop);
 }
@@ -2691,16 +2692,15 @@ function getZoomRect() {
   return { sx: 0, sy: 0, sw: w, sh: h };
 }
 
-function renderFrame() {
+function renderFrame(doInfer) {
   if (!effectsVideo || effectsVideo.readyState < 2) return;
   const w = effectsCanvas.width, h = effectsCanvas.height;
   const { sx, sy, sw, sh } = getZoomRect();
 
-  segCtx.clearRect(0, 0, segCanvas.width, segCanvas.height);
-  segCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, segCanvas.width, segCanvas.height);
-
-  // 推論を先に実行→同フレームのマスクで描画（VB ON または美肌 ON で実行）
-  if ((bgMode !== 'none' || beautyLevel > 0) && mpSegmenter && mpReady && !mpSending) {
+  // 推論フレームのみsegCanvasを更新して推論実行
+  if (doInfer && (bgMode !== 'none' || beautyLevel > 0) && mpSegmenter && mpReady && !mpSending) {
+    segCtx.clearRect(0, 0, segCanvas.width, segCanvas.height);
+    segCtx.drawImage(effectsVideo, sx, sy, sw, sh, 0, 0, segCanvas.width, segCanvas.height);
     runInference();
   }
 
@@ -2760,7 +2760,7 @@ function onMpResults(result) {
     const person = Math.min(1.0, d1[i] + d2[i] + d3[i] + (d4 ? d4[i] : 0));
     const t = Math.max(0, Math.min(1, (person - 0.10) / 0.50));
     const stepped = t * t * (3 - 2 * t);
-    const alpha = stepped > prevMaskData[i] ? 0.05 : 0.55;
+    const alpha = stepped > prevMaskData[i] ? 0.05 : 0.30;
     prevMaskData[i] = alpha * prevMaskData[i] + (1 - alpha) * stepped;
     // 二値化しない: グラデーション値そのまま出力（blur+contrastが中間値を拡張できる）
     const out = Math.round(prevMaskData[i] * 255);
