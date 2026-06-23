@@ -3043,8 +3043,13 @@ io.on('connection', (socket) => {
   socket.on('screen-share-start', () => { socket.to(socket.roomId).emit('screen-share-start', { id: socket.id, name: socket.userName }); });
   socket.on('screen-share-stop', () => { socket.to(socket.roomId).emit('screen-share-stop', { id: socket.id }); });
   socket.on('chat-message', ({ message }) => {
-    if (!socket.roomId || typeof message !== 'string' || message.length === 0 || message.length > 2000) return;
-    console.log('[chat] from=' + socket.userName + ' room=' + socket.roomId + ' len=' + message.length);
+    console.log('[chat-recv] socketId=' + socket.id + ' roomId=' + socket.roomId + ' userName=' + socket.userName + ' msgType=' + typeof message + ' len=' + (message ? message.length : 'null'));
+    if (!socket.roomId || typeof message !== 'string' || message.length === 0 || message.length > 2000) {
+      console.log('[chat-recv] DROPPED reason: roomId=' + socket.roomId + ' typeOk=' + (typeof message === 'string') + ' lenOk=' + (message && message.length > 0 && message.length <= 2000));
+      return;
+    }
+    const roomSockets = [...(io.sockets.adapter.rooms.get(socket.roomId) || [])];
+    console.log('[chat] from=' + socket.userName + ' room=' + socket.roomId + ' len=' + message.length + ' roomSockets=' + JSON.stringify(roomSockets));
     socket.to(socket.roomId).emit('chat-message', { from: socket.userName, message, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) });
   });
   socket.on('set-waiting-room', ({ enabled }) => {

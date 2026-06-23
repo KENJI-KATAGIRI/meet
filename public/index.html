@@ -62,6 +62,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 #videos{flex:1;display:grid;gap:4px;padding:4px;background:#0a0a12;overflow:hidden;align-content:center}
 .video-tile{position:relative;background:#1a1a2e;border-radius:8px;overflow:hidden;aspect-ratio:16/9}
 .video-tile video{width:100%;height:100%;object-fit:cover}
+#tile-local video{transform:scaleX(-1)}
 .video-tile .name-tag{position:absolute;bottom:8px;left:8px;background:rgba(0,0,0,.6);padding:3px 10px;border-radius:20px;font-size:13px;font-weight:500}
 .video-tile .muted-icon{position:absolute;top:8px;right:8px;background:rgba(220,50,50,.8);width:28px;height:28px;border-radius:50%;display:none;align-items:center;justify-content:center;font-size:13px}
 .video-tile.muted .muted-icon{display:flex}
@@ -2843,8 +2844,12 @@ function updatePreviewCanvas(w, h, sx, sy, sw, sh) {
   previewCtx.clearRect(0, 0, w, h);
 
   if (bgMode !== 'none' && maskCanvas2 && bgCanvas) {
-    // 背景・人物ともに正向きで描画、CSSのscaleX(-1)でミラー統一
+    // 背景はCSS scaleX(-1)で反転されるためcanvasで逆向きに描画→画面上で正立
+    // 人物・マスクは正向き描画→CSS scaleX(-1)でミラー表示
     const bp = 30;
+    previewCtx.save();
+    previewCtx.translate(w, 0);
+    previewCtx.scale(-1, 1);
     if (bgMode === 'blur') {
       previewCtx.filter = 'blur(24px) brightness(0.7)';
       previewCtx.drawImage(effectsVideo, sx, sy, sw, sh, -bp, -bp, w + bp * 2, h + bp * 2);
@@ -2855,11 +2860,12 @@ function updatePreviewCanvas(w, h, sx, sy, sw, sh) {
     } else if (bgMode === 'image' && bgImg) {
       previewCtx.drawImage(bgImg, 0, 0, w, h);
     }
-    // 人物エリアを透明化
+    previewCtx.restore();
+    // 人物エリアを透明化（マスクは正向き：人物位置と一致）
     previewCtx.globalCompositeOperation = 'destination-out';
     previewCtx.drawImage(maskCanvas2, 0, 0, w, h);
     previewCtx.globalCompositeOperation = 'source-over';
-    // 人物を後ろに重ねる
+    // 人物を後ろに重ねる（正向き→CSSでミラー）
     previewCtx.globalCompositeOperation = 'destination-over';
     if (beautyLevel > 0) {
       previewCtx.drawImage(beautyCanvas, 0, 0, w, h);
