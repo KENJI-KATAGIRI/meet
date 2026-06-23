@@ -63,6 +63,7 @@ const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: t
 const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'アップロード回数が多すぎます' } });
 app.use('/auth/', authLimiter);
 app.use('/api/', apiLimiter);
+app.use('/api/admin/', authLimiter);
 
 // SQLite永続セッションストア（再起動してもセッションが切れない）
 const sessionDb = new Database(path.join(__dirname, 'data', 'sessions.db'));
@@ -2474,16 +2475,22 @@ app.post('/api/facility/inquiry', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// CSV セル値サニタイズ（数式インジェクション対策）
+const csvCell = v => {
+  const s = String(v ?? '').replace(/\n/g, ' ');
+  const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+  return '"' + safe.replace(/"/g, '""') + '"';
+};
+
 // CSV エクスポート（会議記録）
 app.get('/api/facility/export/csv', requireAuth, (req, res) => {
   const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
   if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
   const rows = db.prepare('SELECT * FROM nm_meetings WHERE facility_id=? ORDER BY started_at DESC').all(u.facility_id);
   const header = '会議ID,ルームID,ホストメール,開始日時,終了日時,通話時間(分),AI要約\n';
-  const csvQ = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const body = rows.map(r => [
-    r.id, csvQ(r.room_id), csvQ(r.host_email),
-    csvQ(r.started_at), csvQ(r.ended_at),
+    r.id, csvCell(r.room_id), csvCell(r.host_email),
+    csvCell(r.started_at), csvCell(r.ended_at),
     Math.round(r.duration_minutes || 0),
     r.ai_summary_used ? 'あり' : 'なし'
   ].join(',')).join('\n');
@@ -2512,15 +2519,14 @@ app.get('/api/facility/call-records/csv', requireAuth, (req, res) => {
   if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
   const rows = db.prepare('SELECT * FROM nm_call_records WHERE facility_id=? ORDER BY created_at DESC').all(u.facility_id);
   const header = '記録ID,業態,記録種別,対象者,担当職員,面談日,要約内容\n';
-  const csvQ2 = v => '"' + String(v ?? '').replace(/"/g, '""').replace(/\n/g, ' ') + '"';
   const body = rows.map(r => [
     r.id,
-    csvQ2(WELFARE_RECORD_TYPES[r.welfare_system]?.label || r.welfare_system),
-    csvQ2(r.record_type),
-    csvQ2(r.member_name),
-    csvQ2(r.staff_name),
-    csvQ2(r.interview_date),
-    csvQ2(r.summary_text)
+    csvCell(WELFARE_RECORD_TYPES[r.welfare_system]?.label || r.welfare_system),
+    csvCell(r.record_type),
+    csvCell(r.member_name),
+    csvCell(r.staff_name),
+    csvCell(r.interview_date),
+    csvCell(r.summary_text)
   ].join(',')).join('\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="call_records.csv"');
@@ -2724,7 +2730,7 @@ app.get('/api/admin/users.csv', (req, res) => {
   const header = 'ID,名前,メール,プラン,プラン期限,Stripe顧客ID';
   const csv = [header, ...rows.map(r =>
     [r.id, r.name, r.email, r.plan||'free', r.plan_expires||'', r.stripe_customer_id||'']
-      .map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
+      .map(csvCell).join(',')
   )].join('\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename=nicemeet-users.csv');
