@@ -795,7 +795,14 @@ app.get('/api/my-plan', requireAuth, async (req, res) => {
         result.amount = sub.items?.data?.[0]?.price?.unit_amount;
         result.interval = sub.items?.data?.[0]?.price?.recurring?.interval;
       }
-    } catch(e) { console.error('my-plan stripe error:', e.message); }
+    } catch(e) {
+      if (e.code === 'resource_missing' || e.message?.includes('No such customer')) {
+        db.prepare('UPDATE users SET stripe_customer_id=NULL WHERE id=?').run(req.session.userId);
+        console.warn('my-plan: cleared invalid stripe_customer_id for user', req.session.userId);
+      } else {
+        console.error('my-plan stripe error:', e.message);
+      }
+    }
   }
   res.json(result);
 });
