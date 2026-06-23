@@ -76,6 +76,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 .ctrl-btn .icon{width:42px;height:42px;border-radius:50%;background:#2a2a4a;display:flex;align-items:center;justify-content:center;font-size:18px;transition:background .2s}
 .ctrl-btn:hover .icon{background:#3a3a5a}
 .ctrl-btn.active .icon{background:#e94560}
+.ctrl-btn.perm-on .icon{background:#2ecc71}
 .ctrl-btn.leave .icon{background:#e94560}
 .ctrl-btn.leave:hover .icon{background:#c73652}
 .room-info{color:#666;font-size:12px;margin-right:auto;padding-left:12px}
@@ -468,6 +469,9 @@ function copyInappUrl() {
     <button class="ctrl-btn ctrl-btn-secondary" id="btn-transcribe-toggle" onclick="toggleTranscribeMode()" style="display:none">
       <div class="icon" id="btn-transcribe-icon">📝</div><span id="btn-transcribe-label">録音：自分のみ</span>
     </button>
+    <button class="ctrl-btn" id="btn-share-perm" onclick="toggleScreenSharePermission()" style="display:none" title="参加者の画面共有を許可/禁止">
+      <div class="icon" id="btn-share-perm-icon">🔒</div><span id="btn-share-perm-label">共有:禁止</span>
+    </button>
     <button class="ctrl-btn" id="btn-more" onclick="toggleMore()">
       <div class="icon">⋯</div><span>もっと</span>
     </button>
@@ -530,7 +534,6 @@ function copyInappUrl() {
 <div id="waiting-panel">
   <div class="wp-title"><span>🚪 入室待ち</span><button class="wp-close" onclick="closeWaitingPanel()">×</button></div>
   <div id="waiting-participants-list"></div>
-  <div class="wr-toggle-row"><span class="wr-toggle-label">🖥️ 参加者の画面共有を許可</span><label class="wr-sw"><input type="checkbox" id="screen-share-checkbox" onchange="setScreenSharePermission(this.checked)"><span class="wr-slider"></span></label></div>
 </div>
 
 <div id="effects-panel">
@@ -1247,8 +1250,7 @@ async function doJoin() {
   socket.on('screen-share-permission-changed', ({ enabled }) => {
     screenShareAllowed = enabled;
     updateScreenShareBtn();
-    const cb2 = document.getElementById('screen-share-checkbox');
-    if (cb2) cb2.checked = enabled;
+    updateSharePermBtn();
     if (!enabled && !isHost && !isCoHost && screenStream) toggleScreen();
     if (enabled && !isHost && !isCoHost) notify('🖥️ ホストが画面共有を許可しました', 4000);
   });
@@ -1467,6 +1469,17 @@ function admitParticipant(btn) { if (socket) socket.emit('admit-participant', { 
 function rejectParticipant(btn) { if (socket) socket.emit('reject-participant', { participantId: btn.dataset.id }); }
 function setWaitingRoom(enabled) { if (socket) socket.emit('set-waiting-room', { enabled }); }
 function setScreenSharePermission(enabled) { if (socket) socket.emit('set-screen-share-permission', { enabled }); }
+function toggleScreenSharePermission() { setScreenSharePermission(!screenShareAllowed); }
+function updateSharePermBtn() {
+  const btn = document.getElementById('btn-share-perm');
+  if (!btn) return;
+  btn.style.display = (isHost || isCoHost) ? '' : 'none';   // ホスト/コホストのみ表示
+  const icon = document.getElementById('btn-share-perm-icon');
+  const label = document.getElementById('btn-share-perm-label');
+  if (icon) icon.textContent = screenShareAllowed ? '🔓' : '🔒';
+  if (label) label.textContent = screenShareAllowed ? '共有:許可中' : '共有:禁止';
+  btn.classList.toggle('perm-on', screenShareAllowed);       // 許可中は緑ハイライト
+}
 function updateScreenShareBtn() {
   const show = isHost || isCoHost || screenShareAllowed;
   ['btn-screen', 'btn-screen-m'].forEach(id => {
@@ -1979,6 +1992,7 @@ function updateHostUI() {
   if (tBtn) tBtn.style.display = isHost ? '' : 'none';
   updateTranscribeLabel();
   updateScreenShareBtn();
+  updateSharePermBtn();
 }
 
 function updateTranscribeLabel() {
