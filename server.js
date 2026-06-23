@@ -1091,7 +1091,7 @@ app.post('/api/b/:slug/book', async (req, res) => {
     return res.status(409).json({ error: 'この時間はすでに予約されています' });
 
   const meetRoom = crypto.randomBytes(4).toString('hex');
-  const meetUrl = `https://meet.gaiaarts.org/?room=${meetRoom}&system=bni`;
+  const meetUrl = `https://meet.gaiaarts.org/?room=${meetRoom}&system=bni&bu=${encodeURIComponent(user.name||'')}&bn=${encodeURIComponent(cleanName||'')}`;
   const cancelToken = crypto.randomBytes(16).toString('hex');
   const cancelUrl = `https://meet.gaiaarts.org/cancel?token=${cancelToken}`;
 

@@ -605,7 +605,7 @@ function renderList(id, items, canDelete) {
     const timeStr = `${s.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})} 〜 ${e.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}`;
     const isBni = b.meet_system === 'bni';
     const meetUrl = isBni
-      ? `https://meet.gaiaarts.org/?room=${b.meet_room}&system=bni`
+      ? `https://meet.gaiaarts.org/?room=${b.meet_room}&system=bni&bu=${encodeURIComponent(me.name||'')}&bn=${encodeURIComponent(b.booker_name||'')}`
       : `https://meet.gaiaarts.org/?room=${b.meet_room}`;
     const div = document.createElement('div');
     div.className = 'booking-card';
