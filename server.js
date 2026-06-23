@@ -1184,7 +1184,8 @@ app.get('/api/recording/:token', (req, res) => {
   if (!/^[a-f0-9]{64}$/.test(token)) return res.status(404).send('not found');
   const entry = recordingTokens.get(token);
   if (!entry || Date.now() > entry.expires) return res.status(404).send('not found');
-  const filepath = path.join(recDir, entry.filename);
+  const filepath = path.resolve(recDir, entry.filename);
+  if (!filepath.startsWith(recDir + path.sep)) return res.status(400).send('invalid path');
   if (!fs.existsSync(filepath)) return res.status(404).send('not found');
   res.sendFile(filepath);
 });
@@ -1814,7 +1815,7 @@ const audioChunkUpload = multer({
     destination: recDir,
     filename: (req, file, cb) => cb(null, 'tmpaudio-' + Date.now() + '-' + Math.random().toString(36).slice(2,8) + '.webm')
   }),
-  limits: { fileSize: 200 * 1024 * 1024 }
+  limits: { fileSize: 30 * 1024 * 1024 }
 });
 
 app.post('/api/audio-chunk', uploadLimiter, audioChunkUpload.single('chunk'), (req, res) => {

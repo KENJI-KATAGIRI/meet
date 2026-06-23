@@ -1113,7 +1113,7 @@ async function doJoin() {
 
   socket.on('recording-ready', ({ url, filename, uploader }) => {
     const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-    const linkMsg = `🎬 録画完了<br><a href="${url}" download="${filename}" target="_blank" style="color:#4ade80;font-weight:600">⬇️ ${filename}</a>`;
+    const linkMsg = `🎬 録画完了<br><a href="${escHtml(url)}" download="${escHtml(filename)}" target="_blank" style="color:#4ade80;font-weight:600">⬇️ ${escHtml(filename)}</a>`;
     addChatMessage(uploader + 'が録画を共有', linkMsg, time, false, true);
     document.getElementById('chat-panel').classList.add('open');
     document.getElementById('btn-chat').classList.add('active');
@@ -1125,7 +1125,7 @@ async function doJoin() {
   });
   socket.on('transcription-ready', ({ transcriptUrl, summaryUrl, transcriptFilename, summaryFilename }) => {
     const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-    const msg = `📝 文字起こし・要約が完成しました<br><a href="${transcriptUrl}" download="${transcriptFilename}" target="_blank" style="color:#60a5fa;font-weight:600">⬇️ 文字起こし (TXT)</a><br><a href="${summaryUrl}" download="${summaryFilename}" target="_blank" style="color:#f472b6;font-weight:600">⬇️ AI要約 (TXT)</a>`;
+    const msg = `📝 文字起こし・要約が完成しました<br><a href="${escHtml(transcriptUrl)}" download="${escHtml(transcriptFilename)}" target="_blank" style="color:#60a5fa;font-weight:600">⬇️ 文字起こし (TXT)</a><br><a href="${escHtml(summaryUrl)}" download="${escHtml(summaryFilename)}" target="_blank" style="color:#f472b6;font-weight:600">⬇️ AI要約 (TXT)</a>`;
     addChatMessage('システム', msg, time, false, true);
     document.getElementById('chat-panel').classList.add('open');
     document.getElementById('btn-chat').classList.add('active');
