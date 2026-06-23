@@ -2906,18 +2906,12 @@ async function loadSegModel() {
     const filesetResolver = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
     _step = 'model';
     const opts = {
-      baseOptions: { modelAssetPath: '/mediapipe/selfie_multiclass_256x256.tflite', delegate: 'GPU' },
+      baseOptions: { modelAssetPath: '/mediapipe/selfie_multiclass_256x256.tflite', delegate: 'CPU' },
       runningMode: 'VIDEO',
       outputCategoryMask: false,
       outputConfidenceMasks: true
     };
-    try {
-      mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
-    } catch(gpuErr) {
-      console.warn('[effects] GPU failed, trying CPU:', gpuErr.message);
-      opts.baseOptions.delegate = 'CPU';
-      mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
-    }
+    mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
     mpReady = true;
     prevMaskData = null;
     mpTimestamp = 0;
