@@ -48,6 +48,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0f0f1a;color:#fff;height:100v
 .layout-btn.active{border-color:#6c63ff;color:#6c63ff;background:#1e1e4a}
 .top-btn{background:#2a2a4a;border:1px solid transparent;border-radius:6px;color:#888;padding:4px 9px;cursor:pointer;font-size:16px;transition:all .2s;line-height:1}
 .top-btn:hover{border-color:#3a3a5a;color:#ccc}
+.wr-approve-btn{background:#e94560;color:#fff;border-color:#e94560;font-size:13px;align-items:center;gap:5px}
+.wr-approve-btn:hover{background:#c73652;color:#fff;border-color:#c73652}
 #video-area{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
 .layout-presentation #video-area{flex-direction:row}
 .layout-presentation #thumb-strip{width:160px;height:auto;flex-direction:column;overflow-y:auto;overflow-x:hidden;border-top:none;border-left:1px solid #1a1a2e;flex-shrink:0;padding:4px}
@@ -430,7 +432,7 @@ function copyInappUrl() {
       <button class="layout-btn" id="btn-layout-speaker" onclick="setLayout('speaker')" title="スピーカービュー"><span style="font-size:15px">▣</span><span class="btn-label">スピーカー</span></button>
       <button class="layout-btn" id="btn-layout-presentation" onclick="setLayout('presentation')" title="プレゼンテーション"><span style="font-size:15px">🖥</span><span class="btn-label">プレゼン</span></button>
       <button class="top-btn" id="btn-fullscreen" onclick="toggleFullscreen()" title="全画面">⛶</button>
-      <button class="top-btn" id="btn-waiting-room" style="display:none;position:relative" onclick="openWaitingPanel()" title="待機室">🚪<span id="waiting-badge"></span></button>
+      <button class="top-btn wr-approve-btn" id="btn-waiting-room" style="display:none;position:relative" onclick="openWaitingPanel()" title="入室待ちの人を承認">🙋 <span class="wr-approve-label">入室承認</span><span id="waiting-badge"></span></button>
     </div>
   </div>
   <div id="video-area">
@@ -470,7 +472,7 @@ function copyInappUrl() {
       <div class="icon" id="btn-transcribe-icon">📝</div><span id="btn-transcribe-label">録音：自分のみ</span>
     </button>
     <button class="ctrl-btn" id="btn-share-perm" onclick="toggleScreenSharePermission()" style="display:none" title="参加者の画面共有を許可/禁止">
-      <div class="icon" id="btn-share-perm-icon">🔒</div><span id="btn-share-perm-label">共有:禁止</span>
+      <div class="icon" id="btn-share-perm-icon">🔒</div><span id="btn-share-perm-label">画面共有:禁止</span>
     </button>
     <button class="ctrl-btn" id="btn-more" onclick="toggleMore()">
       <div class="icon">⋯</div><span>もっと</span>
@@ -1455,8 +1457,10 @@ function addWaitingParticipant(id, name) {
   const count = list.querySelectorAll('.wp-participant').length;
   const badge = document.getElementById('waiting-badge');
   if (badge) { badge.textContent = count; badge.classList.add('visible'); }
+  const wrBtn = document.getElementById('btn-waiting-room');
+  if (wrBtn && (isHost || isCoHost)) wrBtn.style.display = 'inline-flex';  // 待機者がいる時だけ表示
   document.getElementById('waiting-panel').classList.add('visible');
-  notify('🚪 ' + name + ' が入室を待っています');
+  notify('🙋 ' + name + ' が入室を待っています');
 }
 function removeWaitingParticipant(id) {
   const d = document.getElementById('wp-' + id); if (d) d.remove();
@@ -1464,6 +1468,11 @@ function removeWaitingParticipant(id) {
   const count = list ? list.querySelectorAll('.wp-participant').length : 0;
   const badge = document.getElementById('waiting-badge');
   if (badge) { badge.textContent = count || ''; badge.classList.toggle('visible', count > 0); }
+  if (count === 0) {   // 全員さばけたら承認ボタンを隠してパネルも閉じる
+    const wrBtn = document.getElementById('btn-waiting-room');
+    if (wrBtn) wrBtn.style.display = 'none';
+    closeWaitingPanel();
+  }
 }
 function admitParticipant(btn) { if (socket) socket.emit('admit-participant', { participantId: btn.dataset.id }); }
 function rejectParticipant(btn) { if (socket) socket.emit('reject-participant', { participantId: btn.dataset.id }); }
@@ -1477,7 +1486,7 @@ function updateSharePermBtn() {
   const icon = document.getElementById('btn-share-perm-icon');
   const label = document.getElementById('btn-share-perm-label');
   if (icon) icon.textContent = screenShareAllowed ? '🔓' : '🔒';
-  if (label) label.textContent = screenShareAllowed ? '共有:許可中' : '共有:禁止';
+  if (label) label.textContent = screenShareAllowed ? '画面共有:許可中' : '画面共有:禁止';
   btn.classList.toggle('perm-on', screenShareAllowed);       // 許可中は緑ハイライト
 }
 function updateScreenShareBtn() {
@@ -1982,7 +1991,7 @@ function addChatMessage(from, message, time, isSelf, isHtml) {
 // ======== ホスト管理 ========
 function updateHostUI() {
   const wrBtn = document.getElementById('btn-waiting-room');
-  if (wrBtn) wrBtn.style.display = (isHost || isCoHost) ? '' : 'none';
+  if (wrBtn) wrBtn.style.display = 'none';   // 待機者がいる時だけ addWaitingParticipant で表示
   const show = isHost || isCoHost;
   ['btn-breakout','btn-breakout-m'].forEach(id => {
     const el = document.getElementById(id);
