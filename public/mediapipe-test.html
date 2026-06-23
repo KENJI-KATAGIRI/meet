@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>MediaPipe Test</title>
+<style>
+body{font-family:sans-serif;padding:20px;background:#111;color:#eee}
+#log{background:#222;padding:12px;border-radius:8px;white-space:pre-wrap;font-family:monospace;font-size:13px;min-height:200px}
+.ok{color:#4ade80}.err{color:#f87171}.info{color:#60a5fa}
+</style>
+</head>
+<body>
+<h2>MediaPipe 動作テスト (推論含む)</h2>
+<video id="v" autoplay playsinline muted style="width:320px;border:1px solid #444"></video>
+<canvas id="c" width="320" height="240" style="border:1px solid #4ade80;display:block;margin-top:8px"></canvas>
+<div id="log">テスト開始中...\n</div>
+<script type="module">
+const log = document.getElementById('log');
+const video = document.getElementById('v');
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function p(msg, cls='info') {
+  log.innerHTML += `<span class="${cls}">${msg}</span>\n`;
+}
+
+// カメラ起動
+let stream;
+try {
+  stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  video.srcObject = stream;
+  await new Promise(r => video.onloadedmetadata = r);
+  video.play();
+  p('カメラ起動 OK', 'ok');
+} catch(e) {
+  p('カメラエラー: ' + e.message, 'err');
+}
+
+p('MediaPipeロード中...');
+const { ImageSegmenter, FilesetResolver } = await import('/mediapipe/vision_bundle.mjs');
+p('ロード OK', 'ok');
+
+const filesetResolver = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
+p('WASM初期化 OK', 'ok');
+
+p('セグメンター作成 (GPU)...');
+let seg;
+try {
+  seg = await ImageSegmenter.createFromOptions(filesetResolver, {
+    baseOptions: { modelAssetPath: '/mediapipe/selfie_multiclass_256x256.tflite', delegate: 'GPU' },
+    runningMode: 'VIDEO',
+    outputCategoryMask: false,
+    outputConfidenceMasks: true
+  });
+  p('GPU OK', 'ok');
+} catch(e) {
+  p('GPU失敗: ' + e.message + ' → CPU試行', 'err');
+  seg = await ImageSegmenter.createFromOptions(filesetResolver, {
+    baseOptions: { modelAssetPath: '/mediapipe/selfie_multiclass_256x256.tflite', delegate: 'CPU' },
+    runningMode: 'VIDEO',
+    outputCategoryMask: false,
+    outputConfidenceMasks: true
+  });
+  p('CPU OK', 'ok');
+}
+
+p('推論テスト中...');
+let callbackCalled = false;
+let frameCanvas = document.createElement('canvas');
+frameCanvas.width = 320; frameCanvas.height = 240;
+let fCtx = frameCanvas.getContext('2d');
+
+// ビデオフレームを描画してから推論
+await new Promise(r => setTimeout(r, 500)); // ビデオ安定待ち
+fCtx.drawImage(video, 0, 0, 320, 240);
+
+try {
+  const result = seg.segmentForVideo(frameCanvas, performance.now(), (r) => {
+    callbackCalled = true;
+    const masks = r.confidenceMasks;
+    p(`コールバック呼ばれた! masks=${masks?.length}個`, 'ok');
+    if (masks && masks.length > 0) {
+      p(`マスクサイズ: ${masks[0].width}x${masks[0].height}`, 'ok');
+    }
+    r.close?.();
+    
+    // マスクを可視化
+    ctx.drawImage(video, 0, 0, 320, 240);
+    p('テスト完了: 背景エフェクト機能します ✓', 'ok');
+  });
+  
+  // 戻り値チェック
+  if (result && result.confidenceMasks) {
+    p(`同期的に結果返却: masks=${result.confidenceMasks.length}個`, 'ok');
+    callbackCalled = true;
+  }
+  
+  await new Promise(r => setTimeout(r, 1000));
+  if (!callbackCalled) {
+    p('警告: コールバックが1秒以内に呼ばれなかった', 'err');
+    p('→ runningModeをLIVE_STREAMに変更が必要かもしれません', 'err');
+  }
+} catch(e) {
+  p('推論エラー: ' + e.message, 'err');
+}
+</script>
+</body>
+</html>

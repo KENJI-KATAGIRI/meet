@@ -1,4 +1,4 @@
-require('dotenv').config({ override: true });
+require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -39,15 +39,14 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", "cdn.jsdelivr.net", "cdn.tailwindcss.com", "https://connect.facebook.net"],
-      styleSrc: ["'self'", "'unsafe-inline'", "cdn.tailwindcss.com", "fonts.googleapis.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
       mediaSrc: ["'self'", "blob:", "data:"],
-      connectSrc: ["'self'", "wss:", "ws:", "https://storage.googleapis.com", "https://www.facebook.com", "https://connect.facebook.net"],
-      imgSrc: ["'self'", "data:", "blob:", "https://www.facebook.com"],
+      connectSrc: ["'self'", "wss:", "ws:"],
+      imgSrc: ["'self'", "data:", "blob:"],
       workerSrc: ["'self'", "blob:"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
-      scriptSrcAttr: ["'unsafe-inline'"],
     }
   },
   crossOriginEmbedderPolicy: false, // WebRTC/MediaPipeに必要
@@ -59,10 +58,12 @@ const authLimiter = rateLimit({
   message: { error: 'リクエストが多すぎます。15分後に再度お試しください。' }
 });
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
+const bniApiLimiter = rateLimit({ windowMs: 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
 // アップロード系は厳しく制限（ディスク枯渇・AI費用乱用防止）
 const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'アップロード回数が多すぎます' } });
 app.use('/auth/', authLimiter);
 app.use('/api/', apiLimiter);
+app.use('/bni/api/', bniApiLimiter);
 
 // SQLite永続セッションストア（再起動してもセッションが切れない）
 const sessionDb = new Database(path.join(__dirname, 'data', 'sessions.db'));
@@ -99,7 +100,7 @@ class BetterSqliteStore extends Store {
 }
 
 // BNI Manager DB（既存データをそのまま使用）
-const bniDb = (() => { try { return new Database("/home/ubuntu/apps/bni-app/data/bni.db", { readonly: true, timeout: 2000 }); } catch(e) { console.warn("[bniDb] could not open BNI Manager DB:", e.message); return null; } })();
+const bniDb = new Database('/home/ubuntu/apps/bni-app/data/bni.db');
 
 // DB setup
 const db = new Database(path.join(__dirname, 'data', 'booking.db'));
@@ -237,9 +238,6 @@ try { db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT'); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN status TEXT DEFAULT 'confirmed'"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN source TEXT DEFAULT 'video'"); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN booking_horizon_days INTEGER DEFAULT 14"); } catch(e) {}
-try { db.exec("ALTER TABLE nm_facilities ADD COLUMN admin_notes TEXT DEFAULT ''"); } catch(e) {}
-try { db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT"); } catch(e) {}
-try { db.exec("ALTER TABLE users ADD COLUMN own_gains TEXT DEFAULT '{}'"); } catch(e) {}
 
 // ── 施設サブスク ヘルパー ────────────────────────────────────────
 function calcMonthlyAmount(locationCount, isEarlyAdopter) {
@@ -250,10 +248,7 @@ function calcMonthlyAmount(locationCount, isEarlyAdopter) {
 }
 function getFacilityStatus(facility) {
   if (!facility) return 'none';
-  if (facility.trial_status === 'custom') return 'custom';
   if (facility.trial_status === 'active') return 'active';
-  if (facility.trial_status === 'expired') return 'expired';
-  if (!facility.trial_started_at) return 'expired';
   const daysSince = (Date.now() - new Date(facility.trial_started_at).getTime()) / 86400000;
   return daysSince > 30 ? 'expired' : 'trial';
 }
@@ -265,9 +260,6 @@ function getMonthlyUsageMinutes(facilityId) {
   return row?.total || 0;
 }
 function getTrialDaysLeft(facility) {
-  if (!facility) return 0;
-  if (facility.trial_status === 'custom' || facility.trial_status === 'active') return null;
-  if (!facility.trial_started_at) return 0;
   const daysSince = (Date.now() - new Date(facility.trial_started_at).getTime()) / 86400000;
   return Math.max(0, Math.ceil(30 - daysSince));
 }
@@ -491,17 +483,11 @@ async function hashPassword(password) {
   return salt + ':' + hash;
 }
 async function verifyPassword(password, stored) {
-  try {
-    const [salt, hash] = stored.split(':');
-    if (!salt || !hash || hash.length !== 128) return false;
-    const attempt = await new Promise((res, rej) =>
-      crypto.scrypt(password, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex')))
-    );
-    return crypto.timingSafeEqual(Buffer.from(attempt, 'hex'), Buffer.from(hash, 'hex'));
-  } catch (e) {
-    console.error('[verifyPassword] format error:', e.message);
-    return false;
-  }
+  const [salt, hash] = stored.split(':');
+  const attempt = await new Promise((res, rej) =>
+    crypto.scrypt(password, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex')))
+  );
+  return crypto.timingSafeEqual(Buffer.from(attempt, 'hex'), Buffer.from(hash, 'hex'));
 }
 
 // ---- 入力検証ユーティリティ ----
@@ -528,14 +514,9 @@ app.use(express.json({
   limit: '50kb',
   verify: (req, res, buf) => { if (req.path === '/api/stripe/webhook') req.rawBody = buf; }
 }));
-const WELFARE_SYSTEMS = new Set(['shuro','kaigo','houmon','houdei','roukin','beauty','seikatsu','keikaku','booking']);
 app.get('/', (req, res, next) => {
-  const sys = req.query.system;
-  if (sys && WELFARE_SYSTEMS.has(sys)) {
-    return res.sendFile(path.join(__dirname, 'public', 'welfare-call.html'));
-  }
   if (!req.query.room) return res.redirect('/bni.html');
-  next(); // static serves index.html (BNI用)
+  next();
 });
 app.use(express.static(path.join(__dirname, 'public')));
 if (!process.env.SESSION_SECRET) { console.error('[FATAL] SESSION_SECRET is not set in .env — exiting'); process.exit(1); }
@@ -586,14 +567,6 @@ const HALLUCINATION_PHRASES = [
   '日本語のビデオの字幕',
   '以下は日本語のビデオ',
   'かわいい かわいい',
-  // 無音・短時間録音時のWhisper日本語ハルシネーション
-  'おやすみなさい',
-  'お休みなさい',
-  'この動画は',
-  'この動画では',
-  'スタイルの動画',
-  'またお会いしましょう',
-  'バイバイ',
 ];
 function isWhisperHallucination(text) {
   if (!text || text.length < 3) return true;
@@ -643,7 +616,6 @@ app.get('/auth/google/callback', async (req, res) => {
     client.setCredentials(tokens);
     const { data } = await google.oauth2({ version: 'v2', auth: client }).userinfo.get();
 
-    let isNewUser = false;
     const existing = db.prepare('SELECT id, slug, refresh_token FROM users WHERE google_id = ?').get(data.id);
     if (existing) {
       const rt = tokens.refresh_token || existing.refresh_token;
@@ -656,14 +628,13 @@ app.get('/auth/google/callback', async (req, res) => {
       let slug = data.name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
       let base = slug, i = 1;
       while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
-      const r = db.prepare("INSERT INTO users (google_id, name, email, access_token, refresh_token, slug, registered_at, plan, plan_expires) VALUES (?,?,?,?,?,?,datetime('now'),'trial',datetime('now','+30 days'))")
+      const r = db.prepare("INSERT INTO users (google_id, name, email, access_token, refresh_token, slug, registered_at) VALUES (?,?,?,?,?,?,datetime('now'))")
         .run(data.id, data.name, data.email, tokens.access_token, tokens.refresh_token, slug);
       await regenerateSession(req);
       req.session.userId = r.lastInsertRowid;
-      isNewUser = true;
       req.session.slug = slug;
     }
-    res.redirect(isNewUser ? "/booking/dashboard?registered=1" : "/booking/dashboard");
+    res.redirect('/booking/dashboard');
   } catch (e) {
     console.error(e);
     res.redirect('/booking?error=1');
@@ -687,7 +658,7 @@ app.post('/auth/register', async (req, res) => {
   let base = slug, i = 1;
   while (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = base + i++;
   const password_hash = await hashPassword(password);
-  const r = db.prepare("INSERT INTO users (name, email, password_hash, slug, registered_at, plan, plan_expires) VALUES (?,?,?,?,datetime('now'),'trial',datetime('now','+30 days'))")
+  const r = db.prepare("INSERT INTO users (name, email, password_hash, slug, registered_at) VALUES (?,?,?,?,datetime('now'))")
     .run(cleanName, email, password_hash, slug);
   await regenerateSession(req);
   req.session.userId = r.lastInsertRowid;
@@ -711,19 +682,8 @@ app.post('/auth/login', async (req, res) => {
   await regenerateSession(req);
   req.session.userId = user.id;
   req.session.slug = user.slug;
-  db.prepare("UPDATE users SET last_login_at=datetime('now') WHERE id=?").run(user.id);
   res.json({ ok: true });
 });
-
-function isActivePlan(u) {
-  if (!u) return false;
-  if (u.plan === 'paid') return true;
-  if (u.plan === 'trial' && u.plan_expires) {
-    const exp = new Date(String(u.plan_expires).replace(' ', 'T') + 'Z');
-    if (exp > new Date()) return true;
-  }
-  return false;
-}
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ error: 'unauthorized' });
@@ -732,71 +692,15 @@ function requireAuth(req, res, next) {
 
 
 // ---- API: me ----
-const OWNER_EMAIL = process.env.OWNER_EMAIL || 'kenji.kys@gmail.com';
-
 app.get('/api/me', requireAuth, (req, res) => {
   const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode, registered_at, stripe_customer_id, plan, booking_horizon_days, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
-  if (!u) return res.status(404).json({ error: 'not found' });
-  const isOwner = u.email === OWNER_EMAIL;
-  // オーナーのみ: セッションレベルのモードオーバーライドを適用
-  const result = { ...u, isOwner };
-  if (isOwner && req.session.uiModeOverride) {
-    result.ui_mode = req.session.uiModeOverride;
-  }
-  res.json(result);
-});
-
-// ---- 自分のGAINSプロフィール ----
-app.get('/api/my-gains', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT own_gains FROM users WHERE id=?').get(req.session.userId);
-  try { res.json(JSON.parse(u?.own_gains || '{}')); } catch(e) { res.json({}); }
-});
-app.put('/api/my-gains', requireAuth, express.json({ limit: '10kb' }), (req, res) => {
-  const { goals, accomplishments, interests, networks, skills } = req.body;
-  const gains = {
-    goals: safeStr(goals, 500),
-    accomplishments: safeStr(accomplishments, 500),
-    interests: safeStr(interests, 500),
-    networks: safeStr(networks, 500),
-    skills: safeStr(skills, 500)
-  };
-  db.prepare('UPDATE users SET own_gains=? WHERE id=?').run(JSON.stringify(gains), req.session.userId);
-  res.json({ ok: true });
-});
-
-// オーナー専用: セッション内モード切替（DBは変更しない）
-app.post('/api/me/preview-mode', requireAuth, express.json({ limit: '1kb' }), (req, res) => {
-  const u = db.prepare('SELECT email FROM users WHERE id=?').get(req.session.userId);
-  if (!u || u.email !== OWNER_EMAIL) return res.status(403).json({ error: 'forbidden' });
-  const { mode } = req.body;
-  if (!['simple', 'welfare'].includes(mode)) return res.status(400).json({ error: 'invalid mode' });
-  req.session.uiModeOverride = mode;
-  req.session.save(() => res.json({ ok: true, mode }));
+  res.json(u);
 });
 
 // ---- API: my-plan ----
-app.get('/api/my-plan', requireAuth, async (req, res) => {
-  const u = db.prepare('SELECT plan, plan_expires, stripe_customer_id FROM users WHERE id=?').get(req.session.userId);
-  const result = { plan: u?.plan || 'free', plan_expires: u?.plan_expires || null };
-  if (u?.plan === 'trial' && u?.plan_expires) {
-    const exp = new Date(String(u.plan_expires).replace(' ', 'T') + 'Z');
-    result.trial_days_left = Math.max(0, Math.ceil((exp - Date.now()) / 86400000));
-    result.is_trial_active = exp > new Date();
-  }
-  if (stripe && u?.stripe_customer_id) {
-    try {
-      const subs = await stripe.subscriptions.list({ customer: u.stripe_customer_id, limit: 1, status: 'all' });
-      const sub = subs.data[0];
-      if (sub) {
-        result.stripe_status = sub.status;
-        result.current_period_end = sub.current_period_end;
-        result.trial_end = sub.trial_end;
-        result.amount = sub.items?.data?.[0]?.price?.unit_amount;
-        result.interval = sub.items?.data?.[0]?.price?.recurring?.interval;
-      }
-    } catch(e) { console.error('my-plan stripe error:', e.message); }
-  }
-  res.json(result);
+app.get('/api/my-plan', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT plan, plan_expires FROM users WHERE id=?').get(req.session.userId);
+  res.json({ plan: u?.plan || 'free', plan_expires: u?.plan_expires || null });
 });
 
 // ---- UTAGE/UnivaPay Webhook ----
@@ -834,23 +738,6 @@ app.post('/api/utage-webhook', async (req, res) => {
 });
 
 // ---- BNI Manager SSO ----
-
-const TURN_SECRET = process.env.TURN_SECRET || '';
-app.get('/api/ice-credentials', (req, res) => {
-  const expiry = Math.floor(Date.now() / 1000) + 3600; // 1時間有効
-  const username = `${expiry}:nicemeet`;
-  const servers = [{ urls: ['stun:stun.l.google.com:19302'] }];
-  if (TURN_SECRET) {
-    const credential = require('crypto').createHmac('sha1', TURN_SECRET).update(username).digest('base64');
-    servers.push({
-      urls: ['turn:49.212.179.11:3478'],
-      username,
-      credential
-    });
-  }
-  res.json({ iceServers: servers });
-});
-
 app.get('/api/bni-sso-token', requireAuth, (req, res) => {
   const user = db.prepare('SELECT name, email FROM users WHERE id=?').get(req.session.userId);
   if (!user) return res.status(401).json({ error: 'unauthorized' });
@@ -881,6 +768,7 @@ app.post('/api/stripe/checkout', requireAuth, async (req, res) => {
       payment_method_types: ['card'],
       line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
       mode: 'subscription',
+      subscription_data: { trial_period_days: 30 },
       payment_method_collection: 'always',
       success_url: 'https://meet.gaiaarts.org/booking/dashboard?plan=success',
       cancel_url: 'https://meet.gaiaarts.org/booking/dashboard',
@@ -1202,16 +1090,11 @@ const FACE_RECORD_TYPES = {
 const BNI_PROMPT = `あなたはBNI（Business Network International）の1-2-1ミーティング専門の記録アシスタントです。
 以下の会話からGAINS情報と紹介機会を抽出してください。
 
-【重要：文字起こしの品質について】
-- 音声認識（Whisper）による自動文字起こしのため、誤認識・ノイズ文字列が含まれる場合があります
-- 「ブーブー」「パップ」「ぬー」などの意味不明な断片は無視し、前後の文脈から会話の意図を読み取ること
-- 多少garbledでも、会話全体から合理的に読み取れる内容は積極的に抽出すること
-
-【守るルール】
-- 会話の文脈・流れから合理的に読み取れる内容を記録すること
-- 明らかに存在しない情報の創作・捏造は絶対にしないこと
-- 会話に一切出てきていない情報は空文字 "" にすること
-- 文字数が極端に少ない（実質30文字未満）か、挨拶のみで会話が全くない場合だけ、summaryに「会話が短すぎるか、1-2-1の内容ではありませんでした」と入れ、他フィールドは全て "" にすること
+【絶対に守るルール】
+- 会話テキストから明確に読み取れた内容だけを記録すること
+- 推測・創作・補完は絶対にしないこと
+- 会話に出てきていない情報は必ず空文字 "" にすること
+- 会話が短すぎる・業務的なやり取りのみ・実質的な1-2-1の内容がない場合は、summaryに「会話が短すぎるか、1-2-1の内容ではありませんでした」と入れ、他フィールドは全て "" にすること
 
 GAINS:
 G - Goals（目標）: ビジネス目標・人生の夢・達成したいこと
@@ -1222,16 +1105,16 @@ S - Skills（スキル）: 専門スキル・資格・得意分野
 
 必ずJSON形式のみで出力すること（他のテキストは一切含めない）:
 {
-  "summary": "1-2-1全体の要約（3-4文）",
+  "summary": "1-2-1全体の要約（3-4文）。内容が不十分なら上記ルール通りに記載",
   "gains": {
-    "goals": "会話から読み取れた目標。なければ空文字",
-    "accomplishments": "会話から読み取れた実績。なければ空文字",
-    "interests": "会話から読み取れた趣味・関心。なければ空文字",
-    "networks": "会話から読み取れた人脈。なければ空文字",
-    "skills": "会話から読み取れたスキル。なければ空文字"
+    "goals": "会話から読み取れた目標のみ。なければ空文字",
+    "accomplishments": "会話から読み取れた実績のみ。なければ空文字",
+    "interests": "会話から読み取れた趣味・関心のみ。なければ空文字",
+    "networks": "会話から読み取れた人脈のみ。なければ空文字",
+    "skills": "会話から読み取れたスキルのみ。なければ空文字"
   },
-  "referral_hints": "会話から読み取れた紹介機会。なければ空文字",
-  "follow_up": "会話から読み取れたフォローアップ。なければ空文字"
+  "referral_hints": "会話から読み取れた紹介機会のみ。なければ空文字",
+  "follow_up": "会話から読み取れたフォローアップのみ。なければ空文字"
 }`;
 
 // ---- ビデオ通話モード専用：記録種別・GPTプロンプト ----
@@ -1710,7 +1593,7 @@ async function transcribeAndSummarize(filepath, filename, roomId) {
   }
 }
 
-app.post('/api/upload-recording', uploadLimiter, requireAuth, upload.single('file'), (req, res) => {
+app.post('/api/upload-recording', uploadLimiter, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const url = createRecordingToken(req.file.filename);
   const roomId = typeof req.body.roomId === 'string' ? req.body.roomId.slice(0, 128) : '';
@@ -1776,7 +1659,7 @@ const uploadFileMiddleware = multer({
   fileFilter: (req, file, cb) => cb(null, ALLOWED_CHAT_TYPES.has(file.mimetype))
 });
 
-app.post('/api/upload-file', uploadLimiter, requireAuth, uploadFileMiddleware.single('file'), (req, res) => {
+app.post('/api/upload-file', uploadLimiter, uploadFileMiddleware.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
   const url = '/uploads/' + req.file.filename;
   const origName = req.file.originalname;
@@ -1789,12 +1672,8 @@ app.post('/api/upload-file', uploadLimiter, requireAuth, uploadFileMiddleware.si
   const msgHtml = isImage
     ? `<img src="${safeUrl}" alt="${safeOrigName}" class="chat-img" onclick="window.open('${safeUrl}','_blank')">`
     : `<a href="${safeUrl}" download="${safeOrigName}" target="_blank" class="chat-file-link">📎 ${safeOrigName}</a>`;
-  const senderSocketId = typeof req.body.socketId === 'string' ? req.body.socketId.slice(0, 64) : null;
-  if (roomId && rooms.has(roomId)) {
-    const emit = senderSocketId ? io.to(roomId).except(senderSocketId) : io.to(roomId);
-    emit.emit('chat-file', { from: senderName, message: msgHtml, time });
-  }
-  res.json({ ok: true, url, origName, isImage, msgHtml });
+  if (roomId && rooms.has(roomId)) io.to(roomId).emit('chat-file', { from: senderName, message: msgHtml, time });
+  res.json({ ok: true, url, origName, isImage });
 });
 
 setInterval(() => {
@@ -1823,10 +1702,6 @@ app.post('/api/audio-chunk', uploadLimiter, audioChunkUpload.single('chunk'), (r
   if (!sessionId || !/^[\w-]{5,60}$/.test(sessionId)) {
     fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'invalid sessionId' });
   }
-  const chunkRoomId = typeof req.body.roomId === 'string' ? req.body.roomId : '';
-  if (!chunkRoomId || !rooms.has(chunkRoomId)) {
-    fs.unlink(req.file.path, () => {}); return res.status(403).json({ error: 'invalid room' });
-  }
   const chunkIdx = parseInt(chunkIndex, 10);
   if (isNaN(chunkIdx) || chunkIdx < 0 || chunkIdx > 9999) {
     fs.unlink(req.file.path, () => {}); return res.status(400).json({ error: 'invalid chunkIndex' });
@@ -1851,7 +1726,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
   console.log(`[audio-finalize] session=${sessionId} email=${email} openai=${!!openai}`);
   if (!email || !sessionId || !openai) return;
   if (!isValidEmail(email) || !/^[\w-]{5,60}$/.test(sessionId)) return;
-  const fUser = db.prepare('SELECT plan, plan_expires, facility_id FROM users WHERE email=?').get(email);
+  const fUser = db.prepare('SELECT plan, facility_id FROM users WHERE email=?').get(email);
   const recordMode = safeStr(req.body.recordMode, 20);
   const welfareSystem = safeStr(req.body.welfareSystem, 20);
   const welfareRecordType = safeStr(req.body.welfareRecordType, 50);
@@ -1864,15 +1739,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
   if (recordMode === 'none') { console.log('[audio-finalize] mode=none, skip'); return; }
   let canUseAI = false;
   if (isBniRecord) {
-    if (req.session?.userId || req.session?.bniUserId) {
-      canUseAI = true;
-    } else if (email && bniDb) {
-      try {
-        const bniUser = bniDb.prepare('SELECT id FROM users WHERE email=?').get(email);
-        canUseAI = !!bniUser;
-        if (canUseAI) console.log('[bni-finalize] canUseAI via bniDb email:', email);
-      } catch(e) {}
-    }
+    canUseAI = !!(req.session?.userId || req.session?.bniUserId);
   } else if (fUser?.facility_id) {
     const fac = db.prepare('SELECT * FROM nm_facilities WHERE id=?').get(fUser.facility_id);
     const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(fUser.facility_id)?.cnt || 0;
@@ -1886,7 +1753,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
       console.log('[audio-finalize] facility expired:', email);
     }
   } else {
-    canUseAI = isActivePlan(fUser);
+    canUseAI = fUser?.plan === 'paid';
   }
   if (!canUseAI) {
     console.log('[audio-finalize] no AI access for:', email);
@@ -1994,51 +1861,15 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
     }
 
     const welfarePrompt = isWelfareRecord ? (VIDEO_CALL_PROMPTS[welfareSystem]?.[welfareRecordType] || WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null) : null;
-
-    // BNIモード: 記録者自身のGAINSプロフィールを読み込み（コンタクトのGAINSと混同しないため）
-    let hostGainsSection = '';
-    if (isBniRecord) {
-      // BNI Managerのprofile_dataを優先、なければmeet DBのown_gainsを使用
-      let hostGains = {};
-      try {
-        const bniUser = bniDb.prepare('SELECT profile_data FROM users WHERE email=? OR username=?').get(email, email);
-        const pd = JSON.parse(bniUser?.profile_data || '{}');
-        // BNI Managerのマイプロフィール GAINS（gains_* キー）
-        if (pd.gains_goals || pd.gains_accomplishments || pd.gains_interests || pd.gains_networks || pd.gains_skills) {
-          hostGains = { goals: pd.gains_goals, accomplishments: pd.gains_accomplishments, interests: pd.gains_interests, networks: pd.gains_networks, skills: pd.gains_skills };
-        }
-      } catch(e) {}
-      // フォールバック: meet DBのown_gains
-      if (!Object.values(hostGains).some(v => v && v.trim())) {
-        try {
-          const hostUser = db.prepare('SELECT own_gains FROM users WHERE email=?').get(email);
-          hostGains = JSON.parse(hostUser?.own_gains || '{}');
-        } catch(e) {}
-      }
-      const hasHostGains = Object.values(hostGains).some(v => v && v.trim());
-      if (hasHostGains) {
-        hostGainsSection = `\n\n【記録者（${staffName || 'BNIメンバー'}）自身のGAINS（参考情報・GAINSに含めないこと）】\n`
-          + (hostGains.goals ? `G-Goals: ${hostGains.goals}\n` : '')
-          + (hostGains.accomplishments ? `A-Accomplishments: ${hostGains.accomplishments}\n` : '')
-          + (hostGains.interests ? `I-Interests: ${hostGains.interests}\n` : '')
-          + (hostGains.networks ? `N-Networks: ${hostGains.networks}\n` : '')
-          + (hostGains.skills ? `S-Skills: ${hostGains.skills}\n` : '')
-          + `上記は記録者自身の情報です。コンタクト（${memberName || '相手方'}）のGAINSとして記録しないこと。`;
-        console.log('[bni-finalize] host gains loaded from BNI Manager profile');
-      }
-    }
-
     const systemPrompt = isBniRecord
-      ? BNI_PROMPT + (staffName || memberName
-          ? `\n\n【参加者情報】\nBNIメンバー（記録者・自分）: ${staffName || '不明'}\nコンタクト（相手方・GAINSの対象）: ${memberName || '不明'}\n\n【重要】GAINSはコンタクト（${memberName || '相手方'}）の情報のみを抽出してください。BNIメンバー自身の情報はGAINSに含めないこと。話者A・話者Bのどちらがコンタクトかは、職業や自己紹介の文脈から判断してください。`
-          : '') + hostGainsSection
+      ? BNI_PROMPT
       : welfarePrompt
         ? `${welfarePrompt}
 
 対象者: ${memberName || '（記載なし）'} / 担当: ${staffName || '（記載なし）'}`
         : '以下はビデオ会議の文字起こしです（話者A・話者Bは異なる参加者です）。日本語で要約してください。箇条書きで主要な議題、決定事項、アクションアイテムをまとめてください。';
     const completion = await openai.chat.completions.create({
-      model: isBniRecord ? 'gpt-4o' : 'gpt-4o-mini',
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: transcript }
@@ -2065,17 +1896,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
 // ================================================================
 async function handleBniFinalize({ email, sessionId, staffName, memberName, bniContactId, durMin, transcript, summary }) {
   let bniData = { summary, gains: {}, referral_hints: '', follow_up: '' };
-  try {
-    const cleaned = summary.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-    bniData = Object.assign(bniData, JSON.parse(cleaned));
-    console.log('[bni-finalize] JSON parse OK, gains keys:', Object.keys(bniData.gains || {}));
-  } catch(e) { console.warn('[bni-finalize] JSON parse failed:', e.message, '| raw:', summary.slice(0, 100)); }
-
-  // GPTが「会話なし・ハルシネーションのみ」と判定した場合はBNI書き込みもメールも送らない
-  if ((bniData.summary || '').includes('会話が短すぎるか')) {
-    console.log('[bni-finalize] GPT判定: 会話なし or ハルシネーションのみ → スキップ');
-    return;
-  }
+  try { bniData = Object.assign(bniData, JSON.parse(summary)); } catch(e) {}
 
   const bniWebhookUrl = process.env.BNI_WEBHOOK_URL || 'http://localhost:8300/api/nicemeet-webhook';
   const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
@@ -2085,7 +1906,6 @@ async function handleBniFinalize({ email, sessionId, staffName, memberName, bniC
       headers: { 'Content-Type': 'application/json', 'x-nicemeet-secret': bniSecret },
       body: JSON.stringify({
         bni_user: staffName,
-        bni_email: email,
         contact_id: bniContactId,
         contact_name: memberName,
         duration_minutes: durMin,
@@ -2360,14 +2180,7 @@ app.get('/record', (req, res) => res.sendFile(path.join(__dirname, 'public', 're
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/booking/dashboard', (req, res) => {
   if (!req.session.userId) return res.redirect('/auth/google');
-  const u = db.prepare('SELECT ui_mode FROM users WHERE id=?').get(req.session.userId);
-  const mode = req.session.uiModeOverride || (u && u.ui_mode) || 'simple';
-  if (mode === 'welfare') return res.redirect('/booking/welfare');
   res.sendFile(path.join(__dirname, 'public', 'booking', 'dashboard.html'));
-});
-app.get('/booking/welfare', (req, res) => {
-  if (!req.session.userId) return res.redirect('/auth/google');
-  res.sendFile(path.join(__dirname, 'public', 'booking', 'welfare.html'));
 });
 app.get('/', (req, res) => res.redirect('/bni.html'));
 app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'index.html')));
@@ -2376,8 +2189,6 @@ app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'b
 
 // 施設登録（トライアル開始）
 app.post('/api/facility/register', requireAuth, async (req, res) => {
-  if (Buffer.byteLength(JSON.stringify(req.body), 'utf8') > 20000)
-    return res.status(400).json({ error: 'リクエストが大きすぎます（20KB以内）' });
   const { facility_name, contact_name, phone, locations } = req.body;
   const cleanFacName = safeStr(facility_name, 100);
   const cleanContact = safeStr(contact_name, 50);
@@ -2432,8 +2243,6 @@ app.get('/api/facility/status', requireAuth, (req, res) => {
 
 // 拠点追加
 app.post('/api/facility/location', requireAuth, (req, res) => {
-  if (Buffer.byteLength(JSON.stringify(req.body), 'utf8') > 2000)
-    return res.status(400).json({ error: 'リクエストが大きすぎます（2KB以内）' });
   const u = db.prepare('SELECT facility_id FROM users WHERE id=?').get(req.session.userId);
   if (!u?.facility_id) return res.status(400).json({ error: 'no facility' });
   const cleanLocName = safeStr(req.body.name, 100);
@@ -2460,8 +2269,6 @@ app.delete('/api/facility/location/:id', requireAuth, (req, res) => {
 
 // 有料申込フォーム
 app.post('/api/facility/inquiry', requireAuth, async (req, res) => {
-  if (Buffer.byteLength(JSON.stringify(req.body), 'utf8') > 20000)
-    return res.status(400).json({ error: 'リクエストが大きすぎます（20KB以内）' });
   const u = db.prepare('SELECT email, facility_id FROM users WHERE id=?').get(req.session.userId);
   const cleanMsg = safeStr(req.body.message, 2000);
   const fac = u?.facility_id ? db.prepare('SELECT name FROM nm_facilities WHERE id=?').get(u.facility_id) : null;
@@ -2545,7 +2352,7 @@ const faceRecordUpload = multer({
 app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no audio file' });
   if (!openai) return res.status(503).json({ error: 'AI unavailable' });
-  const u = db.prepare('SELECT plan, plan_expires, facility_id FROM users WHERE id=?').get(req.session.userId);
+  const u = db.prepare('SELECT plan, facility_id FROM users WHERE id=?').get(req.session.userId);
   const memberName = safeStr(req.body.memberName, 100);
   const staffName = safeStr(req.body.staffName, 100);
   const welfareSystem = safeStr(req.body.welfareSystem, 20);
@@ -2567,7 +2374,7 @@ app.post('/api/face-record/upload', requireAuth, faceRecordUpload.single('audio'
       canUseAI = usedMin < limitMin;
     }
   } else {
-    canUseAI = isActivePlan(u);
+    canUseAI = u?.plan === 'paid';
   }
   if (!canUseAI) {
     fs.unlink(req.file.path, () => {});
@@ -2745,218 +2552,12 @@ app.patch('/api/admin/confirm-draft/:id', express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-
-// ─────────────────────────────────────────────────────────────────
-// ── 施設管理 Admin API ────────────────────────────────────────────
-
-// ── 施設プラン 公開問い合わせ ────────────────────────────────────
-app.post('/api/public/facility-inquiry', apiLimiter, express.json({ limit: '10kb' }), async (req, res) => {
-  const { name, email, facility_name, phone, location_count, message } = req.body;
-  if (!name || !email || !facility_name) return res.status(400).json({ error: '必須項目を入力してください' });
-  if (!isValidEmail(email)) return res.status(400).json({ error: '無効なメールアドレスです' });
-  const lc = Math.min(Math.max(parseInt(location_count) || 1, 1), 99);
-  const unit = lc === 1 ? 2980 : lc <= 3 ? 2480 : 1980;
-  await sendMail(process.env.GMAIL_USER || '',
-    `【NiceMeet施設プラン】お申込み: ${safeStr(facility_name, 100)}`,
-    `施設名: ${safeStr(facility_name, 100)}\n担当者: ${safeStr(name, 50)}\nメール: ${email}\n電話: ${safeStr(phone||'',20)}\n拠点数: ${lc}拠点\n月額目安: ¥${(lc * unit).toLocaleString()}\nメッセージ: ${safeStr(message||'',500)}\n申込日時: ${new Date().toLocaleString('ja-JP')}`
-  );
-  console.log(`[facility-inquiry] ${email} ${safeStr(facility_name,100)} ${lc}拠点`);
-  res.json({ ok: true });
-});
-
-app.get('/api/admin/summary', (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const facs = db.prepare('SELECT * FROM nm_facilities').all();
-  const counts = { trial: 0, active: 0, custom: 0, expired: 0, total: facs.length };
-  for (const f of facs) {
-    const s = getFacilityStatus(f);
-    if (s in counts) counts[s]++; else counts.expired++;
-  }
-  const nmUsers = db.prepare("SELECT COUNT(*) as cnt FROM users WHERE ui_mode != 'welfare'").get().cnt;
-  res.json({ facilities: counts, nmUsers });
-});
-
-app.get('/api/admin/facilities', (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const facs = db.prepare('SELECT * FROM nm_facilities ORDER BY id DESC').all();
-  const result = facs.map(f => {
-    const user = db.prepare('SELECT last_login_at FROM users WHERE facility_id=? ORDER BY id LIMIT 1').get(f.id);
-    const lc   = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(f.id)?.cnt || 0;
-    const status   = getFacilityStatus(f);
-    const daysLeft = getTrialDaysLeft(f);
-    const uid = db.prepare('SELECT id FROM users WHERE facility_id=? ORDER BY id LIMIT 1').get(f.id);
-    return {
-      id: f.id, name: f.name, admin_email: f.admin_email, contact_name: f.contact_name,
-      status, daysLeft, locationCount: lc,
-      usedMinThisMonth: Math.round(getMonthlyUsageMinutes(f.id)),
-      admin_notes: f.admin_notes || '',
-      last_login_at: user?.last_login_at || null,
-      trial_started_at: f.trial_started_at,
-      user_id: uid?.id || null
-    };
-  });
-  res.json({ facilities: result });
-});
-
-app.patch('/api/admin/facility/:id', express.json({ limit: '10kb' }), (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'invalid id' });
-  if (!db.prepare('SELECT id FROM nm_facilities WHERE id=?').get(id)) return res.status(404).json({ error: 'not found' });
-  const { status, notes } = req.body;
-  if (status !== undefined) {
-    if (!['trial', 'active', 'custom', 'expired'].includes(status)) return res.status(400).json({ error: 'invalid status' });
-    db.prepare('UPDATE nm_facilities SET trial_status=? WHERE id=?').run(status, id);
-    console.log(`[admin] facility ${id} status -> ${status}`);
-  }
-  if (notes !== undefined) db.prepare('UPDATE nm_facilities SET admin_notes=? WHERE id=?').run(String(notes).slice(0, 1000), id);
-  res.json({ ok: true });
-});
-
-app.post('/api/admin/facility', express.json({ limit: '10kb' }), async (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const { name, email, contact_name, phone, status, notes, location_name } = req.body;
-  if (!name || !email) return res.status(400).json({ error: '施設名とメールは必須です' });
-  if (!isValidEmail(email)) return res.status(400).json({ error: '無効なメールアドレスです' });
-  const cleanName   = safeStr(name, 100);
-  const cleanEmail  = email.toLowerCase().trim();
-  const cleanStatus = ['trial', 'active', 'custom'].includes(status) ? status : 'trial';
-  if (db.prepare('SELECT id FROM users WHERE email=?').get(cleanEmail))
-    return res.status(409).json({ error: 'このメールアドレスは既に登録されています' });
-  const fac = db.prepare(
-    "INSERT INTO nm_facilities (name, admin_email, contact_name, phone, admin_notes, trial_status, trial_started_at) VALUES (?,?,?,?,?,?,datetime('now'))"
-  ).run(cleanName, cleanEmail, safeStr(contact_name||'',50), safeStr(phone||'',20), safeStr(notes||'',1000), cleanStatus);
-  const facilityId = fac.lastInsertRowid;
-  const cleanLoc = safeStr(location_name || '本事業所', 100);
-  db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(facilityId, cleanLoc);
-  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(facilityId, 1, '管理者作成');
-  const pw = crypto.randomBytes(8).toString('hex');
-  const pwHash = await hashPassword(pw);
-  let slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20) || 'facility';
-  if (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = slug + facilityId;
-  db.prepare(
-    "INSERT INTO users (name, email, password_hash, plan, ui_mode, facility_id, slug, registered_at) VALUES (?,?,?,'free','welfare',?,?,datetime('now'))"
-  ).run(cleanName, cleanEmail, pwHash, facilityId, slug);
-  console.log(`[admin] created facility: ${cleanName} <${cleanEmail}> status=${cleanStatus}`);
-  res.json({ ok: true, facilityId, email: cleanEmail, password: pw, message: `施設「${cleanName}」を作成しました` });
-});
-
-// 管理者ワンクリックログイン（トークン発行→セッション作成）
-const adminLoginTokens = new Map();
-setInterval(() => {
-  const now = Date.now();
-  for (const [t, v] of adminLoginTokens) { if (v.expires < now) adminLoginTokens.delete(t); }
-}, 60 * 60 * 1000);
-
-app.get('/api/admin/login-link/:userId', async (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const userId = parseInt(req.params.userId, 10);
-  const user = db.prepare('SELECT id, slug, facility_id FROM users WHERE id=?').get(userId);
-  if (!user || !user.facility_id) return res.status(404).json({ error: 'facility user not found' });
-  const token = crypto.randomBytes(24).toString('hex');
-  adminLoginTokens.set(token, { userId, expires: Date.now() + 30 * 60 * 1000 }); // 30分有効
-  res.json({ url: '/auth/admin-login?t=' + token });
-});
-
-app.get('/auth/admin-login', async (req, res) => {
-  const token = String(req.query.t || '').replace(/[^a-f0-9]/g, '');
-  const entry = adminLoginTokens.get(token);
-  if (!entry || entry.expires < Date.now()) { adminLoginTokens.delete(token); return res.redirect('/booking/'); }
-  adminLoginTokens.delete(token);
-  const user = db.prepare('SELECT id, slug, facility_id FROM users WHERE id=?').get(entry.userId);
-  if (!user) return res.redirect('/booking/');
-  await regenerateSession(req);
-  req.session.userId = user.id;
-  req.session.slug = user.slug;
-  if (user.facility_id) req.session.uiModeOverride = 'welfare';
-  req.session.save(err => res.redirect(err ? '/booking/' : '/booking/dashboard'));
-});
-
-app.get('/api/admin/nm-users', (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const users = db.prepare(
-    "SELECT id, name, email, plan, plan_expires, ui_mode, registered_at, last_login_at FROM users WHERE ui_mode != 'welfare' ORDER BY id DESC LIMIT 300"
-  ).all();
-  res.json({ users });
-});
-
-app.patch('/api/admin/user/:id/plan', express.json({ limit: '2kb' }), (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'invalid id' });
-  const user = db.prepare("SELECT id, email FROM users WHERE id=? AND ui_mode != 'welfare'").get(id);
-  if (!user) return res.status(404).json({ error: 'not found' });
-  const { plan, plan_expires } = req.body;
-  if (!['free', 'trial', 'paid'].includes(plan)) return res.status(400).json({ error: 'invalid plan' });
-  if (plan === 'trial') {
-    const exp = plan_expires ? String(plan_expires).slice(0, 10) : null;
-    if (!exp || isNaN(new Date(exp).getTime())) return res.status(400).json({ error: 'trial には plan_expires (YYYY-MM-DD) が必要です' });
-    db.prepare("UPDATE users SET plan='trial', plan_expires=? WHERE id=?").run(exp + ' 00:00:00', id);
-  } else {
-    db.prepare('UPDATE users SET plan=?, plan_expires=NULL WHERE id=?').run(plan, id);
-  }
-  console.log(`[admin] user ${id} (${user.email}) plan -> ${plan}${plan_expires ? ' until ' + plan_expires : ''}`);
-  res.json({ ok: true });
-});
-
-app.patch('/api/admin/user/:id/mode', express.json({ limit: '1kb' }), (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'invalid id' });
-  const { mode } = req.body;
-  if (!['simple', 'welfare'].includes(mode)) return res.status(400).json({ error: 'invalid mode' });
-  const user = db.prepare('SELECT id, email FROM users WHERE id=?').get(id);
-  if (!user) return res.status(404).json({ error: 'not found' });
-  db.prepare('UPDATE users SET ui_mode=? WHERE id=?').run(mode, id);
-  console.log(`[admin] user ${id} (${user.email}) mode -> ${mode}`);
-  res.json({ ok: true });
-});
-
-app.delete('/api/admin/user/:id', (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'invalid id' });
-  const user = db.prepare('SELECT id, email, facility_id FROM users WHERE id=?').get(id);
-  if (!user) return res.status(404).json({ error: 'not found' });
-  if (user.facility_id) return res.status(400).json({ error: '施設ユーザーは施設削除から行ってください' });
-  const meetingCount = db.prepare('SELECT COUNT(*) as cnt FROM nm_meetings WHERE host_email=?').get(user.email)?.cnt || 0;
-  if (meetingCount > 0 && !req.query.force) {
-    return res.status(409).json({ error: `${meetingCount}件の会議記録があります`, meetingCount, requireForce: true });
-  }
-  db.prepare('DELETE FROM users WHERE id=?').run(id);
-  console.log(`[admin] deleted user id=${id} email=${user.email}`);
-  res.json({ ok: true, email: user.email });
-});
-
 // ─────────────────────────────────────────────────────────────────
 // ---- Socket.io (video chat) ----
 const rooms = new Map();
 const breakouts = new Map();
-// プロトタイプ汚染防止: Socket.IO 受信データから危険キーを除去
-function sanitizeSocketData(data) {
-  if (data === null || typeof data !== 'object') return data;
-  if (Array.isArray(data)) return data.map(sanitizeSocketData);
-  const DANGEROUS = new Set(['__proto__', 'constructor', 'prototype']);
-  const out = {};
-  for (const key of Object.keys(data)) {
-    if (DANGEROUS.has(key)) continue;
-    out[key] = sanitizeSocketData(data[key]);
-  }
-  return out;
-}
-
 io.on('connection', (socket) => {
-  // 全イベントの引数をサニタイズ（プロトタイプ汚染対策）
-  socket.use(([event, ...args], next) => {
-    try {
-      const sanitized = args.map(sanitizeSocketData);
-      args.splice(0, args.length, ...sanitized);
-    } catch (e) {
-      console.warn('[socket] sanitize error:', e.message);
-    }
-    next();
-  });
-  socket.on('join-room', ({ roomId, password, userName, transcribeMode, system, waitingRoom }) => {
+  socket.on('join-room', ({ roomId, password, userName, transcribeMode, system }) => {
     if (typeof roomId !== 'string' || roomId.length > 128 || typeof userName !== 'string') return;
     const safeRoomId = roomId.trim();
     const safeUserName = userName.trim().slice(0, 50);
@@ -2973,55 +2574,26 @@ io.on('connection', (socket) => {
       let hostEmail = null;
       let hostUiMode = 'simple';
       if (userId) {
-        const hu = db.prepare('SELECT plan, plan_expires, facility_id, email, ui_mode FROM users WHERE id=?').get(userId);
-        hostPlan = (hu && isActivePlan(hu)) ? 'paid' : 'free';
+        const hu = db.prepare('SELECT plan, facility_id, email, ui_mode FROM users WHERE id=?').get(userId);
+        hostPlan = hu?.plan || 'free';
         hostFacilityId = hu?.facility_id || null;
         hostEmail = hu?.email || null;
         hostUiMode = hu?.ui_mode || 'simple';
       }
-      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: waitingRoom === true, waitingList: new Map(), screenShareAllowed: false, system: system || '' };
+      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode };
       rooms.set(safeRoomId, newRoom);
-      // 時間制限なし（warnTimer / endTimer 無効化）
+      if (hostPlan === 'free') {
+        newRoom.warnTimer = setTimeout(() => { io.to(safeRoomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
+        newRoom.endTimer = setTimeout(() => { io.to(safeRoomId).emit('time-limit', {}); }, 45 * 60 * 1000);
+      }
     }
     const cur = rooms.get(safeRoomId);
     for (const [id] of cur.users) {
       if (!io.sockets.sockets.get(id)) cur.users.delete(id);
     }
-    // ホストが切断済みの場合の復帰処理
+    // ホストが切断済みなら参加者をホストにする（リフレッシュ時の競合対策）
     if (!io.sockets.sockets.get(cur.hostId) || !cur.users.has(cur.hostId)) {
-      // ログイン済み: 元ホストと同じアカウントの時のみ昇格
-      // 匿名: 部屋がホストなしのままなら昇格（既存の挙動を維持）
-      const joiningUserId = socket.request.session?.userId;
-      const joiningEmail = joiningUserId
-        ? db.prepare('SELECT email FROM users WHERE id=?').get(joiningUserId)?.email
-        : null;
-      if (!cur.hostEmail || (joiningEmail && joiningEmail === cur.hostEmail)) {
-        cur.hostId = socket.id;
-      }
-    } else if (cur.system === 'bni' && !cur.hostEmail) {
-      // BNIモード: 現ホストが匿名（hostEmailなし）のとき、
-      // ログイン済みユーザーが入室したらホストを引き継ぐ
-      const joiningUserId2 = socket.request.session?.userId;
-      if (joiningUserId2) {
-        const hu2 = db.prepare('SELECT email FROM users WHERE id=?').get(joiningUserId2);
-        const oldHostId = cur.hostId;
-        cur.hostId = socket.id;
-        cur.hostEmail = hu2?.email || null;
-        console.log('[join-room] BNI: logged-in user took host from anonymous, oldHost=', oldHostId);
-        if (oldHostId && io.sockets.sockets.get(oldHostId)) {
-          io.to(oldHostId).emit('host-revoked', {});
-        }
-      }
-    }
-    // 待機室チェック
-    if (cur.waitingRoom && cur.hostId !== socket.id) {
-      if (!cur.waitingList) cur.waitingList = new Map();
-      cur.waitingList.set(socket.id, { name: safeUserName });
-      socket.waitingRoomId = safeRoomId;
-      socket.emit('in-waiting-room', { roomId: safeRoomId });
-      const targets = [cur.hostId, ...cur.coHosts].filter(Boolean);
-      targets.forEach(tid => { if (io.sockets.sockets.get(tid)) io.to(tid).emit('waiting-participant', { id: socket.id, name: safeUserName }); });
-      return;
+      cur.hostId = socket.id;
     }
     cur.users.set(socket.id, { name: safeUserName });
     socket.join(safeRoomId);
@@ -3029,7 +2601,7 @@ io.on('connection', (socket) => {
     socket.mainRoomId = null;
     socket.userName = safeUserName;
     const existing = [...cur.users.entries()].filter(([id]) => id !== socket.id).map(([id, d]) => ({ id, name: d.name }));
-    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main', isFreeRoom: cur.hostPlan === 'free', roomStartedAt: cur.startedAt || Date.now(), hostUiMode: cur.hostUiMode || 'simple', screenShareAllowed: cur.screenShareAllowed || false });
+    socket.emit('room-joined', { existingUsers: existing, transcribeMode: cur.transcribeMode, isHost: cur.hostId === socket.id, isCoHost: cur.coHosts.has(socket.id), source: 'main', isFreeRoom: cur.hostPlan === 'free', roomStartedAt: cur.startedAt || Date.now(), hostUiMode: cur.hostUiMode || 'simple' });
     socket.to(safeRoomId).emit('user-joined', { id: socket.id, name: safeUserName });
   });
   function isPeerInRoom(to) {
@@ -3047,65 +2619,7 @@ io.on('connection', (socket) => {
     console.log('[chat] from=' + socket.userName + ' room=' + socket.roomId + ' len=' + message.length);
     socket.to(socket.roomId).emit('chat-message', { from: socket.userName, message, time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) });
   });
-  socket.on('set-waiting-room', ({ enabled }) => {
-    if (typeof enabled !== 'boolean') return;
-    const room = rooms.get(socket.roomId);
-    if (!room || room.hostId !== socket.id) return;
-    room.waitingRoom = enabled;
-    socket.emit('waiting-room-changed', { enabled });
-  });
-
-  socket.on('admit-participant', ({ participantId }) => {
-    if (typeof participantId !== 'string' || participantId.length > 64) return;
-    const room = rooms.get(socket.roomId);
-    if (!room || (room.hostId !== socket.id && !room.coHosts.has(socket.id))) return;
-    if (!room.waitingList || !room.waitingList.has(participantId)) return;
-    const waiting = room.waitingList.get(participantId);
-    const pSocket = io.sockets.sockets.get(participantId);
-    room.waitingList.delete(participantId);
-    if (!pSocket) return;
-    const safeRoomId = socket.roomId;
-    room.users.set(participantId, { name: waiting.name });
-    pSocket.join(safeRoomId);
-    pSocket.roomId = safeRoomId;
-    pSocket.mainRoomId = null;
-    pSocket.userName = waiting.name;
-    delete pSocket.waitingRoomId;
-    const existing = [...room.users.entries()].filter(([id]) => id !== participantId).map(([id, d]) => ({ id, name: d.name }));
-    pSocket.emit('admitted', { existingUsers: existing, transcribeMode: room.transcribeMode, isHost: false, isCoHost: room.coHosts.has(participantId), isFreeRoom: room.hostPlan === 'free', roomStartedAt: room.startedAt || Date.now(), hostUiMode: room.hostUiMode || 'simple', screenShareAllowed: room.screenShareAllowed || false });
-    pSocket.to(safeRoomId).emit('user-joined', { id: participantId, name: waiting.name });
-    socket.emit('participant-admitted', { id: participantId });
-  });
-
-  socket.on('reject-participant', ({ participantId }) => {
-    if (typeof participantId !== 'string' || participantId.length > 64) return;
-    const room = rooms.get(socket.roomId);
-    if (!room || (room.hostId !== socket.id && !room.coHosts.has(socket.id))) return;
-    if (!room.waitingList || !room.waitingList.has(participantId)) return;
-    room.waitingList.delete(participantId);
-    io.to(participantId).emit('rejected');
-    socket.emit('participant-rejected', { id: participantId });
-  });
-
-  socket.on('set-screen-share-permission', ({ enabled }) => {
-    if (typeof enabled !== 'boolean') return;
-    const room = rooms.get(socket.roomId);
-    if (!room || (room.hostId !== socket.id && !room.coHosts.has(socket.id))) return;
-    room.screenShareAllowed = enabled;
-    io.to(socket.roomId).emit('screen-share-permission-changed', { enabled });
-  });
-
   socket.on('disconnect', () => {
-    if (socket.waitingRoomId) {
-      const wr = rooms.get(socket.waitingRoomId);
-      if (wr && wr.waitingList) {
-        wr.waitingList.delete(socket.id);
-        [wr.hostId, ...wr.coHosts].filter(Boolean).forEach(tid => {
-          if (io.sockets.sockets.get(tid)) io.to(tid).emit('waiting-participant-left', { id: socket.id });
-        });
-      }
-      return;
-    }
     if (!socket.roomId) return;
     const curRoomId = socket.roomId;
     const room = rooms.get(curRoomId);
@@ -3113,8 +2627,7 @@ io.on('connection', (socket) => {
       room.users.delete(socket.id);
       const mainId = socket.mainRoomId || curRoomId;
       const mainRoom = rooms.get(mainId);
-      // BNIモード: ホスト退出時の自動昇格なし（明示的な transfer-host のみ）
-      if (mainRoom && mainRoom.hostId === socket.id && mainRoom.users.size > 0 && mainRoom.system !== 'bni') {
+      if (mainRoom && mainRoom.hostId === socket.id && mainRoom.users.size > 0) {
         let newHostId = null;
         for (const cid of mainRoom.coHosts) { if (mainRoom.users.has(cid)) { newHostId = cid; break; } }
         if (!newHostId) newHostId = [...mainRoom.users.keys()][0];
@@ -3126,9 +2639,6 @@ io.on('connection', (socket) => {
         }
       }
       if (room.users.size === 0) {
-        if (room.waitingList && room.waitingList.size > 0) {
-          room.waitingList.forEach((_, wid) => io.to(wid).emit('rejected'));
-        }
         if (room.warnTimer) clearTimeout(room.warnTimer);
         if (room.endTimer) clearTimeout(room.endTimer);
         if (room.facilityId && room.startedAt) {
@@ -3184,17 +2694,6 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('transcribe-mode-changed', { mode });
   });
 
-  socket.on('transfer-host', ({ targetId }) => {
-    if (typeof targetId !== 'string') return;
-    const room = rooms.get(socket.roomId);
-    if (!room || room.hostId !== socket.id) return;
-    if (!room.users.has(targetId)) return;
-    room.hostId = targetId;
-    room.coHosts.delete(targetId);
-    io.to(targetId).emit('host-assigned', {});
-    io.to(socket.roomId).emit('host-changed', { newHostId: targetId, newHostName: room.users.get(targetId)?.name });
-    console.log('[transfer-host] from', socket.id, 'to', targetId);
-  });
   socket.on('grant-cohost', ({ targetId }) => {
     if (typeof targetId !== 'string' || targetId.length > 64) return;
     const mainId = socket.mainRoomId || socket.roomId;
@@ -3312,6 +2811,379 @@ io.on('connection', (socket) => {
 
 });
 
+// ============================================================
+// BNI Manager API（1to1Manager）
+// セッション: req.session.bniUserId でBNIユーザーを識別
+// ============================================================
+// BNI パスワードユーティリティ
+// 新規: PBKDF2(SHA256, 100000回) — pw_hash = "pbkdf2$100000$<hex>"
+// 既存: SHA256+salt (レガシー) — ログイン成功時に自動アップグレード
+const BNI_PBKDF2_ITER = 100000;
+const BNI_PBKDF2_KEYLEN = 32;
+function bniBuildHash(password, salt) {
+  const key = crypto.pbkdf2Sync(password, salt, BNI_PBKDF2_ITER, BNI_PBKDF2_KEYLEN, 'sha256').toString('hex');
+  return `pbkdf2$${BNI_PBKDF2_ITER}$${key}`;
+}
+function bniMakePassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return { hash: bniBuildHash(password, salt), salt };
+}
+const bcryptCompat = {
+  verify: (plain, hash, salt) => {
+    if (!hash || !salt) return false;
+    if (hash.startsWith('pbkdf2$')) {
+      const parts = hash.split('$');
+      if (parts.length !== 3) return false;
+      const iter = parseInt(parts[1], 10);
+      if (!Number.isInteger(iter) || iter < 1 || iter > 2000000) return false;
+      const expected = crypto.pbkdf2Sync(plain, salt, iter, BNI_PBKDF2_KEYLEN, 'sha256').toString('hex');
+      const a = Buffer.from(parts[2].padEnd(64, '0'), 'hex');
+      const b = Buffer.from(expected, 'hex');
+      return a.length === b.length && crypto.timingSafeEqual(a, b) && parts[2].length === expected.length;
+    }
+    // レガシー SHA256 検証（timing-safe）
+    const expected = crypto.createHash('sha256').update(plain + salt).digest('hex');
+    if (hash.length !== expected.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(expected, 'hex'));
+  }
+};
+
+function bniAuth(req, res, next) {
+  if (!req.session.bniUserId) return res.status(401).json({ error: 'unauthorized' });
+  next();
+}
+
+// BNI静的ファイル（/bni/ 以下）
+app.get('/bni/lp', (req, res) => res.sendFile(path.join(__dirname, 'public', 'bni', 'lp.html')));
+app.get('/bni/lp.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'bni', 'lp.html')));
+app.use('/bni', express.static(path.join(__dirname, 'public', 'bni')));
+
+// --- 認証 ---
+app.post('/bni/api/auth/login', authLimiter, express.json(), async (req, res) => {
+  const { email, password } = req.body;
+  if (!isValidEmail(email) || typeof password !== 'string') return res.status(400).json({ error: 'メールアドレスまたはパスワードが違います' });
+  const user = bniDb.prepare('SELECT * FROM users WHERE username=? OR email=?').get(email, email);
+  if (!user) return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
+  if (!bcryptCompat.verify(password, user.pw_hash, user.pw_salt)) {
+    console.warn(`[bni-auth-fail] ip=${(req.ip || '').replace(/[^0-9a-f:.]/gi, '')}`);
+    return res.status(401).json({ error: 'メールアドレスまたはパスワードが違います' });
+  }
+  // レガシーSHA256ハッシュをPBKDF2に自動アップグレード
+  if (!user.pw_hash.startsWith('pbkdf2$')) {
+    const { hash, salt } = bniMakePassword(password);
+    bniDb.prepare('UPDATE users SET pw_hash=?, pw_salt=? WHERE id=?').run(hash, salt, user.id);
+  }
+  await regenerateSession(req);
+  req.session.bniUserId = user.id;
+  res.json({ ok: true, user: { id: user.id, name: user.display_name || user.username, email: user.email, plan: user.plan } });
+});
+
+app.post('/bni/api/auth/register', authLimiter, express.json(), async (req, res) => {
+  const { email, password, name } = req.body;
+  if (!isValidEmail(email)) return res.status(400).json({ error: '有効なメールアドレスを入力してください' });
+  if (typeof password !== 'string' || password.length < 8 || password.length > 128) return res.status(400).json({ error: 'パスワードは8〜128文字で入力してください' });
+  const exists = bniDb.prepare('SELECT id FROM users WHERE username=? OR email=?').get(email, email);
+  if (exists) return res.status(400).json({ error: 'そのメールアドレスは既に登録されています' });
+  const { hash, salt } = bniMakePassword(password);
+  const displayName = safeStr(name || email.split('@')[0], 100);
+  const r = bniDb.prepare('INSERT INTO users (username, display_name, email, pw_hash, pw_salt, auth_type) VALUES (?,?,?,?,?,?)').run(email, displayName, email, hash, salt, 'password');
+  await regenerateSession(req);
+  req.session.bniUserId = r.lastInsertRowid;
+  res.json({ ok: true, user: { id: r.lastInsertRowid, name: displayName, email, plan: 'free' } });
+});
+
+app.get('/bni/api/auth/me', bniAuth, (req, res) => {
+  const user = bniDb.prepare('SELECT id, display_name, username, email, plan, stripe_customer_id, plan_expires FROM users WHERE id=?').get(req.session.bniUserId);
+  if (!user) { req.session.bniUserId = null; return res.status(401).json({ error: 'unauthorized' }); }
+  res.json({ id: user.id, name: user.display_name || user.username, email: user.email, plan: user.plan, stripe_customer_id: user.stripe_customer_id, plan_expires: user.plan_expires });
+});
+
+app.post('/bni/api/auth/logout', (req, res) => {
+  req.session.bniUserId = null;
+  req.session.save(() => res.json({ ok: true }));
+});
+
+app.put('/bni/api/auth/password', express.json(), bniAuth, (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (typeof current_password !== 'string' || typeof new_password !== 'string' || new_password.length < 8 || new_password.length > 128)
+    return res.status(400).json({ error: 'パスワードは8〜128文字で入力してください' });
+  const user = bniDb.prepare('SELECT * FROM users WHERE id=?').get(req.session.bniUserId);
+  if (!bcryptCompat.verify(current_password, user.pw_hash, user.pw_salt)) {
+    return res.status(400).json({ error: '現在のパスワードが違います' });
+  }
+  const { hash, salt } = bniMakePassword(new_password);
+  bniDb.prepare('UPDATE users SET pw_hash=?, pw_salt=? WHERE id=?').run(hash, salt, user.id);
+  res.json({ ok: true });
+});
+
+app.put('/bni/api/auth/email', express.json(), bniAuth, (req, res) => {
+  const { new_email } = req.body;
+  if (!isValidEmail(new_email)) return res.status(400).json({ error: '有効なメールアドレスを入力してください' });
+  const exists = bniDb.prepare('SELECT id FROM users WHERE (username=? OR email=?) AND id!=?').get(new_email, new_email, req.session.bniUserId);
+  if (exists) return res.status(400).json({ error: 'そのメールアドレスは既に使用されています' });
+  bniDb.prepare('UPDATE users SET email=?, username=? WHERE id=?').run(new_email, new_email, req.session.bniUserId);
+  res.json({ ok: true });
+});
+
+// NiceMeetログイン済みユーザーをBNIに自動ログイン（SSO簡略版）
+app.get('/bni/api/sso', async (req, res) => {
+  if (!req.session.userId) return res.redirect('/bni/?login=1');
+  const nmUser = db.prepare('SELECT email, name FROM users WHERE id=?').get(req.session.userId);
+  if (!nmUser?.email) return res.redirect('/bni/?login=1');
+  let bniUser = bniDb.prepare('SELECT id FROM users WHERE email=?').get(nmUser.email);
+  if (!bniUser) {
+    const { hash, salt } = bniMakePassword(crypto.randomBytes(32).toString('hex'));
+    const r = bniDb.prepare('INSERT INTO users (username,display_name,email,pw_hash,pw_salt,auth_type) VALUES (?,?,?,?,?,?)').run(nmUser.email, nmUser.name || nmUser.email.split('@')[0], nmUser.email, hash, salt, 'sso');
+    bniUser = { id: r.lastInsertRowid };
+  }
+  await regenerateSession(req);
+  req.session.bniUserId = bniUser.id;
+  res.redirect('/bni/');
+});
+
+// --- 設定 ---
+app.get('/bni/api/settings', bniAuth, (req, res) => {
+  const rows = bniDb.prepare('SELECT key, value FROM settings').all();
+  const s = {};
+  rows.forEach(r => { try { s[r.key] = JSON.parse(r.value); } catch(e) { s[r.key] = r.value; } });
+  res.json(s);
+});
+
+app.put('/bni/api/settings', express.json(), bniAuth, (req, res) => {
+  const PROTO_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+  const entries = Object.entries(req.body)
+    .filter(([k]) => typeof k === 'string' && k.length > 0 && k.length <= 100 && !PROTO_KEYS.has(k))
+    .slice(0, 200);
+  const upsert = bniDb.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
+  const upAll = bniDb.transaction(pairs => {
+    pairs.forEach(([k,v]) => {
+      const serialized = JSON.stringify(v);
+      if (serialized && serialized.length <= 10000) upsert.run(k, serialized);
+    });
+  });
+  upAll(entries);
+  res.json({ ok: true });
+});
+
+// --- コンタクト ---
+app.get('/bni/api/contacts', bniAuth, (req, res) => {
+  const rows = bniDb.prepare('SELECT * FROM contacts WHERE user_id=? ORDER BY name').all(req.session.bniUserId);
+  res.json(rows);
+});
+
+app.post('/bni/api/contacts', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  const r = bniDb.prepare(`INSERT INTO contacts (user_id,name,reading,company,chapter,category,last_meeting_date,business_description,area,birthplace,residence,spouse,family,previous_jobs,hobbies,experience_years,success_key,selling_points,target_customers,referral_intro,request,goals,accomplishments,interests,networks,skills,introduction) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    req.session.bniUserId, d.name||'', d.reading||'', d.company||'', d.chapter||'', d.category||'', d.last_meeting_date||'', d.business_description||'', d.area||'', d.birthplace||'', d.residence||'', d.spouse||'', d.family||'', d.previous_jobs||'', d.hobbies||'', d.experience_years||'', d.success_key||'', d.selling_points||'', d.target_customers||'', d.referral_intro||'', d.request||'', d.goals||'', d.accomplishments||'', d.interests||'', d.networks||'', d.skills||'', d.introduction||''
+  );
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.get('/bni/api/contacts/:id', bniAuth, (req, res) => {
+  const c = bniDb.prepare('SELECT * FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  res.json(c);
+});
+
+app.put('/bni/api/contacts/:id', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  bniDb.prepare(`UPDATE contacts SET name=?,reading=?,company=?,chapter=?,category=?,last_meeting_date=?,business_description=?,area=?,birthplace=?,residence=?,spouse=?,family=?,previous_jobs=?,hobbies=?,experience_years=?,success_key=?,selling_points=?,target_customers=?,referral_intro=?,request=?,goals=?,accomplishments=?,interests=?,networks=?,skills=?,introduction=?,updated_at=datetime('now','localtime') WHERE id=? AND user_id=?`).run(
+    d.name||'', d.reading||'', d.company||'', d.chapter||'', d.category||'', d.last_meeting_date||'', d.business_description||'', d.area||'', d.birthplace||'', d.residence||'', d.spouse||'', d.family||'', d.previous_jobs||'', d.hobbies||'', d.experience_years||'', d.success_key||'', d.selling_points||'', d.target_customers||'', d.referral_intro||'', d.request||'', d.goals||'', d.accomplishments||'', d.interests||'', d.networks||'', d.skills||'', d.introduction||'', req.params.id, req.session.bniUserId
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/bni/api/contacts/:id', bniAuth, (req, res) => {
+  const result = bniDb.prepare('DELETE FROM contacts WHERE id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  if (result.changes > 0) {
+    bniDb.prepare('DELETE FROM memos WHERE contact_id=?').run(req.params.id);
+    bniDb.prepare('DELETE FROM one_on_ones WHERE contact_id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+    bniDb.prepare('DELETE FROM referrals WHERE contact_id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  }
+  res.json({ ok: true });
+});
+
+// --- 1on1ミーティング ---
+app.get('/bni/api/contacts/:id/one-on-ones', bniAuth, (req, res) => {
+  const rows = bniDb.prepare('SELECT * FROM one_on_ones WHERE contact_id=? AND user_id=? ORDER BY meeting_date DESC').all(req.params.id, req.session.bniUserId);
+  res.json(rows);
+});
+
+app.post('/bni/api/contacts/:id/one-on-ones', express.json(), bniAuth, (req, res) => {
+  const contact = bniDb.prepare('SELECT id FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!contact) return res.status(404).json({ error: 'not found' });
+  const d = req.body;
+  const r = bniDb.prepare('INSERT INTO one_on_ones (user_id,contact_id,contact_name,meeting_date,duration_minutes,transcript,summary,gains_goals,gains_accomplishments,gains_interests,gains_networks,gains_skills,referral_hints,follow_up) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
+    req.session.bniUserId, req.params.id, d.contact_name||'', d.meeting_date||'', d.duration_minutes||0, d.transcript||'', d.summary||'', d.gains_goals||'', d.gains_accomplishments||'', d.gains_interests||'', d.gains_networks||'', d.gains_skills||'', d.referral_hints||'', d.follow_up||''
+  );
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.put('/bni/api/contacts/:cid/one-on-ones/:id', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  bniDb.prepare('UPDATE one_on_ones SET meeting_date=?,duration_minutes=?,transcript=?,summary=?,gains_goals=?,gains_accomplishments=?,gains_interests=?,gains_networks=?,gains_skills=?,referral_hints=?,follow_up=? WHERE id=? AND user_id=?').run(
+    d.meeting_date||'', d.duration_minutes||0, d.transcript||'', d.summary||'', d.gains_goals||'', d.gains_accomplishments||'', d.gains_interests||'', d.gains_networks||'', d.gains_skills||'', d.referral_hints||'', d.follow_up||'', req.params.id, req.session.bniUserId
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/bni/api/contacts/:cid/one-on-ones/:id', bniAuth, (req, res) => {
+  bniDb.prepare('DELETE FROM one_on_ones WHERE id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  res.json({ ok: true });
+});
+
+// --- 紹介 ---
+app.get('/bni/api/contacts/:id/referrals', bniAuth, (req, res) => {
+  const rows = bniDb.prepare('SELECT * FROM referrals WHERE contact_id=? AND user_id=? ORDER BY date DESC').all(req.params.id, req.session.bniUserId);
+  res.json(rows);
+});
+
+app.post('/bni/api/contacts/:id/referrals', express.json(), bniAuth, (req, res) => {
+  const contact = bniDb.prepare('SELECT id FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!contact) return res.status(404).json({ error: 'not found' });
+  const d = req.body;
+  const r = bniDb.prepare('INSERT INTO referrals (user_id,contact_id,direction,date,description,result,amount) VALUES (?,?,?,?,?,?,?)').run(
+    req.session.bniUserId, req.params.id, d.direction||'given', d.date||'', d.description||'', d.result||'進行中', d.amount||0
+  );
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.put('/bni/api/contacts/:cid/referrals/:id', express.json(), bniAuth, (req, res) => {
+  const d = req.body;
+  bniDb.prepare('UPDATE referrals SET direction=?,date=?,description=?,result=?,amount=? WHERE id=? AND user_id=?').run(
+    d.direction||'given', d.date||'', d.description||'', d.result||'進行中', d.amount||0, req.params.id, req.session.bniUserId
+  );
+  res.json({ ok: true });
+});
+
+app.delete('/bni/api/contacts/:cid/referrals/:id', bniAuth, (req, res) => {
+  bniDb.prepare('DELETE FROM referrals WHERE id=? AND user_id=?').run(req.params.id, req.session.bniUserId);
+  res.json({ ok: true });
+});
+
+// --- メモ ---
+app.get('/bni/api/contacts/:id/memos', bniAuth, (req, res) => {
+  const contact = bniDb.prepare('SELECT id FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!contact) return res.status(404).json({ error: 'not found' });
+  const rows = bniDb.prepare('SELECT * FROM memos WHERE contact_id=? ORDER BY created_at DESC').all(req.params.id);
+  res.json(rows);
+});
+
+app.post('/bni/api/contacts/:id/memos', express.json(), bniAuth, (req, res) => {
+  const contact = bniDb.prepare('SELECT id FROM contacts WHERE id=? AND user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!contact) return res.status(404).json({ error: 'not found' });
+  const r = bniDb.prepare('INSERT INTO memos (contact_id,content) VALUES (?,?)').run(req.params.id, safeStr(req.body.content||'', 2000));
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.delete('/bni/api/contacts/:cid/memos/:id', bniAuth, (req, res) => {
+  const memo = bniDb.prepare('SELECT m.id FROM memos m JOIN contacts c ON c.id=m.contact_id WHERE m.id=? AND c.user_id=?').get(req.params.id, req.session.bniUserId);
+  if (!memo) return res.status(404).json({ error: 'not found' });
+  bniDb.prepare('DELETE FROM memos WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// --- Stripe（BNI用）---
+app.post('/bni/api/stripe/checkout', bniAuth, async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: 'Stripe未設定' });
+  const user = bniDb.prepare('SELECT * FROM users WHERE id=?').get(req.session.bniUserId);
+  try {
+    const sessionParams = {
+      mode: 'subscription',
+      payment_method_collection: 'always',
+      line_items: [{ price: process.env.BNI_STRIPE_PRICE_ID || process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      success_url: 'https://gaiaarts.org/bni/?payment=success',
+      cancel_url: 'https://gaiaarts.org/bni/?payment=cancel',
+      subscription_data: { trial_period_days: 30 },
+      customer_email: user.email,
+    };
+    if (user.stripe_customer_id) sessionParams.customer = user.stripe_customer_id;
+    else delete sessionParams.customer_email;
+    const checkoutSession = await stripe.checkout.sessions.create(sessionParams);
+    res.json({ url: checkoutSession.url });
+  } catch(e) {
+    console.error('[bni stripe checkout]', e.message);
+    res.status(500).json({ error: '決済処理に失敗しました' });
+  }
+});
+
+app.post('/bni/api/stripe/portal', bniAuth, async (req, res) => {
+  if (!stripe) return res.status(500).json({ error: 'Stripe未設定' });
+  const user = bniDb.prepare('SELECT stripe_customer_id FROM users WHERE id=?').get(req.session.bniUserId);
+  if (!user?.stripe_customer_id) return res.status(400).json({ error: 'サブスクリプションがありません' });
+  try {
+    const portal = await stripe.billingPortal.sessions.create({ customer: user.stripe_customer_id, return_url: 'https://gaiaarts.org/bni/' });
+    res.json({ url: portal.url });
+  } catch(e) {
+    console.error('[bni stripe portal]', e.message);
+    res.status(500).json({ error: 'ポータルの取得に失敗しました' });
+  }
+});
+
+// --- スタブ（将来実装予定）---
+app.get('/bni/api/dashboard', bniAuth, (req, res) => {
+  const uid = req.session.bniUserId;
+  const total = bniDb.prepare('SELECT COUNT(*) as c FROM contacts WHERE user_id=?').get(uid)?.c || 0;
+  const chapters = bniDb.prepare('SELECT COUNT(DISTINCT chapter) as c FROM contacts WHERE user_id=? AND chapter!=""').get(uid)?.c || 0;
+  res.json({ total_contacts: total, pending_reminders: 0, chapters, monthly: [] });
+});
+app.get('/bni/api/suggestions/next-meetings', bniAuth, (req, res) => res.json([]));
+app.get('/bni/api/my-profile', bniAuth, (req, res) => {
+  const user = bniDb.prepare('SELECT id, display_name as name, username, email, plan FROM users WHERE id=?').get(req.session.bniUserId);
+  res.json(user || {});
+});
+app.put('/bni/api/my-profile', express.json(), bniAuth, (req, res) => {
+  const cleanName = safeStr(req.body.name, 100);
+  if (cleanName) bniDb.prepare('UPDATE users SET display_name=? WHERE id=?').run(cleanName, req.session.bniUserId);
+  res.json({ ok: true });
+});
+app.post('/bni/api/auth/change-password', express.json(), bniAuth, (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (typeof current_password !== 'string' || typeof new_password !== 'string' || new_password.length < 8 || new_password.length > 128)
+    return res.status(400).json({ error: 'パスワードは8〜128文字で入力してください' });
+  const user = bniDb.prepare('SELECT * FROM users WHERE id=?').get(req.session.bniUserId);
+  if (!user) return res.status(401).json({ error: 'unauthorized' });
+  if (!bcryptCompat.verify(current_password, user.pw_hash, user.pw_salt)) return res.status(400).json({ error: '現在のパスワードが違います' });
+  const { hash, salt } = bniMakePassword(new_password);
+  bniDb.prepare('UPDATE users SET pw_hash=?, pw_salt=? WHERE id=?').run(hash, salt, user.id);
+  res.json({ ok: true });
+});
+app.get('/bni/api/contacts/:id/reminders', bniAuth, (req, res) => res.json([]));
+app.post('/bni/api/contacts/:id/reminders', express.json(), bniAuth, (req, res) => res.json({ id: 0 }));
+app.put('/bni/api/reminders/:id/toggle', bniAuth, (req, res) => res.json({ ok: true }));
+app.delete('/bni/api/reminders/:id', bniAuth, (req, res) => res.json({ ok: true }));
+app.post('/bni/api/reminders/:id/sync-google', bniAuth, (req, res) => res.json({ ok: true }));
+app.get('/bni/api/auth/google/status', bniAuth, (req, res) => res.json({ connected: false }));
+app.get('/bni/api/auth/google/calendar', bniAuth, (req, res) => res.redirect('/bni/'));
+app.delete('/bni/api/auth/google/calendar', bniAuth, (req, res) => res.json({ ok: true }));
+app.post('/bni/api/import/file', bniAuth, (req, res) => res.status(501).json({ error: '近日対応予定' }));
+app.post('/bni/api/import/url', bniAuth, (req, res) => res.status(501).json({ error: '近日対応予定' }));
+app.get('/bni/api/export/zip', bniAuth, (req, res) => res.status(501).json({ error: '近日対応予定' }));
+
+// BNI Stripe Webhook
+app.post('/bni/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const secret = process.env.BNI_STRIPE_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
+  if (!stripe || !secret) return res.status(400).json({ error: 'webhook未設定' });
+  let event;
+  try { event = stripe.webhooks.constructEvent(req.body, sig, secret); } catch(e) { return res.status(400).send('Webhook Error'); }
+  const sub = event.data.object;
+  if (['customer.subscription.created','customer.subscription.updated','checkout.session.completed'].includes(event.type)) {
+    const customerId = sub.customer || (event.type==='checkout.session.completed' ? sub.customer : null);
+    if (customerId) {
+      const plan = (sub.status==='active'||sub.status==='trialing') ? 'paid' : 'free';
+      const exp = sub.current_period_end ? new Date(sub.current_period_end*1000).toISOString() : null;
+      bniDb.prepare('UPDATE users SET plan=?, plan_expires=?, stripe_customer_id=? WHERE stripe_customer_id=?').run(plan, exp, customerId, customerId);
+      // stripe_customer_idが未設定のユーザーに設定
+      if (event.type==='checkout.session.completed' && sub.customer_email) {
+        bniDb.prepare('UPDATE users SET plan=?, stripe_customer_id=? WHERE email=? AND (stripe_customer_id IS NULL OR stripe_customer_id="")').run('paid', customerId, sub.customer_email);
+      }
+    }
+  } else if (event.type==='customer.subscription.deleted') {
+    bniDb.prepare('UPDATE users SET plan="free" WHERE stripe_customer_id=?').run(sub.customer);
+  }
+  res.json({ received: true });
+});
 
 // グローバルエラーハンドラー（スタックトレース漏洩防止）
 app.use((err, req, res, next) => {

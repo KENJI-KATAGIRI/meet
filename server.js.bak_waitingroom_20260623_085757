@@ -1789,12 +1789,8 @@ app.post('/api/upload-file', uploadLimiter, requireAuth, uploadFileMiddleware.si
   const msgHtml = isImage
     ? `<img src="${safeUrl}" alt="${safeOrigName}" class="chat-img" onclick="window.open('${safeUrl}','_blank')">`
     : `<a href="${safeUrl}" download="${safeOrigName}" target="_blank" class="chat-file-link">📎 ${safeOrigName}</a>`;
-  const senderSocketId = typeof req.body.socketId === 'string' ? req.body.socketId.slice(0, 64) : null;
-  if (roomId && rooms.has(roomId)) {
-    const emit = senderSocketId ? io.to(roomId).except(senderSocketId) : io.to(roomId);
-    emit.emit('chat-file', { from: senderName, message: msgHtml, time });
-  }
-  res.json({ ok: true, url, origName, isImage, msgHtml });
+  if (roomId && rooms.has(roomId)) io.to(roomId).emit('chat-file', { from: senderName, message: msgHtml, time });
+  res.json({ ok: true, url, origName, isImage });
 });
 
 setInterval(() => {
@@ -2956,7 +2952,7 @@ io.on('connection', (socket) => {
     }
     next();
   });
-  socket.on('join-room', ({ roomId, password, userName, transcribeMode, system, waitingRoom }) => {
+  socket.on('join-room', ({ roomId, password, userName, transcribeMode, system }) => {
     if (typeof roomId !== 'string' || roomId.length > 128 || typeof userName !== 'string') return;
     const safeRoomId = roomId.trim();
     const safeUserName = userName.trim().slice(0, 50);
@@ -2979,7 +2975,7 @@ io.on('connection', (socket) => {
         hostEmail = hu?.email || null;
         hostUiMode = hu?.ui_mode || 'simple';
       }
-      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: waitingRoom === true, waitingList: new Map(), screenShareAllowed: false, system: system || '' };
+      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: false, waitingList: new Map(), screenShareAllowed: false, system: system || '' };
       rooms.set(safeRoomId, newRoom);
       // 時間制限なし（warnTimer / endTimer 無効化）
     }

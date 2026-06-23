@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NiceMeet 施設プラン｜福祉施設向けAIビデオ面談・記録システム</title>
+<meta name="description" content="面談しながら、記録まで自動生成。就労支援・生活訓練・相談支援・介護施設向けのAIビデオ面談システム。月額2,980円〜、30日間無料トライアル。">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--blue:#2563eb;--blue-light:#eff6ff;--green:#16a34a;--text:#1e293b;--muted:#64748b;--border:#e2e8f0;--bg:#f8fafc}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;color:var(--text);background:#fff;line-height:1.7}
+a{color:inherit;text-decoration:none}
+.container{max-width:960px;margin:0 auto;padding:0 20px}
+
+/* ヘッダー */
+header{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;padding:14px 0}
+.header-inner{display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:20px;font-weight:800;color:var(--blue)}
+.logo span{color:var(--text);font-weight:400;font-size:13px;margin-left:8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 24px;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer;border:none;transition:all .2s}
+.btn-primary{background:var(--blue);color:#fff}
+.btn-primary:hover{background:#1d4ed8}
+.btn-outline{border:2px solid var(--blue);color:var(--blue);background:#fff}
+.btn-outline:hover{background:var(--blue-light)}
+.btn-lg{padding:16px 36px;font-size:16px;border-radius:10px}
+.btn-xl{padding:18px 40px;font-size:18px;border-radius:12px}
+
+/* ヒーロー */
+.hero{background:linear-gradient(135deg,#1e3a8a 0%,#1d4ed8 50%,#2563eb 100%);color:#fff;padding:80px 0 70px;text-align:center}
+.hero-badge{display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:100px;padding:6px 16px;font-size:13px;font-weight:600;margin-bottom:24px}
+.hero h1{font-size:clamp(28px,5vw,48px);font-weight:900;line-height:1.3;margin-bottom:20px}
+.hero h1 em{font-style:normal;color:#93c5fd}
+.hero-sub{font-size:clamp(15px,2.5vw,18px);color:rgba(255,255,255,.85);max-width:600px;margin:0 auto 36px;line-height:1.8}
+.hero-cta{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-bottom:16px}
+.hero-note{font-size:13px;color:rgba(255,255,255,.6)}
+.hero-screens{margin-top:50px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:24px;max-width:700px;margin-left:auto;margin-right:auto}
+.screen-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center}
+.step-num{width:32px;height:32px;background:rgba(255,255,255,.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;margin:0 auto 10px}
+.step-label{font-size:13px;color:rgba(255,255,255,.85);line-height:1.5}
+.step-icon{font-size:28px;margin-bottom:8px}
+
+/* 課題 */
+.section{padding:72px 0}
+.section-alt{background:var(--bg)}
+.section-label{font-size:12px;font-weight:700;color:var(--blue);letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px}
+.section-title{font-size:clamp(22px,3.5vw,34px);font-weight:900;margin-bottom:16px;line-height:1.3}
+.section-sub{font-size:16px;color:var(--muted);max-width:600px;margin:0 auto 48px}
+.text-center{text-align:center}
+
+.pain-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-top:40px}
+.pain-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px;display:flex;gap:14px}
+.pain-icon{font-size:28px;flex-shrink:0;margin-top:2px}
+.pain-title{font-size:15px;font-weight:700;margin-bottom:6px}
+.pain-text{font-size:13px;color:var(--muted);line-height:1.7}
+
+/* 機能 */
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}
+.feature-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:28px;transition:box-shadow .2s}
+.feature-card:hover{box-shadow:0 4px 20px rgba(0,0,0,.08)}
+.feature-icon{width:48px;height:48px;background:var(--blue-light);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px}
+.feature-title{font-size:16px;font-weight:700;margin-bottom:8px}
+.feature-text{font-size:14px;color:var(--muted);line-height:1.7}
+
+/* 対応業態 */
+.welfare-tags{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:32px}
+.welfare-tag{background:#fff;border:1px solid var(--border);border-radius:100px;padding:8px 18px;font-size:14px;font-weight:600;color:var(--text)}
+
+/* 料金 */
+.pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;max-width:800px;margin:0 auto}
+.price-card{background:#fff;border:2px solid var(--border);border-radius:16px;padding:28px;text-align:center;position:relative}
+.price-card.featured{border-color:var(--blue);box-shadow:0 0 0 4px rgba(37,99,235,.08)}
+.price-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--blue);color:#fff;font-size:11px;font-weight:700;padding:4px 14px;border-radius:100px;white-space:nowrap}
+.price-label{font-size:14px;color:var(--muted);margin-bottom:8px}
+.price-amount{font-size:36px;font-weight:900;color:var(--text);line-height:1}
+.price-amount span{font-size:16px;font-weight:400;color:var(--muted)}
+.price-limit{font-size:12px;color:var(--muted);margin-top:8px}
+.price-note{font-size:12px;color:var(--muted);margin-top:6px}
+.price-list{text-align:left;margin-top:20px;font-size:13px;color:var(--muted);line-height:2}
+.price-list li{list-style:none;padding-left:18px;position:relative}
+.price-list li::before{content:'✓';position:absolute;left:0;color:var(--green);font-weight:700}
+
+/* フロー */
+.flow-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0;position:relative}
+.flow-step{text-align:center;padding:20px;position:relative}
+.flow-step:not(:last-child)::after{content:'→';position:absolute;right:-10px;top:50%;transform:translateY(-50%);font-size:20px;color:var(--border)}
+.flow-num{width:48px;height:48px;background:var(--blue);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;margin:0 auto 14px}
+.flow-icon{font-size:32px;margin-bottom:10px}
+.flow-title{font-size:15px;font-weight:700;margin-bottom:6px}
+.flow-text{font-size:13px;color:var(--muted)}
+
+/* FAQ */
+.faq-list{max-width:680px;margin:0 auto}
+.faq-item{border-bottom:1px solid var(--border);padding:20px 0}
+.faq-q{font-size:15px;font-weight:700;margin-bottom:10px;display:flex;gap:10px}
+.faq-q::before{content:'Q.';color:var(--blue);font-weight:900;flex-shrink:0}
+.faq-a{font-size:14px;color:var(--muted);line-height:1.8;padding-left:24px}
+
+/* フォーム */
+.form-wrap{background:linear-gradient(135deg,#1e3a8a,#1d4ed8);border-radius:20px;padding:48px 40px;max-width:640px;margin:0 auto;color:#fff}
+.form-wrap h2{font-size:26px;font-weight:900;margin-bottom:8px}
+.form-wrap p{font-size:15px;color:rgba(255,255,255,.8);margin-bottom:32px}
+.form-row{margin-bottom:16px}
+.form-row label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:rgba(255,255,255,.85)}
+.form-row label .req{color:#fbbf24;margin-left:4px}
+.form-input{width:100%;padding:12px 16px;border-radius:10px;border:1.5px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff;font-size:14px;outline:none;transition:border .2s}
+.form-input::placeholder{color:rgba(255,255,255,.4)}
+.form-input:focus{border-color:rgba(255,255,255,.6);background:rgba(255,255,255,.15)}
+.form-row select.form-input option{color:#1e293b;background:#fff}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#form-result{margin-top:16px;padding:14px 16px;border-radius:10px;font-size:14px;display:none}
+.form-success{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.4);color:#86efac}
+.form-error{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:#fca5a5}
+
+/* フッター */
+footer{background:var(--text);color:rgba(255,255,255,.5);padding:40px 0;text-align:center;font-size:13px}
+footer a{color:rgba(255,255,255,.7)}
+
+@media(max-width:640px){
+  .hero{padding:56px 0 48px}
+  .screen-steps{grid-template-columns:1fr}
+  .form-wrap{padding:32px 20px}
+  .form-grid{grid-template-columns:1fr}
+  .flow-step:not(:last-child)::after{display:none}
+  .hero-cta .btn-xl{width:100%}
+}
+</style>
+</head>
+<body>
+
+<!-- ヘッダー -->
+<header>
+  <div class="container header-inner">
+    <div class="logo">NiceMeet <span>施設プラン</span></div>
+    <a href="#form" class="btn btn-primary">無料トライアルを申込む</a>
+  </div>
+</header>
+
+<!-- ヒーロー -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge">🏥 福祉施設向け AIビデオ面談システム</div>
+    <h1>面談しながら、<em>記録まで自動生成。</em></h1>
+    <p class="hero-sub">オンライン面談の文字起こしから支援記録・面談記録の作成まで、AIが自動でサポート。記録業務の時間を大幅に削減します。</p>
+    <div class="hero-cta">
+      <a href="#form" class="btn btn-primary btn-xl">30日間無料で試す</a>
+      <a href="#features" class="btn btn-outline btn-lg" style="color:#fff;border-color:rgba(255,255,255,.5)">機能を見る</a>
+    </div>
+    <p class="hero-note">クレジットカード不要・アプリのインストール不要</p>
+
+    <div class="hero-screens">
+      <div class="screen-steps">
+        <div>
+          <div class="step-icon">🎥</div>
+          <div class="step-num">1</div>
+          <div class="step-label">URLを送るだけで<br>ビデオ面談スタート</div>
+        </div>
+        <div>
+          <div class="step-icon">🤖</div>
+          <div class="step-num">2</div>
+          <div class="step-label">AIが会話を<br>リアルタイムで文字起こし</div>
+        </div>
+        <div>
+          <div class="step-icon">📝</div>
+          <div class="step-num">3</div>
+          <div class="step-label">面談後に支援記録を<br>自動生成・保存</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 課題提示 -->
+<section class="section section-alt">
+  <div class="container text-center">
+    <div class="section-label">Problems</div>
+    <h2 class="section-title">こんな困りごとはありませんか？</h2>
+    <div class="pain-grid">
+      <div class="pain-card">
+        <div class="pain-icon">😓</div>
+        <div>
+          <div class="pain-title">記録作成に時間がかかる</div>
+          <div class="pain-text">面談後にメモを見返しながら支援記録を書くのに時間がかかり、業務が深夜まで続く。</div>
+        </div>
+      </div>
+      <div class="pain-card">
+        <div class="pain-icon">📋</div>
+        <div>
+          <div class="pain-title">オンライン面談のメモが不完全</div>
+          <div class="pain-text">画面越しの面談では手書きメモが取りにくく、大事なことを聞き漏らすことがある。</div>
+        </div>
+      </div>
+      <div class="pain-card">
+        <div class="pain-icon">🔍</div>
+        <div>
+          <div class="pain-title">記録の管理・共有が不便</div>
+          <div class="pain-text">面談記録がバラバラに保存されており、あとから振り返るのに手間がかかる。</div>
+        </div>
+      </div>
+      <div class="pain-card">
+        <div class="pain-icon">💸</div>
+        <div>
+          <div class="pain-title">高額なシステム導入が難しい</div>
+          <div class="pain-text">大手の福祉システムは月額が高く、中小規模の施設にとって導入ハードルが高い。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 機能 -->
+<section class="section" id="features">
+  <div class="container text-center">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">NiceMeet施設プランの主な機能</h2>
+    <p class="section-sub">ビデオ面談から記録管理まで、福祉現場に必要な機能をシンプルにまとめました。</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🎙️</div>
+        <div class="feature-title">AI文字起こし（福祉特化）</div>
+        <div class="feature-text">面談中の会話をリアルタイムで文字起こし。就労支援・相談支援など業態ごとに最適化された記録フォーマットで自動生成します。</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📄</div>
+        <div class="feature-title">支援記録・面談記録の自動生成</div>
+        <div class="feature-text">面談終了後、AIが内容を要約して支援記録の形式に変換。記録作業にかかる時間を大幅に削減できます。</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔗</div>
+        <div class="feature-title">URLを送るだけで面談開始</div>
+        <div class="feature-text">アプリのインストール不要。ブラウザだけで使えるので、利用者さんへの案内もURLを送るだけです。</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🏢</div>
+        <div class="feature-title">複数拠点対応</div>
+        <div class="feature-text">本体事業所から複数のサテライト拠点まで、一括で管理できます。拠点数に応じた料金体系で無駄なく使えます。</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <div class="feature-title">記録一覧・CSVエクスポート</div>
+        <div class="feature-text">面談記録はダッシュボードでいつでも確認・検索可能。CSVで書き出してExcelや他のシステムとも連携できます。</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <div class="feature-title">セキュアな通信</div>
+        <div class="feature-text">映像・音声はWebRTC暗号化通信。データはすべて国内サーバーで管理しています。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 対応業態 -->
+<section class="section section-alt">
+  <div class="container text-center">
+    <div class="section-label">Supported</div>
+    <h2 class="section-title">対応している福祉業態</h2>
+    <p class="section-sub">各業態の記録フォーマットに対応した専用プロンプトを搭載しています。</p>
+    <div class="welfare-tags">
+      <span class="welfare-tag">就労継続支援A型</span>
+      <span class="welfare-tag">就労継続支援B型</span>
+      <span class="welfare-tag">就労移行支援</span>
+      <span class="welfare-tag">生活訓練</span>
+      <span class="welfare-tag">計画相談支援</span>
+      <span class="welfare-tag">障害児相談支援</span>
+      <span class="welfare-tag">放課後等デイサービス</span>
+      <span class="welfare-tag">グループホーム</span>
+      <span class="welfare-tag">訪問介護</span>
+      <span class="welfare-tag">居宅介護</span>
+    </div>
+  </div>
+</section>
+
+<!-- 使い方フロー -->
+<section class="section">
+  <div class="container text-center">
+    <div class="section-label">How to use</div>
+    <h2 class="section-title">使い方はとてもシンプル</h2>
+    <p class="section-sub">難しい設定は一切不要。申込み後すぐに使えます。</p>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="flow-icon">📧</div>
+        <div class="flow-num">1</div>
+        <div class="flow-title">申込み</div>
+        <div class="flow-text">下のフォームから申込み。24時間以内にアカウント情報をお送りします。</div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon">🖥️</div>
+        <div class="flow-num">2</div>
+        <div class="flow-title">ログイン</div>
+        <div class="flow-text">ブラウザからログイン。ダッシュボードですぐに面談URLを作成できます。</div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon">🎥</div>
+        <div class="flow-num">3</div>
+        <div class="flow-title">面談開始</div>
+        <div class="flow-text">URLを利用者さんに送るだけ。面談しながらAIが記録をサポートします。</div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon">📝</div>
+        <div class="flow-num">4</div>
+        <div class="flow-title">記録を確認</div>
+        <div class="flow-text">面談後にダッシュボードで記録を確認・編集・エクスポートできます。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 料金 -->
+<section class="section section-alt" id="pricing">
+  <div class="container text-center">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">シンプルな料金体系</h2>
+    <p class="section-sub">拠点数に応じた月額制。まずは30日間無料でお試しいただけます。</p>
+    <div class="pricing-grid">
+      <div class="price-card featured">
+        <div class="price-badge">🎉 先行価格・最も人気</div>
+        <div class="price-label">1拠点</div>
+        <div class="price-amount">¥2,980<span>/月</span></div>
+        <div class="price-limit">月50時間まで利用可能</div>
+        <div class="price-note" style="color:#ef4444;font-size:11px">※通常価格 ¥4,980/月</div>
+        <ul class="price-list">
+          <li>AI文字起こし・記録生成</li>
+          <li>支援記録・面談記録自動化</li>
+          <li>記録一覧・CSVエクスポート</li>
+          <li>30日間無料トライアル</li>
+          <li>メールサポート</li>
+        </ul>
+      </div>
+      <div class="price-card">
+        <div class="price-label">2〜3拠点</div>
+        <div class="price-amount">¥2,480<span>/月/拠点</span></div>
+        <div class="price-limit">各拠点 月50時間まで</div>
+        <ul class="price-list">
+          <li>全拠点一括管理</li>
+          <li>拠点ごとの利用状況確認</li>
+          <li>AI文字起こし・記録生成</li>
+          <li>記録一覧・CSVエクスポート</li>
+          <li>メールサポート</li>
+        </ul>
+      </div>
+      <div class="price-card">
+        <div class="price-label">4拠点以上</div>
+        <div class="price-amount">¥1,980<span>/月/拠点</span></div>
+        <div class="price-limit">各拠点 月50時間まで</div>
+        <ul class="price-list">
+          <li>全機能利用可能</li>
+          <li>全拠点一括管理</li>
+          <li>拠点ごとの利用状況確認</li>
+          <li>優先サポート</li>
+          <li>カスタム対応相談可</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:24px;font-size:13px;color:var(--muted)">※ 月額料金は請求書払いまたはクレジットカード払い。最低利用期間なし・いつでも解約可能。</p>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section">
+  <div class="container">
+    <div class="text-center">
+      <div class="section-label">FAQ</div>
+      <h2 class="section-title">よくある質問</h2>
+    </div>
+    <div class="faq-list" style="margin-top:40px">
+      <div class="faq-item">
+        <div class="faq-q">専用のアプリは必要ですか？</div>
+        <div class="faq-a">不要です。Google Chrome、Safari、Edgeなど一般的なブラウザで動作します。利用者さん側も同様にアプリのインストールは不要です。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">他の福祉システムと連携できますか？</div>
+        <div class="faq-a">現在は面談記録のCSVエクスポートに対応しています。エクスポートしたデータは表計算ソフトやその他のシステムにインポートしてご利用いただけます。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">30日間の無料トライアル後はどうなりますか？</div>
+        <div class="faq-a">自動的に課金されることはありません。トライアル終了後、ご継続いただく場合はご連絡ください。ご連絡がない場合は利用制限がかかりますが、データは保持されます。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">面談の録画は保存されますか？</div>
+        <div class="faq-a">録画の保存は行っていません。AI文字起こしの結果テキストと、そこから生成された支援記録のみをサーバーに保存します。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">利用者さんのプライバシーは守られますか？</div>
+        <div class="faq-a">映像・音声はWebRTC技術により暗号化通信で送受信されます。テキストデータは国内サーバーで管理し、第三者への提供は行いません。</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">拠点数は後から変更できますか？</div>
+        <div class="faq-a">はい、いつでも追加・変更が可能です。拠点追加に応じて料金が変動します。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 申込みフォーム -->
+<section class="section section-alt" id="form">
+  <div class="container">
+    <div class="form-wrap">
+      <h2>30日間無料トライアルを申込む</h2>
+      <p>フォームを送信後、24時間以内にアカウント情報をお送りします。クレジットカード不要です。</p>
+      <div class="form-grid">
+        <div class="form-row">
+          <label>施設名・事業所名<span class="req">*</span></label>
+          <input type="text" id="f-facility" class="form-input" placeholder="一般社団法人〇〇">
+        </div>
+        <div class="form-row">
+          <label>担当者名<span class="req">*</span></label>
+          <input type="text" id="f-name" class="form-input" placeholder="山田 太郎">
+        </div>
+        <div class="form-row">
+          <label>メールアドレス<span class="req">*</span></label>
+          <input type="email" id="f-email" class="form-input" placeholder="info@example.com">
+        </div>
+        <div class="form-row">
+          <label>電話番号</label>
+          <input type="tel" id="f-phone" class="form-input" placeholder="03-0000-0000">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>利用拠点数<span class="req">*</span></label>
+        <select id="f-location" class="form-input">
+          <option value="1">1拠点（¥2,980/月）</option>
+          <option value="2">2拠点（¥4,960/月）</option>
+          <option value="3">3拠点（¥7,440/月）</option>
+          <option value="4">4拠点（¥7,920/月）</option>
+          <option value="5">5拠点以上（お見積り）</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>業態・ご質問・ご要望など</label>
+        <textarea id="f-message" class="form-input" rows="4" placeholder="就労継続支援B型を運営しています。記録システムについて相談したいです。"></textarea>
+      </div>
+      <button onclick="submitForm()" id="submit-btn" class="btn btn-primary btn-lg" style="width:100%;margin-top:8px;background:#fff;color:#1d4ed8;font-size:16px">
+        申込みを送信する →
+      </button>
+      <div id="form-result"></div>
+      <p style="text-align:center;font-size:12px;color:rgba(255,255,255,.5);margin-top:16px">
+        送信後24時間以内にご返信します。営業・スパムメールは一切送りません。
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- フッター -->
+<footer>
+  <div class="container">
+    <p style="margin-bottom:8px"><strong style="color:#fff">NiceMeet</strong> — AIビデオ面談システム</p>
+    <p><a href="mailto:kenji.kys@gmail.com">kenji.kys@gmail.com</a> ｜ <a href="https://meet.gaiaarts.org">meet.gaiaarts.org</a></p>
+    <p style="margin-top:16px">© 2026 GaiaArts Creation. All rights reserved.</p>
+  </div>
+</footer>
+
+<script>
+async function submitForm() {
+  const facility_name  = document.getElementById('f-facility').value.trim();
+  const name           = document.getElementById('f-name').value.trim();
+  const email          = document.getElementById('f-email').value.trim();
+  const phone          = document.getElementById('f-phone').value.trim();
+  const location_count = document.getElementById('f-location').value;
+  const message        = document.getElementById('f-message').value.trim();
+
+  if (!facility_name || !name || !email) {
+    showResult('施設名・担当者名・メールアドレスは必須です。', false);
+    return;
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.textContent = '送信中...';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch('/api/public/facility-inquiry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ facility_name, name, email, phone, location_count, message })
+    });
+    const data = await r.json();
+    if (data.ok) {
+      showResult('✅ 申込みを受け付けました！24時間以内にご連絡します。', true);
+      ['f-facility','f-name','f-email','f-phone','f-message'].forEach(id => document.getElementById(id).value = '');
+    } else {
+      showResult('エラー: ' + (data.error || '送信に失敗しました'), false);
+    }
+  } catch(e) {
+    showResult('通信エラーが発生しました。時間をおいて再度お試しください。', false);
+  }
+  btn.textContent = '申込みを送信する →';
+  btn.disabled = false;
+}
+
+function showResult(msg, ok) {
+  const el = document.getElementById('form-result');
+  el.className = ok ? 'form-success' : 'form-error';
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// スムーズスクロール
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth' });
+  });
+});
+</script>
+</body>
+</html>

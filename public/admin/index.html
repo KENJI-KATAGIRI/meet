@@ -352,9 +352,11 @@ async function loadUsers() {
                   ${u.name ? `<div class="text-gray-400 text-xs mt-0.5">${esc(u.name)}</div>` : ''}
                 </td>
                 <td class="px-4 py-3">
-                  <span class="text-xs px-2 py-0.5 rounded-full ${u.ui_mode==='welfare'?'bg-purple-100 text-purple-700':'bg-gray-100 text-gray-500'}">
-                    ${esc(u.ui_mode||'simple')}
-                  </span>
+                  <select onchange="changeMode(${u.id}, this)"
+                    class="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+                    <option value="simple"  ${u.ui_mode!=='welfare'?'selected':''}>🤝 BNI・個人</option>
+                    <option value="welfare" ${u.ui_mode==='welfare'?'selected':''}>🏥 施設</option>
+                  </select>
                 </td>
                 <td class="px-4 py-3">
                   <div class="flex items-center gap-1.5">
@@ -449,6 +451,20 @@ async function changePlan(id, sel) {
   try {
     await api('user/' + id + '/plan', 'PATCH', { plan, plan_expires });
     toast(`プランを ${label} に変更しました`);
+    await loadUsers();
+  } catch(e) {
+    toast('変更に失敗しました: ' + e.message, true);
+    await loadUsers();
+  }
+}
+
+async function changeMode(id, sel) {
+  const mode = sel.value;
+  const label = mode === 'welfare' ? '🏥 施設モード' : '🤝 BNI・個人モード';
+  if (!confirm(`モードを「${label}」に変更しますか？\n（次回ログイン時から反映されます）`)) { await loadUsers(); return; }
+  try {
+    await api('user/' + id + '/mode', 'PATCH', { mode });
+    toast(`モードを ${label} に変更しました`);
     await loadUsers();
   } catch(e) {
     toast('変更に失敗しました: ' + e.message, true);

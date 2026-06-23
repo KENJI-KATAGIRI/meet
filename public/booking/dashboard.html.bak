@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>予約管理ダッシュボード</title>
+<style>
+:root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#2a2a4a;--accent:#6c63ff;--text:#fff;--muted:#888;--border:#2a2a4a;--success:#4ade80;--danger:#e94560}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+header{background:#16162a;padding:0 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);height:60px;position:sticky;top:0;z-index:10}
+.brand{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700}
+.brand-icon{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.header-right{display:flex;align-items:center;gap:10px}
+.avatar-sm{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8b82ff);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+.user-name{font-size:14px;color:var(--muted)}
+.btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#7b73ff}
+.btn-secondary{background:var(--bg3);color:var(--muted)}.btn-secondary:hover{color:var(--text)}
+.btn-danger{background:rgba(233,69,96,.15);color:var(--danger);border:1px solid rgba(233,69,96,.3)}.btn-danger:hover{background:var(--danger);color:#fff}
+.btn-sm{padding:5px 12px;font-size:12px}
+main{max-width:860px;margin:0 auto;padding:32px 20px 60px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+.card{background:var(--bg2);border-radius:16px;padding:24px;border:1px solid var(--border)}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.card-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:flex;align-items:center;gap:6px}
+.card-desc{font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.5}
+.url-display{background:var(--bg3);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:10px;border:1px solid var(--border)}
+.url-text{flex:1;color:var(--accent);font-size:13px;word-break:break-all;font-weight:500}
+.stat{text-align:center}
+.stat .num{font-size:32px;font-weight:800;color:var(--accent)}
+.stat .label{font-size:12px;color:var(--muted);margin-top:4px}
+.section-card{background:var(--bg2);border-radius:16px;border:1px solid var(--border);margin-bottom:20px;overflow:hidden}
+.section-head{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.section-head h2{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.section-body{padding:20px 24px}
+.dow-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:16px}
+.dow-btn{padding:10px 4px;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;text-align:center;transition:all .2s}
+.dow-btn.active{background:rgba(108,99,255,.2);border-color:var(--accent);color:var(--accent)}
+.time-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;background:var(--bg3);border-radius:10px;padding:10px 14px}
+.time-label{font-size:13px;font-weight:600;min-width:48px}
+.time-row select{background:#1e1e3a;border:1.5px solid var(--border);border-radius:8px;color:var(--text);padding:7px 10px;font-size:13px;outline:none;transition:border .2s;flex:1;cursor:pointer}
+.time-row select:focus{border-color:var(--accent)}
+.time-sep{color:var(--muted);font-size:13px}
+.slot-select{background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;color:var(--text);padding:10px 14px;font-size:14px;outline:none;transition:border .2s;cursor:pointer}
+.slot-select:focus{border-color:var(--accent)}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 24px}
+.tab-btn{padding:14px 16px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;background:none;border-top:none;border-left:none;border-right:none;margin-bottom:-1px}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-content{display:none;padding:20px 24px}
+.tab-content.show{display:block}
+.booking-card{background:var(--bg3);border-radius:12px;padding:16px 18px;margin-bottom:10px;display:flex;align-items:flex-start;gap:16px;border:1px solid transparent;transition:border .2s}
+.booking-card:hover{border-color:var(--border)}
+.booking-date{background:#1a1a3a;border-radius:10px;padding:10px 12px;text-align:center;min-width:64px;flex-shrink:0}
+.booking-date .month{font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:600}
+.booking-date .day{font-size:22px;font-weight:800;line-height:1;color:var(--accent)}
+.booking-date .dow{font-size:10px;color:var(--muted);margin-top:2px}
+.booking-info{flex:1;min-width:0}
+.booking-name{font-size:15px;font-weight:700;margin-bottom:4px}
+.booking-time{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:4px}
+.booking-email{font-size:12px;color:var(--muted)}
+.booking-purpose{font-size:12px;color:var(--muted);margin-top:4px;background:#1e1e3a;border-radius:6px;padding:4px 8px;display:inline-block}
+.meet-link{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--success);text-decoration:none;margin-top:6px;font-weight:600}
+.meet-link:hover{text-decoration:underline}
+.empty{color:var(--muted);font-size:14px;text-align:center;padding:32px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.empty-icon{font-size:36px;opacity:.4}
+.plan-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700}
+.plan-badge.free{background:rgba(136,136,136,.15);color:#888;border:1px solid #444}
+.plan-badge.paid{background:rgba(108,99,255,.15);color:#a78bfa;border:1px solid #6c63ff}
+.plan-badge.trial{background:rgba(34,197,94,.15);color:#4ade80;border:1px solid #22c55e}
+.plan-badge.active{background:rgba(108,99,255,.15);color:#a78bfa;border:1px solid #6c63ff}
+.plan-badge.expired{background:rgba(239,68,68,.15);color:#f87171;border:1px solid #ef4444}
+.trial-banner{border-radius:12px;padding:12px 16px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px}
+.trial-banner.warn{background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);color:#fde047}
+.trial-banner.danger{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#f87171}
+.trial-banner.expired{background:rgba(239,68,68,.15);border:1px solid #ef4444;color:#f87171}
+.usage-bar-wrap{margin:10px 0 4px}
+.usage-bar-bg{background:rgba(255,255,255,.08);border-radius:6px;height:8px;overflow:hidden}
+.usage-bar-fill{height:100%;border-radius:6px;transition:width .4s;background:#4ade80}
+.usage-bar-fill.warn{background:#fde047}
+.usage-bar-fill.danger{background:#f87171}
+.fac-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.fac-stat{background:rgba(255,255,255,.04);border-radius:10px;padding:12px 14px}
+.fac-stat-label{font-size:11px;color:var(--muted);margin-bottom:4px}
+.fac-stat-value{font-size:18px;font-weight:700}
+.inquiry-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
+.inquiry-modal.show{display:flex}
+.inquiry-box{background:var(--bg2);border-radius:16px;padding:28px;width:min(480px,90vw);border:1px solid var(--border)}
+.inquiry-box h3{margin:0 0 12px;font-size:16px}
+.inquiry-box textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:10px;font-size:13px;resize:vertical;min-height:80px;box-sizing:border-box}
+.reg-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
+.reg-modal.show{display:flex}
+.reg-box{background:var(--bg2);border-radius:16px;padding:28px;width:min(520px,92vw);border:1px solid var(--border);max-height:90vh;overflow-y:auto}
+.reg-box h3{margin:0 0 16px;font-size:16px}
+.reg-field{margin-bottom:12px}
+.reg-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.reg-field input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:9px 12px;font-size:13px;box-sizing:border-box}
+.loc-row{display:flex;gap:8px;margin-bottom:6px}
+.loc-row input{flex:1}
+.plan-upgrade-btn{display:inline-block;padding:10px 20px;background:linear-gradient(135deg,#6c63ff,#8b82ff);color:#fff;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none;transition:opacity .2s}
+.plan-upgrade-btn:hover{opacity:.85}
+.toast{position:fixed;bottom:24px;right:24px;background:#2a2a4a;border:1px solid #3a3a5a;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.show{opacity:1}
+@media(max-width:640px){.grid-2{grid-template-columns:1fr}.dow-grid{grid-template-columns:repeat(4,1fr)}.booking-date{display:none}}
+.records-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.records-filter select,.records-filter input{background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:7px 10px;font-size:13px}
+.records-filter input{width:160px}
+.rec-row{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden}
+.rec-head{padding:11px 14px;cursor:pointer;transition:background .15s}
+.rec-head:hover{background:rgba(255,255,255,.04)}
+.rec-meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px;align-items:center}
+.rec-tag{font-size:11px;background:rgba(255,255,255,.08);border-radius:4px;padding:2px 7px;color:var(--muted)}
+.rec-date{font-size:12px;color:var(--muted)}
+.rec-name{font-size:13px;font-weight:600}
+.rec-preview{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px}
+.rec-body{display:none;padding:0 14px 14px;border-top:1px solid var(--border)}
+.rec-body.open{display:block}
+.rec-full{font-size:13px;line-height:1.75;white-space:pre-wrap;margin-top:10px;background:rgba(255,255,255,.03);border-radius:8px;padding:12px}
+.rec-badge-draft{background:rgba(251,191,36,.15);border:1px solid rgba(251,191,36,.4);color:#fde047;font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700}
+.rec-badge-face{background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.35);color:#4ade80;font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700}
+.btn-confirm-rec{margin-top:10px;width:100%;padding:11px;background:#4ade80;border:none;border-radius:9px;color:#0f1a0f;font-size:13px;font-weight:700;cursor:pointer}
+.btn-confirm-rec:hover{opacity:.85}
+
+/* BNI card */
+.bni-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:13px;outline:none}
+.bni-input:focus{border-color:var(--accent)}
+.bni-input::placeholder{color:var(--muted)}
+.mode-badge{font-size:10px;font-weight:700;letter-spacing:.8px;padding:3px 8px;border-radius:20px;border:1px solid}
+.mode-badge.bni{background:rgba(108,99,255,.15);color:var(--accent);border-color:rgba(108,99,255,.3)}
+.mode-badge.welfare{background:rgba(74,222,128,.1);color:#4ade80;border-color:rgba(74,222,128,.25)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="brand-icon">📅</div>NiceMeet</div>
+  <div class="header-right">
+    <div class="avatar-sm" id="hdr-avatar">?</div>
+    <span class="mode-badge bni" id="hdr-mode-badge" style="margin-right:4px"></span><span class="user-name" id="hdr-name">読み込み中...</span>
+    <a href="/" class="btn btn-secondary btn-sm">🎥 通話</a>
+    <a href="/auth/logout" class="btn btn-secondary btn-sm">ログアウト</a>
+  </div>
+</header>
+
+<main>
+  <!-- 予約URL + 統計 -->
+  <div class="grid-2">
+    <div class="card" style="grid-column:1/-1">
+      <div class="card-header">
+        <div class="card-title">🔗 あなたの予約URL</div>
+      </div>
+      <p class="card-desc">このURLを LINE・メール・ウェブサイトなどでお客様に共有してください。お客様が自分で空いている時間を選んで予約できます。</p>
+      <div class="url-display">
+        <span class="url-text" id="booking-url">読み込み中...</span>
+        <button class="btn btn-primary btn-sm" onclick="copyUrl()">コピー</button>
+        <a class="btn btn-secondary btn-sm" id="preview-link" href="#" target="_blank">確認する →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 施設プランカード -->
+  <div id="facility-card" style="margin-bottom:20px;display:none">
+
+    <!-- トライアル残日数バナー（JS で表示切替） -->
+    <div id="trial-banner" class="trial-banner" style="display:none"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🏥 施設プラン</div>
+        <span id="fac-badge" class="plan-badge trial">TRIAL</span>
+      </div>
+      <div class="fac-grid">
+        <div class="fac-stat">
+          <div class="fac-stat-label">ステータス</div>
+          <div class="fac-stat-value" id="fac-status-text">—</div>
+        </div>
+        <div class="fac-stat">
+          <div class="fac-stat-label">拠点数</div>
+          <div class="fac-stat-value" id="fac-loc-count">—</div>
+        </div>
+        <div class="fac-stat">
+          <div class="fac-stat-label">月額（目安）</div>
+          <div class="fac-stat-value" id="fac-amount">—</div>
+        </div>
+        <div class="fac-stat">
+          <div class="fac-stat-label">単価/拠点</div>
+          <div class="fac-stat-value" id="fac-unit">—</div>
+        </div>
+      </div>
+
+      <!-- AI使用量バー -->
+      <div class="usage-bar-wrap">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px">
+          <span>今月のAI文字起こし利用時間</span>
+          <span id="usage-text">0h / —h</span>
+        </div>
+        <div class="usage-bar-bg"><div id="usage-bar" class="usage-bar-fill" style="width:0%"></div></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">※ 月間上限（拠点数×50h）に達した場合のみAI要約が停止します。通話自体は継続できます。</div>
+      </div>
+
+      <!-- エクスポート -->
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+        <a href="/api/facility/export/csv" class="btn btn-secondary btn-sm">📥 会議記録CSV</a>
+        <button class="btn btn-secondary btn-sm" onclick="printSummaries()">🖨️ 要約印刷/PDF</button>
+        <button id="fac-inquiry-btn" class="btn btn-primary btn-sm" onclick="openInquiry()" style="display:none">📩 有料プランを申し込む</button>
+      </div>
+
+      <p style="font-size:11px;color:var(--muted);margin-top:10px">解約後もデータは削除されません。いつでも閲覧・エクスポート可能です。</p>
+
+      <!-- 拠点管理 -->
+      <details style="margin-top:14px">
+        <summary style="font-size:12px;color:var(--muted);cursor:pointer">拠点の追加・削除</summary>
+        <div id="loc-list" style="margin-top:10px"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="new-loc-name" placeholder="拠点名を入力" style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:#fff;padding:7px 10px;font-size:13px">
+          <button class="btn btn-secondary btn-sm" onclick="addLocation()">＋ 追加</button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <!-- 面談記録一覧（welfare mode のみ） -->
+  <div id="call-records-section" style="margin-bottom:20px;display:none">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">&#x1F4CB; 面談記録一覧</div>
+        <a id="records-csv-btn" href="/api/facility/call-records/csv" class="btn btn-secondary btn-sm">&#x1F4E5; CSV</a>
+      </div>
+      <div class="records-filter">
+        <select id="rec-filter-system" onchange="loadCallRecords()">
+          <option value="">全業態</option>
+          <option value="houdei">放課後等デイ</option>
+          <option value="houmon">訪問介護</option>
+          <option value="shuro">就労継続支援</option>
+          <option value="kaigo">介護グループホーム</option>
+        </select>
+        <input id="rec-filter-member" placeholder="対象者名で絞込" oninput="recDebounce()">
+      </div>
+      <div id="records-list"><p style="font-size:13px;color:var(--muted);padding:8px 0">読み込み中…</p></div>
+    </div>
+  </div>
+
+  <!-- 個人プランカード（施設未登録ユーザー向け） -->
+  <div class="card" id="plan-card" style="margin-bottom:20px;display:none">
+    <div class="card-header">
+      <div class="card-title">💎 プランステータス</div>
+      <span id="plan-badge" class="plan-badge free">FREE</span>
+    </div>
+    <div id="plan-free-content">
+      <p class="card-desc" style="margin-bottom:16px">現在は<strong>無料プラン</strong>です。通話時間は45分まで、文字起こしは利用できません。<br>有料プランにアップグレードすると<strong>通話時間無制限 + AI文字起こし・要約</strong>が使えます（¥980/月〜）。</p>
+      <button id="plan-upgrade-btn" class="plan-upgrade-btn" onclick="startUpgrade()" style="width:100%;border:none;cursor:pointer">🚀 有料プランにアップグレード（¥980/月〜）</button>
+
+    </div>
+    <div id="plan-paid-content" style="display:none">
+      <p class="card-desc">現在は<strong>有料プラン</strong>です。通話時間無制限・AI文字起こし・要約がご利用いただけます。</p>
+      <a href="/api/stripe/portal" class="btn btn-secondary btn-sm" style="margin-top:8px;display:inline-flex">⚙️ 解約・カード変更</a>
+    </div>
+  </div>
+
+  <!-- 施設登録モーダル -->
+  <div class="reg-modal" id="reg-modal" onclick="if(event.target===this)closeRegModal()">
+    <div class="reg-box">
+      <h3>🏥 施設アカウント登録（30日無料トライアル）</h3>
+      <div class="reg-field"><label>施設名 *</label><input id="reg-fac-name" placeholder="例：〇〇就労継続支援事業所"></div>
+      <div class="reg-field"><label>担当者名</label><input id="reg-contact" placeholder="例：山田 太郎"></div>
+      <div class="reg-field"><label>電話番号</label><input id="reg-phone" placeholder="例：03-0000-0000"></div>
+      <div class="reg-field">
+        <label>拠点名（1つ以上） *</label>
+        <div id="reg-loc-list">
+          <div class="loc-row"><input class="reg-loc-input" placeholder="例：本店" value=""></div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="addRegLoc()" style="margin-top:4px">＋ 拠点を追加</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+        ※ 登録後30日間は全機能（AI要約込み）を無料でご利用いただけます。<br>
+        ※ 先行価格が適用されます（1拠点: ¥2,980/月〜）。<br>
+        ※ トライアル後は手動でのお申込みとなります。
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="registerFacility()" style="flex:1">登録してトライアルを開始</button>
+        <button class="btn btn-secondary" onclick="closeRegModal()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 有料申込モーダル -->
+  <div class="inquiry-modal" id="inquiry-modal" onclick="if(event.target===this)closeInquiry()">
+    <div class="inquiry-box">
+      <h3>📩 有料プランのお申込み</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px">送信後、担当者よりご連絡いたします（通常1〜2営業日）。</p>
+      <textarea id="inquiry-msg" placeholder="ご質問・ご要望などがあればご記入ください（任意）"></textarea>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary" onclick="submitInquiry()" style="flex:1">申し込む</button>
+        <button class="btn btn-secondary" onclick="closeInquiry()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- インスタント通話 -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div class="card-title">🎥 インスタント通話</div>
+      <button class="btn btn-secondary btn-sm" onclick="genRoom()">新しいURLを生成</button>
+    </div>
+    <p class="card-desc">予約なしですぐにビデオ通話を始めたいときに使えます。URLを相手に共有するだけで入室できます。</p>
+    <div class="url-display">
+      <span class="url-text" id="instant-url">—</span>
+      <button class="btn btn-primary btn-sm" id="instant-copy" onclick="copyInstant()" disabled>コピー</button>
+      <a class="btn btn-secondary btn-sm" id="instant-open" href="#" target="_blank" style="pointer-events:none;opacity:.4">今すぐ開く</a>
+    </div>
+  </div>
+
+
+  <!-- BNI 1-2-1（非welfareユーザー専用・JSで表示制御） -->
+  <div class="card" id="bni-card" style="margin-bottom:20px;display:none">
+    <div class="card-header">
+      <div class="card-title">🤝 BNI 1-2-1</div>
+      <button class="btn btn-secondary btn-sm" onclick="genBniRoom()">🔄 新しいルーム</button>
+    </div>
+    <p class="card-desc">1-2-1ミーティング専用モードです。通話終了後にGAINS情報が自動抽出され、1to1 Managerに保存されます。</p>
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+      <input id="bni-contact-name" class="bni-input" placeholder="相手の名前（例：山田 太郎）" oninput="genBniUrl()">
+    </div>
+    <div class="url-display">
+      <span class="url-text" id="bni-guest-url" style="color:var(--muted);font-style:italic">相手の名前を入力するとURLが生成されます</span>
+      <button class="btn btn-primary btn-sm" id="bni-copy-btn" onclick="copyBniUrl()" disabled>コピー</button>
+      <a class="btn btn-secondary btn-sm" id="bni-open-btn" href="#" target="_blank" style="pointer-events:none;opacity:.4">参加する</a>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6">※ URLをコピーして相手に共有してください。相手は入室前に名前・連絡先を入力します。</p>
+  </div>
+
+  <!-- 空き時間設定 -->
+  <div class="section-card">
+    <div class="section-head">
+      <h2>📆 空き時間の設定</h2>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;color:var(--muted)">1コマ</span>
+        <select class="slot-select" id="slot-duration">
+          <option value="15">15分</option>
+          <option value="30" selected>30分</option>
+          <option value="45">45分</option>
+          <option value="60">1時間</option>
+        </select>
+      </div>
+    </div>
+    <div class="section-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">受け付ける曜日をタップして、対応可能な時間帯を設定してください。Googleカレンダーと照合して、実際に空いている時間のみ予約可能になります。</p>
+      <div class="dow-grid" id="dow-buttons"></div>
+      <div id="time-settings"></div>
+      <button class="btn btn-primary" onclick="saveAvailability()" style="width:100%;padding:13px;font-size:14px;border-radius:10px">設定を保存する</button>
+    </div>
+  </div>
+
+  <!-- 予約一覧 -->
+  <div class="section-card">
+    <div class="section-head">
+      <h2>📋 予約一覧</h2>
+      <span id="booking-count" style="font-size:13px;color:var(--muted)"></span>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="showTab('upcoming',this)">今後の予約</button>
+      <button class="tab-btn" onclick="showTab('past',this)">過去の予約</button>
+    </div>
+    <div class="tab-content show" id="tab-upcoming"></div>
+    <div class="tab-content" id="tab-past"></div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DAYS = ['日','月','火','水','木','金','土'];
+const TIMES = [];
+for (let h=0;h<24;h++) for (let m of [0,30]) TIMES.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+
+let activeAvail = {}, me = null;
+
+async function init() {
+  const [meRes, availRes, bookRes] = await Promise.all([
+    fetch('/api/me').then(r=>r.json()),
+    fetch('/api/availability').then(r=>r.json()),
+    fetch('/api/bookings').then(r=>r.json())
+  ]);
+  me = meRes;
+  const planRes = await fetch('/api/my-plan').then(r=>r.json()).catch(()=>({plan:'free'}));
+  const initial = (me.name||'?')[0].toUpperCase();
+  document.getElementById('hdr-avatar').textContent = initial;
+  document.getElementById('hdr-name').textContent = me.name;
+  // プランカード表示
+  const planCard = document.getElementById('plan-card');
+  planCard.style.display = 'block';
+  if (planRes.plan === 'paid') {
+    document.getElementById('plan-badge').className = 'plan-badge paid';
+    document.getElementById('plan-badge').textContent = 'PRO';
+    document.getElementById('plan-free-content').style.display = 'none';
+    document.getElementById('plan-paid-content').style.display = 'block';
+  }
+  // 支払い状況チェック
+  const trialBanner = document.createElement('div');
+  const regDate = me.registered_at ? new Date(me.registered_at) : null;
+  const daysSinceReg = regDate ? (Date.now() - regDate.getTime()) / 86400000 : 999;
+  const hasStripeCustomer = !!me.stripe_customer_id;
+  const isPaid = me.plan === 'paid';
+
+  if (!isPaid && (hasStripeCustomer || daysSinceReg > 30)) {
+    // カード未登録 or 30日超過
+    const isExpired = daysSinceReg > 30;
+    trialBanner.style.cssText = 'background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;color:#fca5a5;line-height:1.8';
+    trialBanner.innerHTML = isExpired
+      ? '⚠️ <strong style="color:#f87171">トライアル期間が終了しました</strong><br><span style="color:#94a3b8">引き続き全機能をご利用いただくにはお支払いが必要です（¥1,980/月）。</span><br><button onclick="startUpgrade()" style="margin-top:8px;padding:8px 20px;background:#6c63ff;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">→ 支払いに進む</button>'
+      : '💳 <strong style="color:#f87171">クレジットカードが未登録です</strong><br><span style="color:#94a3b8">30日間の無料トライアル中です。期間終了前にカードを登録してください。</span><br><button onclick="startUpgrade()" style="margin-top:8px;padding:8px 20px;background:#6c63ff;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">→ カードを登録する（30日間無料）</button>';
+    document.querySelector('.container').prepend(trialBanner);
+  }
+
+  if (!me.has_google) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#fca5a5;line-height:1.7';
+    banner.innerHTML = '📅 <strong style="color:#f87171">Googleカレンダー未連携</strong><br><span style="color:#94a3b8">予約カレンダー機能を使うにはGoogleログインが必須です。</span><br><a href="/auth/google" style="color:#6ee7b7;font-weight:700">→ Googleアカウントを連携する</a>';
+    document.querySelector('.container').prepend(banner);
+  }
+  document.getElementById('booking-url').textContent = `https://meet.gaiaarts.org/b/${me.slug}`;
+  document.getElementById('preview-link').href = `/b/${me.slug}`;
+  document.getElementById('slot-duration').value = me.slot_duration || 30;
+
+  for (const a of availRes) activeAvail[a.day_of_week] = {start:a.start_time,end:a.end_time};
+  if (new URLSearchParams(location.search).get('plan') === 'success') {
+    toast('🎉 有料プランが有効になりました！');
+    history.replaceState({}, '', '/booking/dashboard');
+  }
+
+  // ui_mode に応じて表示切替
+  if (me.ui_mode === 'welfare') {
+    // 施設モード: BNIカード非表示、施設プラン表示
+    document.getElementById('plan-card').style.display = 'none';
+    document.getElementById('bni-card').style.display = 'none';
+    document.getElementById('hdr-mode-badge').textContent = '🏥 施設モード';
+    document.getElementById('hdr-mode-badge').className = 'mode-badge welfare';
+    await loadFacilityStatus(me);
+  } else {
+    // BNIモード: 施設カード非表示、BNI 1-2-1カード表示
+    document.getElementById('plan-card').style.display = 'none';
+    document.getElementById('facility-card').style.display = 'none';
+    document.getElementById('bni-card').style.display = '';
+    document.getElementById('hdr-mode-badge').textContent = '🤝 BNIモード';
+    document.getElementById('hdr-mode-badge').className = 'mode-badge bni';
+    genBniRoom();
+    // ?mode=welfare で来た場合は施設登録モーダルを自動表示
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.get('mode') === 'welfare') {
+      history.replaceState({}, '', '/booking/dashboard');
+      setTimeout(() => openRegModal(), 600);
+    }
+    // ?preview=welfare で開発者向け施設ダッシュボードプレビュー
+    if (urlParams.get('preview') === 'welfare') {
+      document.getElementById('bni-card').style.display = 'none';
+      document.getElementById('hdr-mode-badge').textContent = '🏥 施設モード（プレビュー）';
+      document.getElementById('hdr-mode-badge').className = 'mode-badge welfare';
+      await loadFacilityStatus(me);
+    }
+  }
+  renderDow();
+  renderBookings(bookRes);
+}
+
+function renderDow() {
+  const el = document.getElementById('dow-buttons');
+  el.innerHTML = '';
+  DAYS.forEach((d,i) => {
+    const btn = document.createElement('div');
+    btn.className = 'dow-btn'+(activeAvail[i]?' active':'');
+    btn.textContent = d;
+    btn.onclick = () => { if(activeAvail[i]) delete activeAvail[i]; else activeAvail[i]={start:'09:00',end:'18:00'}; renderDow(); };
+    el.appendChild(btn);
+  });
+  renderTimeSettings();
+}
+
+function renderTimeSettings() {
+  const el = document.getElementById('time-settings');
+  el.innerHTML = '';
+  DAYS.forEach((d,i) => {
+    if (!activeAvail[i]) return;
+    const row = document.createElement('div');
+    row.className = 'time-row';
+    const label = document.createElement('span');
+    label.className = 'time-label'; label.textContent = d+'曜日';
+    const makeSelect = (val, cb) => {
+      const sel = document.createElement('select');
+      TIMES.forEach(t => { const o=document.createElement('option'); o.value=t; o.textContent=t; if(t===val)o.selected=true; sel.appendChild(o); });
+      sel.onchange = cb; return sel;
+    };
+    const sep = document.createElement('span'); sep.className='time-sep'; sep.textContent='〜';
+    row.appendChild(label);
+    row.appendChild(makeSelect(activeAvail[i].start, e=>{activeAvail[i].start=e.target.value;}));
+    row.appendChild(sep);
+    row.appendChild(makeSelect(activeAvail[i].end, e=>{activeAvail[i].end=e.target.value;}));
+    el.appendChild(row);
+  });
+}
+
+async function saveAvailability() {
+  const availability = Object.entries(activeAvail).map(([dow,v])=>({day_of_week:parseInt(dow),start_time:v.start,end_time:v.end}));
+  const slot_duration = parseInt(document.getElementById('slot-duration').value);
+  await fetch('/api/availability',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({availability,slot_duration})});
+  toast('✓ 設定を保存しました');
+}
+
+function renderBookings(bookings) {
+  const now = new Date();
+  const upcoming = bookings.filter(b=>new Date(b.start_time)>=now);
+  const past = bookings.filter(b=>new Date(b.start_time)<now);
+  document.getElementById('booking-count').textContent = `今後 ${upcoming.length}件`;
+  renderList('tab-upcoming', upcoming, true);
+  renderList('tab-past', past, false);
+}
+
+function renderList(id, items, canDelete) {
+  const el = document.getElementById(id);
+  if (!items.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">${canDelete?'📭':'🗂️'}</div>${canDelete?'まだ予約はありません':'過去の予約はありません'}</div>`;
+    return;
+  }
+  el.innerHTML = '';
+  items.forEach(b => {
+    const s = new Date(b.start_time), e = new Date(b.end_time);
+    const month = s.toLocaleDateString('ja-JP',{month:'short'}).replace('月','');
+    const day = s.getDate();
+    const dow = DAYS[s.getDay()];
+    const timeStr = `${s.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})} 〜 ${e.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}`;
+    const div = document.createElement('div');
+    div.className = 'booking-card';
+    div.innerHTML = `
+      <div class="booking-date">
+        <div class="month">${month}月</div>
+        <div class="day">${day}</div>
+        <div class="dow">${dow}</div>
+      </div>
+      <div class="booking-info">
+        <div class="booking-name">${b.booker_name}</div>
+        <div class="booking-time">🕐 ${timeStr}</div>
+        <div class="booking-email">📧 ${b.booker_email||'メールなし'}</div>
+        ${b.purpose?`<div class="booking-purpose">💬 ${b.purpose}</div>`:''}
+        <a class="meet-link" href="https://meet.gaiaarts.org/?room=${b.meet_room}" target="_blank">🎥 ビデオ通話を開く</a>
+      </div>
+      ${canDelete?`<button class="btn btn-danger btn-sm" onclick="deleteBooking(${b.id},this)">キャンセル</button>`:''}
+    `;
+    el.appendChild(div);
+  });
+}
+
+async function deleteBooking(id, btn) {
+  if (!confirm('この予約をキャンセルしますか？\n予約者にキャンセルメールが送信されます。')) return;
+  btn.disabled = true; btn.textContent = '処理中...';
+  await fetch('/api/bookings/'+id,{method:'DELETE'});
+  toast('予約をキャンセルしました');
+  setTimeout(()=>location.reload(), 1200);
+}
+
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('show'));
+  document.getElementById('tab-'+name).classList.add('show');
+}
+
+function genRoom() {
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const url = `https://meet.gaiaarts.org/?room=${id}`;
+  document.getElementById('instant-url').textContent = url;
+  const copyBtn = document.getElementById('instant-copy');
+  const openBtn = document.getElementById('instant-open');
+  copyBtn.disabled = false;
+  openBtn.href = url;
+  openBtn.style.pointerEvents = '';
+  openBtn.style.opacity = '';
+  copyBtn.onclick = () => { navigator.clipboard.writeText(url); toast('✓ 通話URLをコピーしました'); };
+}
+
+function copyInstant() {}
+
+// ── BNI 1-2-1 mode ──
+let bniRoomId = null;
+
+function genBniRoom() {
+  bniRoomId = '121-' + Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  genBniUrl();
+}
+
+function genBniUrl() {
+  if (!bniRoomId || !me) return;
+  const contactName = document.getElementById('bni-contact-name').value.trim();
+  const url = new URL('https://meet.gaiaarts.org/');
+  url.searchParams.set('system', 'bni');
+  url.searchParams.set('bni_user', me.name || '');
+  url.searchParams.set('room', bniRoomId);
+  const urlEl = document.getElementById('bni-guest-url');
+  const copyBtn = document.getElementById('bni-copy-btn');
+  const openBtn = document.getElementById('bni-open-btn');
+  if (contactName) {
+    url.searchParams.set('bni_contact_name', contactName);
+    url.searchParams.set('name', contactName);
+    const urlStr = url.toString();
+    urlEl.textContent = urlStr;
+    urlEl.style.color = 'var(--accent)';
+    urlEl.style.fontStyle = 'normal';
+    copyBtn.disabled = false;
+    openBtn.href = urlStr;
+    openBtn.style.pointerEvents = '';
+    openBtn.style.opacity = '';
+  } else {
+    urlEl.textContent = '相手の名前を入力するとURLが生成されます';
+    urlEl.style.color = 'var(--muted)';
+    urlEl.style.fontStyle = 'italic';
+    copyBtn.disabled = true;
+    openBtn.style.pointerEvents = 'none';
+    openBtn.style.opacity = '.4';
+  }
+}
+
+function copyBniUrl() {
+  navigator.clipboard.writeText(document.getElementById('bni-guest-url').textContent);
+  toast('✓ BNI 1-2-1 URLをコピーしました');
+}
+
+
+function copyUrl() {
+  navigator.clipboard.writeText(`https://meet.gaiaarts.org/b/${me.slug}`);
+  toast('✓ URLをコピーしました');
+}
+
+async function loadFacilityStatus(me) {
+  try {
+    const r = await fetch('/api/facility/status').then(r => r.json());
+    if (r.registered) {
+      // 施設カード表示
+      document.getElementById('facility-card').style.display = '';
+      document.getElementById('plan-card').style.display = 'none';
+
+      const badge = document.getElementById('fac-badge');
+      const s = r.status;
+      badge.textContent = s === 'trial' ? 'TRIAL' : s === 'active' ? 'PRO' : 'EXPIRED';
+      badge.className = 'plan-badge ' + s;
+
+      const statusText = { trial: `トライアル（残${r.daysLeft}日）`, active: '有料契約中', expired: '期限切れ' };
+      document.getElementById('fac-status-text').textContent = statusText[s] || s;
+      document.getElementById('fac-loc-count').textContent = r.locations.length + '拠点';
+      document.getElementById('fac-amount').textContent = r.amount.total === 0 ? '—' : '¥' + r.amount.total.toLocaleString() + '/月';
+      document.getElementById('fac-unit').textContent = '¥' + r.amount.unit.toLocaleString() + '/拠点';
+
+      // 使用量バー
+      const pct = r.usage.percent;
+      const bar = document.getElementById('usage-bar');
+      bar.style.width = pct + '%';
+      bar.className = 'usage-bar-fill' + (pct >= 100 ? ' danger' : pct >= 80 ? ' warn' : '');
+      document.getElementById('usage-text').textContent = r.usage.hours + 'h / ' + r.usage.limitHours + 'h（拠点数×50h）';
+
+      // トライアルバナー
+      const banner = document.getElementById('trial-banner');
+      if (s === 'trial' && r.daysLeft <= 7) {
+        banner.style.display = 'flex';
+        banner.className = 'trial-banner ' + (r.daysLeft <= 3 ? 'danger' : 'warn');
+        banner.innerHTML = (r.daysLeft === 0 ? '⚠️ 本日' : `⏰ 残り${r.daysLeft}日`) +
+          `でトライアルが終了します。引き続きAI要約をご利用の場合は有料プランへお進みください。` +
+          `<button class="btn btn-primary btn-sm" onclick="openInquiry()" style="margin-left:auto;white-space:nowrap">申し込む</button>`;
+      } else if (s === 'expired') {
+        banner.style.display = 'flex';
+        banner.className = 'trial-banner expired';
+        banner.innerHTML = '🔴 トライアル期間が終了しました。AI要約は停止中です。過去記録の閲覧・エクスポートは引き続きご利用できます。' +
+          `<button class="btn btn-primary btn-sm" onclick="openInquiry()" style="margin-left:auto;white-space:nowrap">申し込む</button>`;
+      }
+
+      // 申込ボタン（expired or trial残り7日以下）
+      if (s === 'expired' || (s === 'trial' && r.daysLeft <= 7)) {
+        document.getElementById('fac-inquiry-btn').style.display = '';
+      }
+
+      // 使用量警告
+      if (pct >= 100) {
+        toast('⚠️ 今月のAI使用時間が上限に達しました。AI要約が停止されています。');
+      } else if (pct >= 80) {
+        toast('📊 今月のAI使用時間が80%に達しました。');
+      }
+
+      // 拠点リスト
+      renderLocations(r.locations);
+
+      window._facilityData = r;
+      document.getElementById('call-records-section').style.display = '';
+      await loadCallRecords();
+    } else {
+      // Welfareモードだが施設未登録 → 登録を促す
+      document.getElementById('plan-card').style.display = 'none';
+      document.getElementById('call-records-section').style.display = 'none';
+      const fc = document.getElementById('facility-card');
+      fc.style.display = '';
+      fc.querySelector('.card').innerHTML =
+        '<div class="card-header"><div class="card-title">&#x1F3E5; 施設アカウント登録</div></div>' +
+        '<p class="card-desc" style="margin-bottom:16px">施設プランを利用するには、はじめに施設情報を登録してください。<br>登録後、<strong>30日間の無料トライアル</strong>が即座に開始されます。</p>' +
+        '<ul style="font-size:13px;color:var(--muted);margin-bottom:18px;padding-left:18px;line-height:2">' +
+          '<li>AI文字起こし・要約（通話・対面録音）</li>' +
+          '<li>業態別の法定記録様式への自動変換</li>' +
+          '<li>面談記録の蓄積・CSVエクスポート</li>' +
+          '<li>複数拠点対応（1拠点 ¥2,980/月〜）</li>' +
+        '</ul>' +
+        '<button class="btn btn-primary" onclick="openRegModal()" style="width:100%;padding:14px;font-size:15px">&#x1F680; 施設登録して30日無料トライアルを開始</button>';
+    }
+  } catch(e) {
+    console.error('facility status error:', e);
+    document.getElementById('plan-card').style.display = '';
+  }
+}
+
+function renderLocations(locs) {
+  const el = document.getElementById('loc-list');
+  if (!locs.length) { el.innerHTML = '<p style="font-size:12px;color:var(--muted)">拠点なし</p>'; return; }
+  el.innerHTML = locs.map(l =>
+    `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-size:13px">${l.name}</span>
+      <button class="btn btn-danger btn-sm" onclick="deleteLocation(${l.id},'${l.name.replace(/'/g,"\\'")}')">削除</button>
+    </div>`
+  ).join('');
+}
+
+async function addLocation() {
+  const input = document.getElementById('new-loc-name');
+  const name = input.value.trim();
+  if (!name) return;
+  const r = await fetch('/api/facility/location', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name }) }).then(r => r.json());
+  if (r.ok) { toast('拠点を追加しました'); input.value = ''; loadFacilityStatus({}); }
+  else toast('エラー: ' + (r.error || ''));
+}
+
+async function deleteLocation(id, name) {
+  if (!confirm(`「${name}」を削除しますか？`)) return;
+  const r = await fetch('/api/facility/location/' + id, { method: 'DELETE' }).then(r => r.json());
+  if (r.ok) { toast('拠点を削除しました'); loadFacilityStatus({}); }
+  else toast('エラー: ' + (r.error || ''));
+}
+
+function openInquiry() { document.getElementById('inquiry-modal').classList.add('show'); }
+function closeInquiry() { document.getElementById('inquiry-modal').classList.remove('show'); }
+async function submitInquiry() {
+  const msg = document.getElementById('inquiry-msg').value;
+  const r = await fetch('/api/facility/inquiry', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ message: msg }) }).then(r => r.json());
+  if (r.ok) { toast('✓ 申込を送信しました。担当者よりご連絡します。'); closeInquiry(); }
+  else toast('送信エラー');
+}
+
+function openRegModal() { document.getElementById('reg-modal').classList.add('show'); }
+function closeRegModal() { document.getElementById('reg-modal').classList.remove('show'); }
+function addRegLoc() {
+  const div = document.createElement('div'); div.className = 'loc-row';
+  div.innerHTML = '<input class="reg-loc-input" placeholder="拠点名">';
+  document.getElementById('reg-loc-list').appendChild(div);
+}
+async function registerFacility() {
+  const name = document.getElementById('reg-fac-name').value.trim();
+  const contact = document.getElementById('reg-contact').value.trim();
+  const phone = document.getElementById('reg-phone').value.trim();
+  const locInputs = document.querySelectorAll('.reg-loc-input');
+  const locations = [...locInputs].map(i => i.value.trim()).filter(Boolean);
+  if (!name || !locations.length) { toast('施設名と拠点名は必須です'); return; }
+  try {
+    const res = await fetch('/api/facility/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ facility_name: name, contact_name: contact, phone, locations })
+    });
+    const r = await res.json();
+    if (r.ok) {
+      toast('🎉 施設登録完了！30日間のトライアルを開始します。');
+      closeRegModal();
+      await loadFacilityStatus({});
+    } else if (r.error === 'already registered') {
+      toast('施設はすでに登録されています。');
+      closeRegModal();
+      await loadFacilityStatus({});
+    } else {
+      toast('エラー: ' + (r.error || '登録できませんでした'));
+    }
+  } catch(e) {
+    toast('通信エラーが発生しました。再度お試しください。');
+    console.error('registerFacility error:', e);
+  }
+}
+
+function printSummaries() {
+  const fd = window._facilityData;
+  if (!fd) return;
+  window.open('/api/facility/export/csv', '_blank');
+}
+
+async function startUpgrade() {
+  const btn = document.getElementById('plan-upgrade-btn');
+  btn.disabled = true; btn.textContent = '処理中...';
+  try {
+    const r = await fetch('/api/stripe/checkout', { method: 'POST' }).then(r => r.json());
+    if (r.url) { window.location.href = r.url; return; }
+    toast('エラー: ' + (r.error || '不明なエラー'));
+  } catch(e) { toast('通信エラーが発生しました'); }
+  btn.disabled = false; btn.textContent = '🚀 有料プランにアップグレード（¥980/月〜）';
+}
+
+let _recDebounceTimer = null;
+function recDebounce() {
+  clearTimeout(_recDebounceTimer);
+  _recDebounceTimer = setTimeout(loadCallRecords, 400);
+}
+
+async function loadCallRecords() {
+  const sys = document.getElementById('rec-filter-system')?.value || '';
+  const member = (document.getElementById('rec-filter-member')?.value || '').trim();
+  const params = new URLSearchParams();
+  if (sys) params.set('system', sys);
+  if (member) params.set('member', member);
+  const qs = params.toString();
+  const csvBtn = document.getElementById('records-csv-btn');
+  if (csvBtn) csvBtn.href = '/api/facility/call-records/csv' + (qs ? '?' + qs : '');
+  const el = document.getElementById('records-list');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/facility/call-records' + (qs ? '?' + qs : '')).then(r => r.json());
+    renderCallRecords(r.records || []);
+  } catch(e) {
+    el.innerHTML = '<p style="font-size:13px;color:#f87171;padding:8px 0">読み込みエラー</p>';
+  }
+}
+
+const SYS_LABELS = { houdei:'放課後等デイ', houmon:'訪問介護', shuro:'就労継続支援', kaigo:'介護グループホーム' };
+
+function renderCallRecords(records) {
+  const el = document.getElementById('records-list');
+  if (!records.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">&#x1F4C2;</div>面談記録がありません</div>';
+    return;
+  }
+  el.innerHTML = records.map(function(rec, i) {
+    const date = (rec.interview_date || rec.created_at || '').substring(0, 10) || '—';
+    const sysLabel = SYS_LABELS[rec.welfare_system] || rec.welfare_system || '—';
+    const fullText = rec.summary_text || '';
+    const preview = fullText.replace(/\n/g, ' ').substring(0, 80) + (fullText.length > 80 ? '…' : '');
+    const isDraft = rec.status === 'draft';
+    const isFace = rec.source === 'face';
+    const draftBadge = isDraft ? '<span class="rec-badge-draft">&#x26A0; 下書き</span>' : '';
+    const faceBadge = isFace ? '<span class="rec-badge-face">&#x1F3A4; 対面録音</span>' : '';
+    const confirmBtn = isDraft
+      ? '<button class="btn-confirm-rec" onclick="event.stopPropagation();confirmFromDash(' + rec.id + ',' + i + ')">✓ 確定する</button>'
+      : '';
+    return '<div class="rec-row">' +
+      '<div class="rec-head" onclick="toggleRecord(' + i + ')">' +
+        '<div class="rec-meta">' +
+          draftBadge + faceBadge +
+          '<span class="rec-tag">' + escHtml(sysLabel) + '</span>' +
+          '<span class="rec-tag">' + escHtml(rec.record_type || '—') + '</span>' +
+          '<span class="rec-date">' + date + '</span>' +
+        '</div>' +
+        '<div class="rec-name">&#x1F464; ' + escHtml(rec.member_name || '未記入') + '　担当: ' + escHtml(rec.staff_name || '—') + '</div>' +
+        '<div class="rec-preview">' + escHtml(preview) + '</div>' +
+      '</div>' +
+      '<div class="rec-body" id="rec-body-' + i + '">' +
+        (isDraft ? '<p style="font-size:12px;color:#fde047;margin-bottom:8px">&#x26A0; 下書きです。内容を確認して確定してください。</p>' : '') +
+        '<div class="rec-full" id="rec-full-' + i + '">' + escHtml(fullText || '（要約なし）') + '</div>' +
+        confirmBtn +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function toggleRecord(i) {
+  var body = document.getElementById('rec-body-' + i);
+  if (body) body.classList.toggle('open');
+}
+
+async function confirmFromDash(id, i) {
+  if (!confirm('この記録を確定しますか？確定後は正式記録として扱われます。')) return;
+  var fullEl = document.getElementById('rec-full-' + i);
+  var summary = fullEl ? fullEl.textContent : '';
+  try {
+    var r = await fetch('/api/face-record/confirm/' + id, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ summary: summary })
+    }).then(function(r){ return r.json(); });
+    if (r.ok) { toast('✓ 記録を確定しました'); loadCallRecords(); }
+    else toast('エラー: ' + (r.error || ''));
+  } catch(e) { toast('通信エラー'); }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 2500);
+}
+
+init();
+</script>
+</body>
+</html>

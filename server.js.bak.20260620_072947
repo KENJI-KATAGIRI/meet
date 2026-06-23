@@ -39,11 +39,11 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", "cdn.jsdelivr.net", "cdn.tailwindcss.com", "https://connect.facebook.net"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", "cdn.jsdelivr.net", "cdn.tailwindcss.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "cdn.tailwindcss.com", "fonts.googleapis.com"],
       mediaSrc: ["'self'", "blob:", "data:"],
-      connectSrc: ["'self'", "wss:", "ws:", "https://storage.googleapis.com", "https://www.facebook.com", "https://connect.facebook.net"],
-      imgSrc: ["'self'", "data:", "blob:", "https://www.facebook.com"],
+      connectSrc: ["'self'", "wss:", "ws:", "https://storage.googleapis.com"],
+      imgSrc: ["'self'", "data:", "blob:"],
       workerSrc: ["'self'", "blob:"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
@@ -99,7 +99,6 @@ class BetterSqliteStore extends Store {
 }
 
 // BNI Manager DB（既存データをそのまま使用）
-const bniDb = (() => { try { return new Database("/home/ubuntu/apps/bni-app/data/bni.db", { readonly: true, timeout: 2000 }); } catch(e) { console.warn("[bniDb] could not open BNI Manager DB:", e.message); return null; } })();
 
 // DB setup
 const db = new Database(path.join(__dirname, 'data', 'booking.db'));
@@ -237,9 +236,6 @@ try { db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT'); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN status TEXT DEFAULT 'confirmed'"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN source TEXT DEFAULT 'video'"); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN booking_horizon_days INTEGER DEFAULT 14"); } catch(e) {}
-try { db.exec("ALTER TABLE nm_facilities ADD COLUMN admin_notes TEXT DEFAULT ''"); } catch(e) {}
-try { db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT"); } catch(e) {}
-try { db.exec("ALTER TABLE users ADD COLUMN own_gains TEXT DEFAULT '{}'"); } catch(e) {}
 
 // ── 施設サブスク ヘルパー ────────────────────────────────────────
 function calcMonthlyAmount(locationCount, isEarlyAdopter) {
@@ -250,10 +246,7 @@ function calcMonthlyAmount(locationCount, isEarlyAdopter) {
 }
 function getFacilityStatus(facility) {
   if (!facility) return 'none';
-  if (facility.trial_status === 'custom') return 'custom';
   if (facility.trial_status === 'active') return 'active';
-  if (facility.trial_status === 'expired') return 'expired';
-  if (!facility.trial_started_at) return 'expired';
   const daysSince = (Date.now() - new Date(facility.trial_started_at).getTime()) / 86400000;
   return daysSince > 30 ? 'expired' : 'trial';
 }
@@ -265,9 +258,6 @@ function getMonthlyUsageMinutes(facilityId) {
   return row?.total || 0;
 }
 function getTrialDaysLeft(facility) {
-  if (!facility) return 0;
-  if (facility.trial_status === 'custom' || facility.trial_status === 'active') return null;
-  if (!facility.trial_started_at) return 0;
   const daysSince = (Date.now() - new Date(facility.trial_started_at).getTime()) / 86400000;
   return Math.max(0, Math.ceil(30 - daysSince));
 }
@@ -491,17 +481,11 @@ async function hashPassword(password) {
   return salt + ':' + hash;
 }
 async function verifyPassword(password, stored) {
-  try {
-    const [salt, hash] = stored.split(':');
-    if (!salt || !hash || hash.length !== 128) return false;
-    const attempt = await new Promise((res, rej) =>
-      crypto.scrypt(password, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex')))
-    );
-    return crypto.timingSafeEqual(Buffer.from(attempt, 'hex'), Buffer.from(hash, 'hex'));
-  } catch (e) {
-    console.error('[verifyPassword] format error:', e.message);
-    return false;
-  }
+  const [salt, hash] = stored.split(':');
+  const attempt = await new Promise((res, rej) =>
+    crypto.scrypt(password, salt, 64, (e, k) => e ? rej(e) : res(k.toString('hex')))
+  );
+  return crypto.timingSafeEqual(Buffer.from(attempt, 'hex'), Buffer.from(hash, 'hex'));
 }
 
 // ---- 入力検証ユーティリティ ----
@@ -528,14 +512,9 @@ app.use(express.json({
   limit: '50kb',
   verify: (req, res, buf) => { if (req.path === '/api/stripe/webhook') req.rawBody = buf; }
 }));
-const WELFARE_SYSTEMS = new Set(['shuro','kaigo','houmon','houdei','roukin','beauty','seikatsu','keikaku','booking']);
 app.get('/', (req, res, next) => {
-  const sys = req.query.system;
-  if (sys && WELFARE_SYSTEMS.has(sys)) {
-    return res.sendFile(path.join(__dirname, 'public', 'welfare-call.html'));
-  }
   if (!req.query.room) return res.redirect('/bni.html');
-  next(); // static serves index.html (BNI用)
+  next();
 });
 app.use(express.static(path.join(__dirname, 'public')));
 if (!process.env.SESSION_SECRET) { console.error('[FATAL] SESSION_SECRET is not set in .env — exiting'); process.exit(1); }
@@ -586,14 +565,6 @@ const HALLUCINATION_PHRASES = [
   '日本語のビデオの字幕',
   '以下は日本語のビデオ',
   'かわいい かわいい',
-  // 無音・短時間録音時のWhisper日本語ハルシネーション
-  'おやすみなさい',
-  'お休みなさい',
-  'この動画は',
-  'この動画では',
-  'スタイルの動画',
-  'またお会いしましょう',
-  'バイバイ',
 ];
 function isWhisperHallucination(text) {
   if (!text || text.length < 3) return true;
@@ -643,7 +614,6 @@ app.get('/auth/google/callback', async (req, res) => {
     client.setCredentials(tokens);
     const { data } = await google.oauth2({ version: 'v2', auth: client }).userinfo.get();
 
-    let isNewUser = false;
     const existing = db.prepare('SELECT id, slug, refresh_token FROM users WHERE google_id = ?').get(data.id);
     if (existing) {
       const rt = tokens.refresh_token || existing.refresh_token;
@@ -660,10 +630,9 @@ app.get('/auth/google/callback', async (req, res) => {
         .run(data.id, data.name, data.email, tokens.access_token, tokens.refresh_token, slug);
       await regenerateSession(req);
       req.session.userId = r.lastInsertRowid;
-      isNewUser = true;
       req.session.slug = slug;
     }
-    res.redirect(isNewUser ? "/booking/dashboard?registered=1" : "/booking/dashboard");
+    res.redirect('/booking/dashboard');
   } catch (e) {
     console.error(e);
     res.redirect('/booking?error=1');
@@ -711,7 +680,6 @@ app.post('/auth/login', async (req, res) => {
   await regenerateSession(req);
   req.session.userId = user.id;
   req.session.slug = user.slug;
-  db.prepare("UPDATE users SET last_login_at=datetime('now') WHERE id=?").run(user.id);
   res.json({ ok: true });
 });
 
@@ -732,46 +700,9 @@ function requireAuth(req, res, next) {
 
 
 // ---- API: me ----
-const OWNER_EMAIL = process.env.OWNER_EMAIL || 'kenji.kys@gmail.com';
-
 app.get('/api/me', requireAuth, (req, res) => {
   const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode, registered_at, stripe_customer_id, plan, booking_horizon_days, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
-  if (!u) return res.status(404).json({ error: 'not found' });
-  const isOwner = u.email === OWNER_EMAIL;
-  // オーナーのみ: セッションレベルのモードオーバーライドを適用
-  const result = { ...u, isOwner };
-  if (isOwner && req.session.uiModeOverride) {
-    result.ui_mode = req.session.uiModeOverride;
-  }
-  res.json(result);
-});
-
-// ---- 自分のGAINSプロフィール ----
-app.get('/api/my-gains', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT own_gains FROM users WHERE id=?').get(req.session.userId);
-  try { res.json(JSON.parse(u?.own_gains || '{}')); } catch(e) { res.json({}); }
-});
-app.put('/api/my-gains', requireAuth, express.json({ limit: '10kb' }), (req, res) => {
-  const { goals, accomplishments, interests, networks, skills } = req.body;
-  const gains = {
-    goals: safeStr(goals, 500),
-    accomplishments: safeStr(accomplishments, 500),
-    interests: safeStr(interests, 500),
-    networks: safeStr(networks, 500),
-    skills: safeStr(skills, 500)
-  };
-  db.prepare('UPDATE users SET own_gains=? WHERE id=?').run(JSON.stringify(gains), req.session.userId);
-  res.json({ ok: true });
-});
-
-// オーナー専用: セッション内モード切替（DBは変更しない）
-app.post('/api/me/preview-mode', requireAuth, express.json({ limit: '1kb' }), (req, res) => {
-  const u = db.prepare('SELECT email FROM users WHERE id=?').get(req.session.userId);
-  if (!u || u.email !== OWNER_EMAIL) return res.status(403).json({ error: 'forbidden' });
-  const { mode } = req.body;
-  if (!['simple', 'welfare'].includes(mode)) return res.status(400).json({ error: 'invalid mode' });
-  req.session.uiModeOverride = mode;
-  req.session.save(() => res.json({ ok: true, mode }));
+  res.json(u);
 });
 
 // ---- API: my-plan ----
@@ -1789,12 +1720,8 @@ app.post('/api/upload-file', uploadLimiter, requireAuth, uploadFileMiddleware.si
   const msgHtml = isImage
     ? `<img src="${safeUrl}" alt="${safeOrigName}" class="chat-img" onclick="window.open('${safeUrl}','_blank')">`
     : `<a href="${safeUrl}" download="${safeOrigName}" target="_blank" class="chat-file-link">📎 ${safeOrigName}</a>`;
-  const senderSocketId = typeof req.body.socketId === 'string' ? req.body.socketId.slice(0, 64) : null;
-  if (roomId && rooms.has(roomId)) {
-    const emit = senderSocketId ? io.to(roomId).except(senderSocketId) : io.to(roomId);
-    emit.emit('chat-file', { from: senderName, message: msgHtml, time });
-  }
-  res.json({ ok: true, url, origName, isImage, msgHtml });
+  if (roomId && rooms.has(roomId)) io.to(roomId).emit('chat-file', { from: senderName, message: msgHtml, time });
+  res.json({ ok: true, url, origName, isImage });
 });
 
 setInterval(() => {
@@ -1864,15 +1791,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
   if (recordMode === 'none') { console.log('[audio-finalize] mode=none, skip'); return; }
   let canUseAI = false;
   if (isBniRecord) {
-    if (req.session?.userId || req.session?.bniUserId) {
-      canUseAI = true;
-    } else if (email && bniDb) {
-      try {
-        const bniUser = bniDb.prepare('SELECT id FROM users WHERE email=?').get(email);
-        canUseAI = !!bniUser;
-        if (canUseAI) console.log('[bni-finalize] canUseAI via bniDb email:', email);
-      } catch(e) {}
-    }
+    canUseAI = !!(req.session?.userId || req.session?.bniUserId);
   } else if (fUser?.facility_id) {
     const fac = db.prepare('SELECT * FROM nm_facilities WHERE id=?').get(fUser.facility_id);
     const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(fUser.facility_id)?.cnt || 0;
@@ -1994,44 +1913,10 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
     }
 
     const welfarePrompt = isWelfareRecord ? (VIDEO_CALL_PROMPTS[welfareSystem]?.[welfareRecordType] || WELFARE_PROMPTS[welfareSystem]?.[welfareRecordType] || null) : null;
-
-    // BNIモード: 記録者自身のGAINSプロフィールを読み込み（コンタクトのGAINSと混同しないため）
-    let hostGainsSection = '';
-    if (isBniRecord) {
-      // BNI Managerのprofile_dataを優先、なければmeet DBのown_gainsを使用
-      let hostGains = {};
-      try {
-        const bniUser = bniDb.prepare('SELECT profile_data FROM users WHERE email=? OR username=?').get(email, email);
-        const pd = JSON.parse(bniUser?.profile_data || '{}');
-        // BNI Managerのマイプロフィール GAINS（gains_* キー）
-        if (pd.gains_goals || pd.gains_accomplishments || pd.gains_interests || pd.gains_networks || pd.gains_skills) {
-          hostGains = { goals: pd.gains_goals, accomplishments: pd.gains_accomplishments, interests: pd.gains_interests, networks: pd.gains_networks, skills: pd.gains_skills };
-        }
-      } catch(e) {}
-      // フォールバック: meet DBのown_gains
-      if (!Object.values(hostGains).some(v => v && v.trim())) {
-        try {
-          const hostUser = db.prepare('SELECT own_gains FROM users WHERE email=?').get(email);
-          hostGains = JSON.parse(hostUser?.own_gains || '{}');
-        } catch(e) {}
-      }
-      const hasHostGains = Object.values(hostGains).some(v => v && v.trim());
-      if (hasHostGains) {
-        hostGainsSection = `\n\n【記録者（${staffName || 'BNIメンバー'}）自身のGAINS（参考情報・GAINSに含めないこと）】\n`
-          + (hostGains.goals ? `G-Goals: ${hostGains.goals}\n` : '')
-          + (hostGains.accomplishments ? `A-Accomplishments: ${hostGains.accomplishments}\n` : '')
-          + (hostGains.interests ? `I-Interests: ${hostGains.interests}\n` : '')
-          + (hostGains.networks ? `N-Networks: ${hostGains.networks}\n` : '')
-          + (hostGains.skills ? `S-Skills: ${hostGains.skills}\n` : '')
-          + `上記は記録者自身の情報です。コンタクト（${memberName || '相手方'}）のGAINSとして記録しないこと。`;
-        console.log('[bni-finalize] host gains loaded from BNI Manager profile');
-      }
-    }
-
     const systemPrompt = isBniRecord
       ? BNI_PROMPT + (staffName || memberName
-          ? `\n\n【参加者情報】\nBNIメンバー（記録者・自分）: ${staffName || '不明'}\nコンタクト（相手方・GAINSの対象）: ${memberName || '不明'}\n\n【重要】GAINSはコンタクト（${memberName || '相手方'}）の情報のみを抽出してください。BNIメンバー自身の情報はGAINSに含めないこと。話者A・話者Bのどちらがコンタクトかは、職業や自己紹介の文脈から判断してください。`
-          : '') + hostGainsSection
+          ? `\n\n【参加者情報】\nBNIメンバー（記録者）: ${staffName || '不明'} / コンタクト（相手方）: ${memberName || '不明'}\n話者A・話者Bのどちらがどちらかは文脈（名前の呼び合い・職業紹介等）から判断し、それぞれの情報を統合してGAINSを抽出してください。`
+          : '')
       : welfarePrompt
         ? `${welfarePrompt}
 
@@ -2065,17 +1950,7 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
 // ================================================================
 async function handleBniFinalize({ email, sessionId, staffName, memberName, bniContactId, durMin, transcript, summary }) {
   let bniData = { summary, gains: {}, referral_hints: '', follow_up: '' };
-  try {
-    const cleaned = summary.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-    bniData = Object.assign(bniData, JSON.parse(cleaned));
-    console.log('[bni-finalize] JSON parse OK, gains keys:', Object.keys(bniData.gains || {}));
-  } catch(e) { console.warn('[bni-finalize] JSON parse failed:', e.message, '| raw:', summary.slice(0, 100)); }
-
-  // GPTが「会話なし・ハルシネーションのみ」と判定した場合はBNI書き込みもメールも送らない
-  if ((bniData.summary || '').includes('会話が短すぎるか')) {
-    console.log('[bni-finalize] GPT判定: 会話なし or ハルシネーションのみ → スキップ');
-    return;
-  }
+  try { bniData = Object.assign(bniData, JSON.parse(summary)); } catch(e) {}
 
   const bniWebhookUrl = process.env.BNI_WEBHOOK_URL || 'http://localhost:8300/api/nicemeet-webhook';
   const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
@@ -2085,7 +1960,6 @@ async function handleBniFinalize({ email, sessionId, staffName, memberName, bniC
       headers: { 'Content-Type': 'application/json', 'x-nicemeet-secret': bniSecret },
       body: JSON.stringify({
         bni_user: staffName,
-        bni_email: email,
         contact_id: bniContactId,
         contact_name: memberName,
         duration_minutes: durMin,
@@ -2360,14 +2234,7 @@ app.get('/record', (req, res) => res.sendFile(path.join(__dirname, 'public', 're
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/booking/dashboard', (req, res) => {
   if (!req.session.userId) return res.redirect('/auth/google');
-  const u = db.prepare('SELECT ui_mode FROM users WHERE id=?').get(req.session.userId);
-  const mode = req.session.uiModeOverride || (u && u.ui_mode) || 'simple';
-  if (mode === 'welfare') return res.redirect('/booking/welfare');
   res.sendFile(path.join(__dirname, 'public', 'booking', 'dashboard.html'));
-});
-app.get('/booking/welfare', (req, res) => {
-  if (!req.session.userId) return res.redirect('/auth/google');
-  res.sendFile(path.join(__dirname, 'public', 'booking', 'welfare.html'));
 });
 app.get('/', (req, res) => res.redirect('/bni.html'));
 app.get('/booking', (req, res) => res.sendFile(path.join(__dirname, 'public', 'booking', 'index.html')));
@@ -2745,218 +2612,12 @@ app.patch('/api/admin/confirm-draft/:id', express.json(), (req, res) => {
   res.json({ ok: true });
 });
 
-
-// ─────────────────────────────────────────────────────────────────
-// ── 施設管理 Admin API ────────────────────────────────────────────
-
-// ── 施設プラン 公開問い合わせ ────────────────────────────────────
-app.post('/api/public/facility-inquiry', apiLimiter, express.json({ limit: '10kb' }), async (req, res) => {
-  const { name, email, facility_name, phone, location_count, message } = req.body;
-  if (!name || !email || !facility_name) return res.status(400).json({ error: '必須項目を入力してください' });
-  if (!isValidEmail(email)) return res.status(400).json({ error: '無効なメールアドレスです' });
-  const lc = Math.min(Math.max(parseInt(location_count) || 1, 1), 99);
-  const unit = lc === 1 ? 2980 : lc <= 3 ? 2480 : 1980;
-  await sendMail(process.env.GMAIL_USER || '',
-    `【NiceMeet施設プラン】お申込み: ${safeStr(facility_name, 100)}`,
-    `施設名: ${safeStr(facility_name, 100)}\n担当者: ${safeStr(name, 50)}\nメール: ${email}\n電話: ${safeStr(phone||'',20)}\n拠点数: ${lc}拠点\n月額目安: ¥${(lc * unit).toLocaleString()}\nメッセージ: ${safeStr(message||'',500)}\n申込日時: ${new Date().toLocaleString('ja-JP')}`
-  );
-  console.log(`[facility-inquiry] ${email} ${safeStr(facility_name,100)} ${lc}拠点`);
-  res.json({ ok: true });
-});
-
-app.get('/api/admin/summary', (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const facs = db.prepare('SELECT * FROM nm_facilities').all();
-  const counts = { trial: 0, active: 0, custom: 0, expired: 0, total: facs.length };
-  for (const f of facs) {
-    const s = getFacilityStatus(f);
-    if (s in counts) counts[s]++; else counts.expired++;
-  }
-  const nmUsers = db.prepare("SELECT COUNT(*) as cnt FROM users WHERE ui_mode != 'welfare'").get().cnt;
-  res.json({ facilities: counts, nmUsers });
-});
-
-app.get('/api/admin/facilities', (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const facs = db.prepare('SELECT * FROM nm_facilities ORDER BY id DESC').all();
-  const result = facs.map(f => {
-    const user = db.prepare('SELECT last_login_at FROM users WHERE facility_id=? ORDER BY id LIMIT 1').get(f.id);
-    const lc   = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(f.id)?.cnt || 0;
-    const status   = getFacilityStatus(f);
-    const daysLeft = getTrialDaysLeft(f);
-    const uid = db.prepare('SELECT id FROM users WHERE facility_id=? ORDER BY id LIMIT 1').get(f.id);
-    return {
-      id: f.id, name: f.name, admin_email: f.admin_email, contact_name: f.contact_name,
-      status, daysLeft, locationCount: lc,
-      usedMinThisMonth: Math.round(getMonthlyUsageMinutes(f.id)),
-      admin_notes: f.admin_notes || '',
-      last_login_at: user?.last_login_at || null,
-      trial_started_at: f.trial_started_at,
-      user_id: uid?.id || null
-    };
-  });
-  res.json({ facilities: result });
-});
-
-app.patch('/api/admin/facility/:id', express.json({ limit: '10kb' }), (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'invalid id' });
-  if (!db.prepare('SELECT id FROM nm_facilities WHERE id=?').get(id)) return res.status(404).json({ error: 'not found' });
-  const { status, notes } = req.body;
-  if (status !== undefined) {
-    if (!['trial', 'active', 'custom', 'expired'].includes(status)) return res.status(400).json({ error: 'invalid status' });
-    db.prepare('UPDATE nm_facilities SET trial_status=? WHERE id=?').run(status, id);
-    console.log(`[admin] facility ${id} status -> ${status}`);
-  }
-  if (notes !== undefined) db.prepare('UPDATE nm_facilities SET admin_notes=? WHERE id=?').run(String(notes).slice(0, 1000), id);
-  res.json({ ok: true });
-});
-
-app.post('/api/admin/facility', express.json({ limit: '10kb' }), async (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const { name, email, contact_name, phone, status, notes, location_name } = req.body;
-  if (!name || !email) return res.status(400).json({ error: '施設名とメールは必須です' });
-  if (!isValidEmail(email)) return res.status(400).json({ error: '無効なメールアドレスです' });
-  const cleanName   = safeStr(name, 100);
-  const cleanEmail  = email.toLowerCase().trim();
-  const cleanStatus = ['trial', 'active', 'custom'].includes(status) ? status : 'trial';
-  if (db.prepare('SELECT id FROM users WHERE email=?').get(cleanEmail))
-    return res.status(409).json({ error: 'このメールアドレスは既に登録されています' });
-  const fac = db.prepare(
-    "INSERT INTO nm_facilities (name, admin_email, contact_name, phone, admin_notes, trial_status, trial_started_at) VALUES (?,?,?,?,?,?,datetime('now'))"
-  ).run(cleanName, cleanEmail, safeStr(contact_name||'',50), safeStr(phone||'',20), safeStr(notes||'',1000), cleanStatus);
-  const facilityId = fac.lastInsertRowid;
-  const cleanLoc = safeStr(location_name || '本事業所', 100);
-  db.prepare('INSERT INTO nm_locations (facility_id, name) VALUES (?,?)').run(facilityId, cleanLoc);
-  db.prepare('INSERT INTO nm_location_count_history (facility_id, location_count, note) VALUES (?,?,?)').run(facilityId, 1, '管理者作成');
-  const pw = crypto.randomBytes(8).toString('hex');
-  const pwHash = await hashPassword(pw);
-  let slug = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20) || 'facility';
-  if (db.prepare('SELECT id FROM users WHERE slug=?').get(slug)) slug = slug + facilityId;
-  db.prepare(
-    "INSERT INTO users (name, email, password_hash, plan, ui_mode, facility_id, slug, registered_at) VALUES (?,?,?,'free','welfare',?,?,datetime('now'))"
-  ).run(cleanName, cleanEmail, pwHash, facilityId, slug);
-  console.log(`[admin] created facility: ${cleanName} <${cleanEmail}> status=${cleanStatus}`);
-  res.json({ ok: true, facilityId, email: cleanEmail, password: pw, message: `施設「${cleanName}」を作成しました` });
-});
-
-// 管理者ワンクリックログイン（トークン発行→セッション作成）
-const adminLoginTokens = new Map();
-setInterval(() => {
-  const now = Date.now();
-  for (const [t, v] of adminLoginTokens) { if (v.expires < now) adminLoginTokens.delete(t); }
-}, 60 * 60 * 1000);
-
-app.get('/api/admin/login-link/:userId', async (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const userId = parseInt(req.params.userId, 10);
-  const user = db.prepare('SELECT id, slug, facility_id FROM users WHERE id=?').get(userId);
-  if (!user || !user.facility_id) return res.status(404).json({ error: 'facility user not found' });
-  const token = crypto.randomBytes(24).toString('hex');
-  adminLoginTokens.set(token, { userId, expires: Date.now() + 30 * 60 * 1000 }); // 30分有効
-  res.json({ url: '/auth/admin-login?t=' + token });
-});
-
-app.get('/auth/admin-login', async (req, res) => {
-  const token = String(req.query.t || '').replace(/[^a-f0-9]/g, '');
-  const entry = adminLoginTokens.get(token);
-  if (!entry || entry.expires < Date.now()) { adminLoginTokens.delete(token); return res.redirect('/booking/'); }
-  adminLoginTokens.delete(token);
-  const user = db.prepare('SELECT id, slug, facility_id FROM users WHERE id=?').get(entry.userId);
-  if (!user) return res.redirect('/booking/');
-  await regenerateSession(req);
-  req.session.userId = user.id;
-  req.session.slug = user.slug;
-  if (user.facility_id) req.session.uiModeOverride = 'welfare';
-  req.session.save(err => res.redirect(err ? '/booking/' : '/booking/dashboard'));
-});
-
-app.get('/api/admin/nm-users', (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const users = db.prepare(
-    "SELECT id, name, email, plan, plan_expires, ui_mode, registered_at, last_login_at FROM users WHERE ui_mode != 'welfare' ORDER BY id DESC LIMIT 300"
-  ).all();
-  res.json({ users });
-});
-
-app.patch('/api/admin/user/:id/plan', express.json({ limit: '2kb' }), (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'invalid id' });
-  const user = db.prepare("SELECT id, email FROM users WHERE id=? AND ui_mode != 'welfare'").get(id);
-  if (!user) return res.status(404).json({ error: 'not found' });
-  const { plan, plan_expires } = req.body;
-  if (!['free', 'trial', 'paid'].includes(plan)) return res.status(400).json({ error: 'invalid plan' });
-  if (plan === 'trial') {
-    const exp = plan_expires ? String(plan_expires).slice(0, 10) : null;
-    if (!exp || isNaN(new Date(exp).getTime())) return res.status(400).json({ error: 'trial には plan_expires (YYYY-MM-DD) が必要です' });
-    db.prepare("UPDATE users SET plan='trial', plan_expires=? WHERE id=?").run(exp + ' 00:00:00', id);
-  } else {
-    db.prepare('UPDATE users SET plan=?, plan_expires=NULL WHERE id=?').run(plan, id);
-  }
-  console.log(`[admin] user ${id} (${user.email}) plan -> ${plan}${plan_expires ? ' until ' + plan_expires : ''}`);
-  res.json({ ok: true });
-});
-
-app.patch('/api/admin/user/:id/mode', express.json({ limit: '1kb' }), (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'invalid id' });
-  const { mode } = req.body;
-  if (!['simple', 'welfare'].includes(mode)) return res.status(400).json({ error: 'invalid mode' });
-  const user = db.prepare('SELECT id, email FROM users WHERE id=?').get(id);
-  if (!user) return res.status(404).json({ error: 'not found' });
-  db.prepare('UPDATE users SET ui_mode=? WHERE id=?').run(mode, id);
-  console.log(`[admin] user ${id} (${user.email}) mode -> ${mode}`);
-  res.json({ ok: true });
-});
-
-app.delete('/api/admin/user/:id', (req, res) => {
-  if (!checkAdminSecret(getAdminToken(req))) return res.status(403).json({ error: 'forbidden' });
-  const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'invalid id' });
-  const user = db.prepare('SELECT id, email, facility_id FROM users WHERE id=?').get(id);
-  if (!user) return res.status(404).json({ error: 'not found' });
-  if (user.facility_id) return res.status(400).json({ error: '施設ユーザーは施設削除から行ってください' });
-  const meetingCount = db.prepare('SELECT COUNT(*) as cnt FROM nm_meetings WHERE host_email=?').get(user.email)?.cnt || 0;
-  if (meetingCount > 0 && !req.query.force) {
-    return res.status(409).json({ error: `${meetingCount}件の会議記録があります`, meetingCount, requireForce: true });
-  }
-  db.prepare('DELETE FROM users WHERE id=?').run(id);
-  console.log(`[admin] deleted user id=${id} email=${user.email}`);
-  res.json({ ok: true, email: user.email });
-});
-
 // ─────────────────────────────────────────────────────────────────
 // ---- Socket.io (video chat) ----
 const rooms = new Map();
 const breakouts = new Map();
-// プロトタイプ汚染防止: Socket.IO 受信データから危険キーを除去
-function sanitizeSocketData(data) {
-  if (data === null || typeof data !== 'object') return data;
-  if (Array.isArray(data)) return data.map(sanitizeSocketData);
-  const DANGEROUS = new Set(['__proto__', 'constructor', 'prototype']);
-  const out = {};
-  for (const key of Object.keys(data)) {
-    if (DANGEROUS.has(key)) continue;
-    out[key] = sanitizeSocketData(data[key]);
-  }
-  return out;
-}
-
 io.on('connection', (socket) => {
-  // 全イベントの引数をサニタイズ（プロトタイプ汚染対策）
-  socket.use(([event, ...args], next) => {
-    try {
-      const sanitized = args.map(sanitizeSocketData);
-      args.splice(0, args.length, ...sanitized);
-    } catch (e) {
-      console.warn('[socket] sanitize error:', e.message);
-    }
-    next();
-  });
-  socket.on('join-room', ({ roomId, password, userName, transcribeMode, system, waitingRoom }) => {
+  socket.on('join-room', ({ roomId, password, userName, transcribeMode, system }) => {
     if (typeof roomId !== 'string' || roomId.length > 128 || typeof userName !== 'string') return;
     const safeRoomId = roomId.trim();
     const safeUserName = userName.trim().slice(0, 50);
@@ -2979,9 +2640,12 @@ io.on('connection', (socket) => {
         hostEmail = hu?.email || null;
         hostUiMode = hu?.ui_mode || 'simple';
       }
-      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: waitingRoom === true, waitingList: new Map(), screenShareAllowed: false, system: system || '' };
+      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: false, waitingList: new Map(), screenShareAllowed: false };
       rooms.set(safeRoomId, newRoom);
-      // 時間制限なし（warnTimer / endTimer 無効化）
+      if (hostPlan === 'free') {
+        newRoom.warnTimer = setTimeout(() => { io.to(safeRoomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
+        newRoom.endTimer = setTimeout(() => { io.to(safeRoomId).emit('time-limit', {}); }, 45 * 60 * 1000);
+      }
     }
     const cur = rooms.get(safeRoomId);
     for (const [id] of cur.users) {
@@ -2997,20 +2661,6 @@ io.on('connection', (socket) => {
         : null;
       if (!cur.hostEmail || (joiningEmail && joiningEmail === cur.hostEmail)) {
         cur.hostId = socket.id;
-      }
-    } else if (cur.system === 'bni' && !cur.hostEmail) {
-      // BNIモード: 現ホストが匿名（hostEmailなし）のとき、
-      // ログイン済みユーザーが入室したらホストを引き継ぐ
-      const joiningUserId2 = socket.request.session?.userId;
-      if (joiningUserId2) {
-        const hu2 = db.prepare('SELECT email FROM users WHERE id=?').get(joiningUserId2);
-        const oldHostId = cur.hostId;
-        cur.hostId = socket.id;
-        cur.hostEmail = hu2?.email || null;
-        console.log('[join-room] BNI: logged-in user took host from anonymous, oldHost=', oldHostId);
-        if (oldHostId && io.sockets.sockets.get(oldHostId)) {
-          io.to(oldHostId).emit('host-revoked', {});
-        }
       }
     }
     // 待機室チェック
@@ -3113,8 +2763,7 @@ io.on('connection', (socket) => {
       room.users.delete(socket.id);
       const mainId = socket.mainRoomId || curRoomId;
       const mainRoom = rooms.get(mainId);
-      // BNIモード: ホスト退出時の自動昇格なし（明示的な transfer-host のみ）
-      if (mainRoom && mainRoom.hostId === socket.id && mainRoom.users.size > 0 && mainRoom.system !== 'bni') {
+      if (mainRoom && mainRoom.hostId === socket.id && mainRoom.users.size > 0) {
         let newHostId = null;
         for (const cid of mainRoom.coHosts) { if (mainRoom.users.has(cid)) { newHostId = cid; break; } }
         if (!newHostId) newHostId = [...mainRoom.users.keys()][0];
@@ -3184,17 +2833,6 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('transcribe-mode-changed', { mode });
   });
 
-  socket.on('transfer-host', ({ targetId }) => {
-    if (typeof targetId !== 'string') return;
-    const room = rooms.get(socket.roomId);
-    if (!room || room.hostId !== socket.id) return;
-    if (!room.users.has(targetId)) return;
-    room.hostId = targetId;
-    room.coHosts.delete(targetId);
-    io.to(targetId).emit('host-assigned', {});
-    io.to(socket.roomId).emit('host-changed', { newHostId: targetId, newHostName: room.users.get(targetId)?.name });
-    console.log('[transfer-host] from', socket.id, 'to', targetId);
-  });
   socket.on('grant-cohost', ({ targetId }) => {
     if (typeof targetId !== 'string' || targetId.length > 64) return;
     const mainId = socket.mainRoomId || socket.roomId;

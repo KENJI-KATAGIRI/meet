@@ -554,6 +554,10 @@ function copyInappUrl() {
   <div class="effects-section">
     <h3>仮想背景</h3>
     <div class="loading-model" id="loading-model">モデル読み込み中...</div>
+    <div id="bg-retry-row" style="display:none;margin-bottom:6px">
+      <span style="font-size:11px;color:#f87171">⚠ 読込失敗</span>
+      <button onclick="retryLoadSegModel()" style="font-size:11px;background:#14b8a6;border:none;color:white;padding:2px 10px;border-radius:4px;cursor:pointer;margin-left:8px">再試行</button>
+    </div>
     <div id="bg-debug-status" style="font-size:11px;color:#888;margin-bottom:6px;line-height:1.6;display:none"></div>
     <button onclick="showBgDebug()" style="font-size:11px;background:#2a2a4a;border:1px solid #444;color:#aaa;padding:2px 8px;border-radius:4px;cursor:pointer;margin-bottom:6px">状態確認</button>
     <div class="effect-options">
@@ -1929,13 +1933,11 @@ async function sendFile(input) {
     form.append('file', file, file.name);
     form.append('roomId', myRoomId);
     form.append('senderName', myName);
+    form.append('socketId', socket.id);
     const resp = await fetch('/api/upload-file', { method: 'POST', body: form });
     const data = await resp.json();
     ind.remove();
-    const msgHtml = data.isImage
-      ? '<a href="' + data.url + '" target="_blank"><img src="' + data.url + '" class="chat-img"></a>'
-      : '<a href="' + data.url + '" download="' + data.origName + '" target="_blank" class="chat-file-link">📎 ' + data.origName + '</a>';
-    addChatMessage(myName, msgHtml, time, true, true);
+    addChatMessage(myName, data.msgHtml, time, true, true);
   } catch(e) {
     ind.innerHTML = '<div class="sender">' + myName + '</div><span style="color:#ff6b6b;font-size:12px">送信失敗</span>';
     setTimeout(() => ind.remove(), 3000);
@@ -2896,10 +2898,13 @@ async function loadSegModel() {
   mpModelLoading = true;
   const ldEl = document.getElementById('loading-model');
   if (ldEl) ldEl.style.display = 'block';
+  let _step = 'bundle';
   try {
     const visionModule = await import('/mediapipe/vision_bundle.mjs');
     const { ImageSegmenter, FilesetResolver } = visionModule;
+    _step = 'wasm';
     const filesetResolver = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
+    _step = 'model';
     const opts = {
       baseOptions: { modelAssetPath: '/mediapipe/selfie_multiclass_256x256.tflite', delegate: 'GPU' },
       runningMode: 'VIDEO',
@@ -2909,7 +2914,7 @@ async function loadSegModel() {
     try {
       mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
     } catch(gpuErr) {
-      console.warn('loadSegModel GPU failed, retrying with CPU:', gpuErr);
+      console.warn('[effects] GPU failed, trying CPU:', gpuErr.message);
       opts.baseOptions.delegate = 'CPU';
       mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
     }
@@ -2917,12 +2922,22 @@ async function loadSegModel() {
     prevMaskData = null;
     mpTimestamp = 0;
   } catch(e) {
-    console.error('loadSegModel error:', e);
-    notify('背景エフェクト読込失敗: ' + (e?.message || String(e)).slice(0, 80));
+    console.error('[effects] loadSegModel failed at step=' + _step, e);
+    notify('背景エフェクト読込失敗[' + _step + ']: ' + (e?.message || String(e)).slice(0, 60));
     mpSegmenter = null;
+    const retryRow = document.getElementById('bg-retry-row');
+    if (retryRow) retryRow.style.display = 'block';
   }
   mpModelLoading = false;
   if (ldEl) ldEl.style.display = 'none';
+}
+
+async function retryLoadSegModel() {
+  const retryRow = document.getElementById('bg-retry-row');
+  if (retryRow) retryRow.style.display = 'none';
+  mpSegmenter = null; mpModelLoading = false; mpReady = false;
+  await loadSegModel();
+  if (mpSegmenter && bgMode !== 'none') await initEffectsStream();
 }
 
 // --- 美肌フィルター: WebGL バイラテラルフィルター ---
