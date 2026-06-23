@@ -385,6 +385,13 @@ function copyInappUrl() {
         <div id="preview-loading-model" style="display:none;font-size:12px;color:#6c63ff;text-align:center;padding:6px">⏳ モデル読込中...</div>
       </div>
       <div>
+        <div id="waiting-room-option" style="margin-bottom:14px;padding:10px 12px;background:#161630;border-radius:8px;border:1px solid #2a2a4a">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:#ccc;font-size:13px">
+            <input type="checkbox" id="input-waiting-room" style="width:15px;height:15px;accent-color:#6c63ff;cursor:pointer">
+            <span>&#x1f6aa; 待機室を有効にする</span>
+          </label>
+          <div style="color:#666;font-size:11px;margin-top:5px;padding-left:23px">入室をホスト承認制にします（ルームを新規作成するときのみ有効）</div>
+        </div>
         <button class="preview-join-btn" onclick="doJoin()">入室する →</button>
         <div class="preview-room-info" id="preview-room-info"></div>
         <button class="preview-back" onclick="backToLobby()">← 戻る</button>
@@ -408,7 +415,7 @@ function copyInappUrl() {
     <div id="top-bar-left">
       <span id="top-room-name"></span>
       <span id="elapsed-time">00:00</span>
-      <span id="free-timer">残り 45:00</span>
+      <span id="free-timer">経過 00:00</span>
       <div id="br-topbar" style="display:none;align-items:center;gap:8px;padding-left:10px;border-left:1px solid #3a3a5a;margin-left:4px">
         <span id="br-room-label" style="font-size:12px;color:#a78bfa;font-weight:600"></span>
         <span id="br-timer-topbar" style="font-size:12px;color:#fbbf24;font-weight:700"></span>
@@ -485,6 +492,20 @@ function copyInappUrl() {
 </div><!-- /meeting -->
 
 <!-- 退出確認モーダル -->
+<div id="host-transfer-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#1e1e3a;border-radius:12px;padding:28px 32px;text-align:center;min-width:280px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+    <div style="font-size:36px;margin-bottom:12px">🤝</div>
+    <div style="color:#fff;font-size:16px;font-weight:600;margin-bottom:8px">退出前にホスト権限を渡しますか？</div>
+    <div style="color:#aaa;font-size:13px;margin-bottom:6px"><span id="host-transfer-target-name" style="color:#a78bfa;font-weight:600"></span> さんにホスト権限が移ります</div>
+    <div style="color:#888;font-size:12px;margin-bottom:24px">渡さずに退出した場合、相手はホストなしのまま残ります</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button onclick="doTransferAndLeave()" style="padding:10px 24px;border-radius:8px;border:none;background:#7c3aed;color:#fff;cursor:pointer;font-size:14px;font-weight:600">渡して退出する</button>
+      <button onclick="doLeaveWithoutTransfer()" style="padding:10px 24px;border-radius:8px;border:none;background:#e74c3c;color:#fff;cursor:pointer;font-size:14px">渡さずに退出する</button>
+      <button onclick="document.getElementById('host-transfer-modal').style.display='none'" style="padding:10px 24px;border-radius:8px;border:1px solid #555;background:transparent;color:#fff;cursor:pointer;font-size:14px">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <div id="leave-confirm-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
   <div style="background:#1e1e3a;border-radius:12px;padding:28px 32px;text-align:center;min-width:260px;box-shadow:0 8px 32px rgba(0,0,0,.5)">
     <div style="font-size:36px;margin-bottom:12px">📴</div>
@@ -508,7 +529,6 @@ function copyInappUrl() {
 <div id="waiting-panel">
   <div class="wp-title"><span>🚪 入室待ち</span><button class="wp-close" onclick="closeWaitingPanel()">×</button></div>
   <div id="waiting-participants-list"></div>
-  <div class="wr-toggle-row"><span class="wr-toggle-label">待機室を有効にする</span><label class="wr-sw"><input type="checkbox" id="waiting-room-checkbox" onchange="setWaitingRoom(this.checked)"><span class="wr-slider"></span></label></div>
   <div class="wr-toggle-row"><span class="wr-toggle-label">🖥️ 参加者の画面共有を許可</span><label class="wr-sw"><input type="checkbox" id="screen-share-checkbox" onchange="setScreenSharePermission(this.checked)"><span class="wr-slider"></span></label></div>
 </div>
 
@@ -1130,6 +1150,11 @@ async function doJoin() {
   socket.on('host-changed', ({ newHostName }) => {
     notify(newHostName + ' が新しいホストになりました');
   });
+  socket.on('host-revoked', () => {
+    isHost = false; isCoHost = false;
+    updateHostUI();
+    notify('ホスト権限がBNIメンバーに移りました');
+  });
   socket.on('cohost-granted', ({ by }) => {
     isCoHost = true;
     updateHostUI();
@@ -1174,19 +1199,8 @@ async function doJoin() {
   socket.on('breakout:ended', ({ mainRoomId }) => {
     brReturnToMain(mainRoomId);
   });
-  socket.on('time-warning', ({ minutesLeft }) => {
-    const el = document.getElementById('time-warning-banner');
-    if (el) { el.style.display = 'block'; setTimeout(() => { el.style.display = 'none'; }, 30000); }
-    notify('⚠️ 残り' + minutesLeft + '分です。有料プランで無制限に！');
-  });
-  socket.on('time-limit', () => {
-    if (freeTimerInterval) clearInterval(freeTimerInterval);
-    const el = document.getElementById('free-timer');
-    if (el) { el.textContent = '残り 00:00'; el.className = 'end'; }
-    document.getElementById('time-limit-modal').style.display = 'flex';
-    // 5秒後に自動退室
-    setTimeout(() => { if (typeof leaveRoom === 'function') leaveRoom(true); }, 5000);
-  });
+  socket.on('time-warning', () => { /* 時間制限なし */ });
+  socket.on('time-limit', () => { /* 時間制限なし */ });
   socket.on('breakout:broadcast-msg', ({ from, message, time }) => {
     const banner = document.getElementById('br-broadcast-banner');
     document.getElementById('br-broadcast-from').textContent = from + ' からのメッセージ (' + time + ')';
@@ -1233,11 +1247,8 @@ async function doJoin() {
     if (!enabled && !isHost && !isCoHost && screenStream) toggleScreen();
     if (enabled && !isHost && !isCoHost) notify('🖥️ ホストが画面共有を許可しました', 4000);
   });
-  socket.on('waiting-room-changed', ({ enabled }) => {
-    const cb = document.getElementById('waiting-room-checkbox');
-    if (cb) cb.checked = enabled;
-  });
-  socket.emit('join-room', { roomId: myRoomId, password: systemParam === 'bni' ? '' : _pendingPass, userName: myName, transcribeMode: _pendingTranscribeMode, system: systemParam || '' });
+  socket.on('waiting-room-changed', () => { /* waiting-room is now pre-meeting only */ });
+  socket.emit('join-room', { roomId: myRoomId, password: systemParam === 'bni' ? '' : _pendingPass, userName: myName, transcribeMode: _pendingTranscribeMode, system: systemParam || '', waitingRoom: (document.getElementById('input-waiting-room')?.checked || false) });
   history.replaceState(null, '', '?room=' + encodeURIComponent(myRoomId));
 }
 
@@ -1618,17 +1629,14 @@ function startTimer() {
 // ===== 無料プランタイマー =====
 let freeTimerInterval = null;
 function startFreeTimer(roomStartedAt) {
-  const totalMs = 45 * 60 * 1000;
   const el = document.getElementById('free-timer');
   if (!el) return;
   el.style.display = 'block';
+  el.className = 'ok';
   function tick() {
     const elapsed = Date.now() - roomStartedAt;
-    const left = Math.max(0, totalMs - elapsed);
-    const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
-    el.textContent = '残り ' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
-    el.className = left <= 60000 ? 'end' : left <= 5 * 60000 ? 'warn' : 'ok';
-    if (left <= 0) { clearInterval(freeTimerInterval); el.textContent = '残り 00:00'; }
+    const m = Math.floor(elapsed / 60000), s = Math.floor((elapsed % 60000) / 1000);
+    el.textContent = '経過 ' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
   }
   tick();
   freeTimerInterval = setInterval(tick, 1000);
@@ -2246,7 +2254,31 @@ window.addEventListener('beforeunload', () => {
 });
 
 function leaveRoom() {
-  document.getElementById('leave-confirm-modal').style.display = 'flex';
+  // BNIモードでホストが他の参加者といるとき → 引き継ぎ確認モーダル
+  if (isHost && systemParam === 'bni' && Object.keys(peers).length > 0) {
+    const peerIds = Object.keys(peers);
+    const targetId = peerIds[0];
+    const targetName = peerNames[targetId] || '相手';
+    document.getElementById('host-transfer-target-name').textContent = targetName;
+    document.getElementById('host-transfer-target-name').dataset.socketId = targetId;
+    document.getElementById('host-transfer-modal').style.display = 'flex';
+  } else {
+    document.getElementById('leave-confirm-modal').style.display = 'flex';
+  }
+}
+async function doTransferAndLeave() {
+  const targetEl = document.getElementById('host-transfer-target-name');
+  const targetId = targetEl?.dataset.socketId;
+  document.getElementById('host-transfer-modal').style.display = 'none';
+  if (targetId && socket) {
+    socket.emit('transfer-host', { targetId });
+    await new Promise(r => setTimeout(r, 300));
+  }
+  await doLeaveRoom();
+}
+function doLeaveWithoutTransfer() {
+  document.getElementById('host-transfer-modal').style.display = 'none';
+  doLeaveRoom();
 }
 async function doLeaveRoom() {
   document.getElementById('leave-confirm-modal').style.display = 'none';

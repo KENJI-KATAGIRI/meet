@@ -99,6 +99,7 @@ class BetterSqliteStore extends Store {
 }
 
 // BNI Manager DB（既存データをそのまま使用）
+const bniDb = (() => { try { return new Database("/home/ubuntu/apps/bni-app/data/bni.db", { readonly: true, timeout: 2000 }); } catch(e) { console.warn("[bniDb] could not open BNI Manager DB:", e.message); return null; } })();
 
 // DB setup
 const db = new Database(path.join(__dirname, 'data', 'booking.db'));
@@ -585,6 +586,14 @@ const HALLUCINATION_PHRASES = [
   '日本語のビデオの字幕',
   '以下は日本語のビデオ',
   'かわいい かわいい',
+  // 無音・短時間録音時のWhisper日本語ハルシネーション
+  'おやすみなさい',
+  'お休みなさい',
+  'この動画は',
+  'この動画では',
+  'スタイルの動画',
+  'またお会いしましょう',
+  'バイバイ',
 ];
 function isWhisperHallucination(text) {
   if (!text || text.length < 3) return true;
@@ -1851,7 +1860,15 @@ app.post('/api/audio-finalize', uploadLimiter, formParser, async (req, res) => {
   if (recordMode === 'none') { console.log('[audio-finalize] mode=none, skip'); return; }
   let canUseAI = false;
   if (isBniRecord) {
-    canUseAI = !!(req.session?.userId || req.session?.bniUserId);
+    if (req.session?.userId || req.session?.bniUserId) {
+      canUseAI = true;
+    } else if (email && bniDb) {
+      try {
+        const bniUser = bniDb.prepare('SELECT id FROM users WHERE email=?').get(email);
+        canUseAI = !!bniUser;
+        if (canUseAI) console.log('[bni-finalize] canUseAI via bniDb email:', email);
+      } catch(e) {}
+    }
   } else if (fUser?.facility_id) {
     const fac = db.prepare('SELECT * FROM nm_facilities WHERE id=?').get(fUser.facility_id);
     const lc = db.prepare('SELECT COUNT(*) as cnt FROM nm_locations WHERE facility_id=?').get(fUser.facility_id)?.cnt || 0;
@@ -2049,6 +2066,12 @@ async function handleBniFinalize({ email, sessionId, staffName, memberName, bniC
     bniData = Object.assign(bniData, JSON.parse(cleaned));
     console.log('[bni-finalize] JSON parse OK, gains keys:', Object.keys(bniData.gains || {}));
   } catch(e) { console.warn('[bni-finalize] JSON parse failed:', e.message, '| raw:', summary.slice(0, 100)); }
+
+  // GPTが「会話なし・ハルシネーションのみ」と判定した場合はBNI書き込みもメールも送らない
+  if ((bniData.summary || '').includes('会話が短すぎるか')) {
+    console.log('[bni-finalize] GPT判定: 会話なし or ハルシネーションのみ → スキップ');
+    return;
+  }
 
   const bniWebhookUrl = process.env.BNI_WEBHOOK_URL || 'http://localhost:8300/api/nicemeet-webhook';
   const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
@@ -2929,7 +2952,7 @@ io.on('connection', (socket) => {
     }
     next();
   });
-  socket.on('join-room', ({ roomId, password, userName, transcribeMode, system }) => {
+  socket.on('join-room', ({ roomId, password, userName, transcribeMode, system, waitingRoom }) => {
     if (typeof roomId !== 'string' || roomId.length > 128 || typeof userName !== 'string') return;
     const safeRoomId = roomId.trim();
     const safeUserName = userName.trim().slice(0, 50);
@@ -2952,12 +2975,9 @@ io.on('connection', (socket) => {
         hostEmail = hu?.email || null;
         hostUiMode = hu?.ui_mode || 'simple';
       }
-      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: false, waitingList: new Map(), screenShareAllowed: false };
+      const newRoom = { password: password || '', users: new Map(), transcribeMode: transcribeMode || 'host_only', hostId: socket.id, coHosts: new Set(), hostPlan, startedAt: Date.now(), facilityId: hostFacilityId, hostEmail, hostUiMode, waitingRoom: waitingRoom === true, waitingList: new Map(), screenShareAllowed: false, system: system || '' };
       rooms.set(safeRoomId, newRoom);
-      if (hostPlan === 'free') {
-        newRoom.warnTimer = setTimeout(() => { io.to(safeRoomId).emit('time-warning', { minutesLeft: 5 }); }, 40 * 60 * 1000);
-        newRoom.endTimer = setTimeout(() => { io.to(safeRoomId).emit('time-limit', {}); }, 45 * 60 * 1000);
-      }
+      // 時間制限なし（warnTimer / endTimer 無効化）
     }
     const cur = rooms.get(safeRoomId);
     for (const [id] of cur.users) {
@@ -2973,6 +2993,20 @@ io.on('connection', (socket) => {
         : null;
       if (!cur.hostEmail || (joiningEmail && joiningEmail === cur.hostEmail)) {
         cur.hostId = socket.id;
+      }
+    } else if (cur.system === 'bni' && !cur.hostEmail) {
+      // BNIモード: 現ホストが匿名（hostEmailなし）のとき、
+      // ログイン済みユーザーが入室したらホストを引き継ぐ
+      const joiningUserId2 = socket.request.session?.userId;
+      if (joiningUserId2) {
+        const hu2 = db.prepare('SELECT email FROM users WHERE id=?').get(joiningUserId2);
+        const oldHostId = cur.hostId;
+        cur.hostId = socket.id;
+        cur.hostEmail = hu2?.email || null;
+        console.log('[join-room] BNI: logged-in user took host from anonymous, oldHost=', oldHostId);
+        if (oldHostId && io.sockets.sockets.get(oldHostId)) {
+          io.to(oldHostId).emit('host-revoked', {});
+        }
       }
     }
     // 待機室チェック
@@ -3075,7 +3109,8 @@ io.on('connection', (socket) => {
       room.users.delete(socket.id);
       const mainId = socket.mainRoomId || curRoomId;
       const mainRoom = rooms.get(mainId);
-      if (mainRoom && mainRoom.hostId === socket.id && mainRoom.users.size > 0) {
+      // BNIモード: ホスト退出時の自動昇格なし（明示的な transfer-host のみ）
+      if (mainRoom && mainRoom.hostId === socket.id && mainRoom.users.size > 0 && mainRoom.system !== 'bni') {
         let newHostId = null;
         for (const cid of mainRoom.coHosts) { if (mainRoom.users.has(cid)) { newHostId = cid; break; } }
         if (!newHostId) newHostId = [...mainRoom.users.keys()][0];
@@ -3145,6 +3180,17 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('transcribe-mode-changed', { mode });
   });
 
+  socket.on('transfer-host', ({ targetId }) => {
+    if (typeof targetId !== 'string') return;
+    const room = rooms.get(socket.roomId);
+    if (!room || room.hostId !== socket.id) return;
+    if (!room.users.has(targetId)) return;
+    room.hostId = targetId;
+    room.coHosts.delete(targetId);
+    io.to(targetId).emit('host-assigned', {});
+    io.to(socket.roomId).emit('host-changed', { newHostId: targetId, newHostName: room.users.get(targetId)?.name });
+    console.log('[transfer-host] from', socket.id, 'to', targetId);
+  });
   socket.on('grant-cohost', ({ targetId }) => {
     if (typeof targetId !== 'string' || targetId.length > 64) return;
     const mainId = socket.mainRoomId || socket.roomId;
