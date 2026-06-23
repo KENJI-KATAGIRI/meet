@@ -2636,8 +2636,8 @@ async function initEffectsStream() {
 
   // セグメンテーション用キャンバス（推論高速化のため解像度を抑える）
   segCanvas = document.createElement('canvas');
-  segCanvas.width = Math.min(effectsCanvas.width, 256);
-  segCanvas.height = Math.min(effectsCanvas.height, 144);
+  segCanvas.width = 256;
+  segCanvas.height = 256;
   segCtx = segCanvas.getContext('2d');
 
   // RVM合成用: 人物切り抜きキャンバス
@@ -2666,7 +2666,7 @@ async function initEffectsStream() {
 
 function startEffectsLoop() {
   let lastTime = 0;
-  const TARGET_FPS = 20;
+  const TARGET_FPS = 30;
   const INTERVAL = 1000 / TARGET_FPS;
   const loop = (now) => {
     rafId = requestAnimationFrame(loop);
