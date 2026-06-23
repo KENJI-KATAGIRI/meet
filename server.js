@@ -2078,7 +2078,7 @@ async function handleBniFinalize({ email, sessionId, staffName, memberName, bniC
   }
 
   const bniWebhookUrl = process.env.BNI_WEBHOOK_URL || 'http://localhost:8300/api/nicemeet-webhook';
-  const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
+  const bniSecret = process.env.BNI_WEBHOOK_SECRET; if (!bniSecret) { console.error('[FATAL] BNI_WEBHOOK_SECRET not set'); return; }
   try {
     await fetch(bniWebhookUrl, {
       method: 'POST',
@@ -2100,7 +2100,7 @@ async function handleBniFinalize({ email, sessionId, staffName, memberName, bniC
 
     // R2バックアップ保存
     const driveUrl = process.env.DRIVE_INTERNAL_URL || 'http://localhost:8309/api/internal/upload-json';
-    const driveSecret = process.env.DRIVE_INTERNAL_SECRET || (console.warn('[SECURITY] DRIVE_INTERNAL_SECRET not set, using default'), 'gaia-internal-2026');
+    const driveSecret = process.env.DRIVE_INTERNAL_SECRET; if (!driveSecret) { console.warn('[INFO] DRIVE_INTERNAL_SECRET not set, skipping R2 backup'); return; }
     const r2Date = new Date().toISOString().slice(0, 10);
     const r2Name = (memberName || 'unknown').replace(/[^\w぀-鿿]/g, '_');
     const r2Key = `nicemeet/bni/${r2Date}/${sessionId}-${r2Name}.json`;
@@ -2273,7 +2273,7 @@ app.post('/api/bni/contact-capture', async (req, res) => {
   if (!bni_user || !name || !email || !isValidEmail(email)) return;
   const bniWebhookUrl = process.env.BNI_WEBHOOK_URL?.replace('/api/nicemeet-webhook', '/api/nicemeet-contact')
     || 'http://localhost:8300/api/nicemeet-contact';
-  const bniSecret = process.env.BNI_WEBHOOK_SECRET || (console.warn('[SECURITY] BNI_WEBHOOK_SECRET not set, using default'), 'nicemeet-bni-2026');
+  const bniSecret = process.env.BNI_WEBHOOK_SECRET; if (!bniSecret) { console.error('[FATAL] BNI_WEBHOOK_SECRET not set'); return; }
   try {
     await fetch(bniWebhookUrl, {
       method: 'POST',
