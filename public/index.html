@@ -2636,8 +2636,8 @@ async function initEffectsStream() {
 
   // セグメンテーション用キャンバス（推論高速化のため解像度を抑える）
   segCanvas = document.createElement('canvas');
-  segCanvas.width = Math.min(effectsCanvas.width, 640);
-  segCanvas.height = Math.min(effectsCanvas.height, 360);
+  segCanvas.width = Math.min(effectsCanvas.width, 256);
+  segCanvas.height = Math.min(effectsCanvas.height, 144);
   segCtx = segCanvas.getContext('2d');
 
   // RVM合成用: 人物切り抜きキャンバス
@@ -2895,6 +2895,15 @@ async function showBgDebug() {
 
 async function loadSegModel() {
   if (mpSegmenter || mpModelLoading) return;
+  // WebGL availability check — MediaPipe requires WebGL regardless of delegate
+  const _canvas = document.createElement('canvas');
+  const _gl = _canvas.getContext('webgl2') || _canvas.getContext('webgl');
+  if (!_gl) {
+    notify('背景エフェクト非対応: WebGLが無効です。Chromeの設定でハードウェアアクセラレーションを有効にしてください。');
+    const retryRow = document.getElementById('bg-retry-row');
+    if (retryRow) retryRow.style.display = 'block';
+    return;
+  }
   mpModelLoading = true;
   const ldEl = document.getElementById('loading-model');
   if (ldEl) ldEl.style.display = 'block';
@@ -2906,12 +2915,18 @@ async function loadSegModel() {
     const filesetResolver = await FilesetResolver.forVisionTasks('/mediapipe/wasm');
     _step = 'model';
     const opts = {
-      baseOptions: { modelAssetPath: '/mediapipe/selfie_multiclass_256x256.tflite', delegate: 'CPU' },
+      baseOptions: { modelAssetPath: '/mediapipe/selfie_multiclass_256x256.tflite', delegate: 'GPU' },
       runningMode: 'VIDEO',
       outputCategoryMask: false,
       outputConfidenceMasks: true
     };
-    mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
+    try {
+      mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
+    } catch(gpuErr) {
+      console.warn('[effects] GPU failed, trying CPU:', gpuErr.message);
+      opts.baseOptions.delegate = 'CPU';
+      mpSegmenter = await ImageSegmenter.createFromOptions(filesetResolver, opts);
+    }
     mpReady = true;
     prevMaskData = null;
     mpTimestamp = 0;
