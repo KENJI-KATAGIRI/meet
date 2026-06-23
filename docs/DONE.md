@@ -1,5 +1,18 @@
 # NiceMeet 完了済み機能（再実装・破壊禁止）
 
+## audio-finalize ジョブキュー化（2026-06-24）
+- [x] finalizeの重い処理(文字起こし/要約/webhook)を別プロセスワーカーに分離
+- [x] 永続ジョブキュー `lib/queue.js`（SQLite/WAL、session_id UNIQUEで冪等、max_attempts=3）
+- [x] finalize処理本体を `lib/finalize.js`（ファクトリ`createFinalizer(ctx)`）に移設＝挙動不変
+  - server.js / worker.js 双方が require（プロンプト・isWhisperHallucination共有でDRY）
+- [x] `worker.js`（systemd `meet-worker.service`、Restart=always）でjobs.dbをポーリング処理
+- [x] server.js の finalize はenqueueのみにスリム化（res.json即返し・検証/権限チェックは維持）
+- [x] booking.db を WAL化＋busy_timeout（server/worker両接続）で2プロセス同時アクセス安全化
+- [x] chunk削除を「成功時のみ」に変更＝失敗時は再試行で頭から再処理可能（冪等）
+- [x] PII保護: jobs.db / booking.db / *-wal / *-shm を 0600
+- [x] 運用ツール `queue-status.js`（件数/失敗一覧、`--retry`で再投入）
+- ※ server.jsはバックアップ後に差し替え（backups/deploy_*）。シグナリング(Socket.io)は無変更。
+
 ## ビデオ通話
 - [x] WebRTC P2P接続（複数人）
 - [x] セルフビュー鏡像表示（CSS scaleX(-1) のみ、ストリーム非影響）

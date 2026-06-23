@@ -52,14 +52,32 @@
 - パスワード: /auth/login → session保存
 - BNI SSO: /api/bni-sso-token → HMAC署名トークン → gaiaarts.org/bni/?sso_token=
 
-## 音声処理パイプライン
+## 音声処理パイプライン（2026-06-24 ジョブキュー化）
 ```
 録音(MediaRecorder) → /api/audio-chunk（30MB制限）
-→ /api/audio-finalize
-→ Groq Whisper（文字起こし）
-→ GPT-4o（GAINS抽出 or 要約）
-→ BNI Webhook or 福祉記録保存
+→ /api/audio-finalize ── 検証/権限チェック後、ジョブを永続キュー(data/jobs.db)に積んで即200応答
+                          （重い処理はWebプロセスでは一切実行しない）
+   ┌─────────────────────────────────────────────┐
+   │ worker.js（別プロセス / systemd: meet-worker） │
+   │  jobs.db を3秒ポーリングしてjobをclaim         │
+   │  → Groq Whisper（文字起こし）                  │
+   │  → GPT-4o（GAINS抽出 or 要約）                 │
+   │  → BNI Webhook or 福祉記録保存                 │
+   │  → 成功時のみ chunk削除 + job=done             │
+   └─────────────────────────────────────────────┘
 ```
+- **目的**: finalizeの重いI/O・API待ちをシグナリング(Socket.io)のイベントループから隔離し、
+  複数会議同時終了時も新規入室の通話確立が固まらないようにする。プロセス落ちでもjobは永続化され再開。
+- **構成**:
+  - `lib/queue.js` — SQLite(better-sqlite3, WAL)製の永続キュー。enqueue/claim/complete/fail/reapStale。
+    session_id を UNIQUE にして二重enqueueを防止（冪等）。max_attempts=3で再試行、超過でfailed。
+  - `lib/finalize.js` — finalize処理本体（ファクトリ`createFinalizer(ctx)`）。server.js / worker.js 双方が
+    require（プロンプト・isWhisperHallucinationを共有しDRY）。db/openai等はctxで注入。
+  - `worker.js` — 別プロセス。落ちてもsystemd(Restart=always)で復帰。claim中のクラッシュはstale検出で再開。
+  - `queue-status.js` — 運用確認ツール（`node queue-status.js`で件数/失敗一覧、`--retry`で再試行）。
+- **DB**: booking.db / jobs.db ともに WAL + busy_timeout=5000 で2プロセス同時アクセスを安全化。
+  PII保護のため jobs.db / *.db-wal / *.db-shm は 0600。
+- **注意**: chunk削除は「成功時のみ」。失敗時はchunkを残し、再試行で頭から再処理可能（冪等）。
 
 ## セキュリティ
 - Rate limit: auth 20回/15分、API 100回/分、admin 20回/15分（authLimiter二重適用）
