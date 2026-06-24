@@ -355,6 +355,9 @@ function copyInappUrl() {
     <input id="input-pass" type="password" placeholder="パスワード">
     <div class="time-banner" id="time-banner"></div>
     <button class="btn-primary" onclick="openPreview()">参加する</button>
+    <div id="ios-lobby-notice" style="display:none;margin-top:10px;padding:10px 12px;background:#1a1210;border:1px solid #5a3020;border-radius:8px;font-size:12px;color:#f0a080;text-align:center;line-height:1.6">
+      📱 スマホ・iPadでは<br>背景画像・ぼかしはご利用いただけません
+    </div>
     <input id="input-email" type="email" style="display:none">
     <input type="checkbox" id="input-allow-all" style="display:none">
     <div class="error-msg" id="error-msg"></div>
@@ -378,12 +381,17 @@ function copyInappUrl() {
     <div class="preview-right">
       <div>
         <div class="preview-section-title">背景エフェクト</div>
+        <div id="preview-ios-notice" style="display:none;padding:10px 12px;background:#1a1210;border:1px solid #5a3020;border-radius:8px;font-size:12px;color:#f0a080;text-align:center;line-height:1.6;margin-bottom:8px">
+          📱 スマホ・iPadでは<br>背景画像・ぼかしはご利用いただけません
+        </div>
+        <div id="preview-bg-opts-wrap">
         <div class="preview-bg-opts">
           <div class="preview-bg-opt sel" id="pbg-none" onclick="setPreviewBg('none')"><div class="ico">🚫</div>なし</div>
           <div class="preview-bg-opt" id="pbg-blur" onclick="setPreviewBg('blur')"><div class="ico">🌫</div>ぼかし</div>
           <div class="preview-bg-opt" id="pbg-image" onclick="document.getElementById('preview-img-input').click()"><div class="ico">🖼</div>画像</div>
           <div class="preview-bg-opt" id="pbg-color" onclick="setPreviewBg('color')"><div class="ico">🎨</div>カラー</div>
         </div>
+        </div><!-- /preview-bg-opts-wrap -->
         <input type="file" id="preview-img-input" accept="image/*" style="display:none" onchange="onPreviewImgUpload(this)">
         <div class="preview-img-history" id="preview-img-history"></div>
         <div id="preview-loading-model" style="display:none;font-size:12px;color:#6c63ff;text-align:center;padding:6px">⏳ モデル読込中...</div>
@@ -813,6 +821,18 @@ if (systemParam && systemLabels[systemParam]) {
 }
 if (urlParams.get('name')) {
   document.getElementById('input-name').value = urlParams.get('name');
+  // iOS/iPad検出: ロビー通知表示
+  const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (_isIOS) {
+    const notice = document.getElementById('ios-lobby-notice');
+    if (notice) notice.style.display = 'block';
+    const previewNotice = document.getElementById('preview-ios-notice');
+    if (previewNotice) previewNotice.style.display = 'block';
+    const wrap = document.getElementById('preview-bg-opts-wrap');
+    if (wrap) wrap.style.display = 'none';
+    const ldModel = document.getElementById('preview-loading-model');
+    if (ldModel) ldModel.style.display = 'none';
+  }
 }
 if (systemParam === 'bni') {
   welfareSettings = {
@@ -834,9 +854,25 @@ if (systemParam === 'bni') {
   document.querySelector('.optional-label').style.display = 'none';
   document.getElementById('input-pass').value = '';
   // 事前情報フォームを表示（bni_user がある = ホスト発行URLを他者が開いた）
+  // ただしホスト本人（ログイン済み）はフォーム不要 → /api/me で判定してスキップ
   if (urlParams.get('bu') || urlParams.get('bni_user')) {
-    document.getElementById('bni-prejoin').style.display = 'flex';
-    document.getElementById('lobby').style.display = 'none';
+    fetch('/api/me', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(me => {
+        if (me && me.name) {
+          // ホスト本人 → プレ入室フォームスキップ（bn=からmemberNameは取得済み）
+          console.log('[BNI] ホストとして検出、プレ入室フォームをスキップ:', me.name);
+        } else {
+          // ゲスト → プレ入室フォームを表示
+          document.getElementById('bni-prejoin').style.display = 'flex';
+          document.getElementById('lobby').style.display = 'none';
+        }
+      })
+      .catch(() => {
+        // /api/me失敗 → ゲストとして扱いフォーム表示
+        document.getElementById('bni-prejoin').style.display = 'flex';
+        document.getElementById('lobby').style.display = 'none';
+      });
   }
 }
 
@@ -867,7 +903,8 @@ async function submitPrejoin() {
     });
   } catch(e) {}
   document.getElementById('input-name').value = name;
-  welfareSettings.memberName = name;
+  // bn= パラメーターがある場合は予約時の相手名を優先（ホストが自分名でフォーム送信しても上書きしない）
+  if (!urlParams.get("bn")) welfareSettings.memberName = name;
   skipPrejoin();
 }
 function skipPrejoin() {
@@ -981,7 +1018,8 @@ async function openPreview() {
 
 async function doJoin() {
   stopPreviewEffects();
-  const isMobile = window.innerWidth <= 640 || /Mobi|Android/i.test(navigator.userAgent);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isMobile = isIOS || window.innerWidth <= 640 || /Mobi|Android/i.test(navigator.userAgent);
   document.getElementById('preview-screen').classList.remove('visible');
   if (isMobile) {
     const track = rawStream.getVideoTracks()[0];

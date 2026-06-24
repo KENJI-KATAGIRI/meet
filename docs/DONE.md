@@ -65,3 +65,10 @@
 - [x] Stripe顧客ID auto-clear（resource_missing時）
 - [x] Webhook HMAC定数時間比較
 - [x] 録音ファイル一時トークンアクセス
+
+## iOS/iPad エフェクト対応（2026-06-24）
+- [x] iOS/iPad検出: navigator.userAgentにiPad|iPhone|iPodを含む、またはMacIntel+タッチポイント>1
+- [x] ロビー画面: iOS時に「背景画像・ぼかしはご利用いただけません」通知を表示（#ios-lobby-notice）
+- [x] 入室前プレビュー画面: iOS時にエフェクト選択肢を非表示（#preview-bg-opts-wrap）→ 代わりに通知表示（#preview-ios-notice）
+- [x] 通話中エフェクトボタン(btn-effects/btn-effects-m): doJoin()のisMobile判定にiOS追加 → iOS時は非表示
+  - 理由: MediaPipe(WASM+WebGL)がiOS SafariのSharedArrayBuffer制限で動作不可
