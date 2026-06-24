@@ -8,3 +8,4 @@ public/index.html.bak*
 backups/
 *.bak
 *.bak_*
+*.backup_*
