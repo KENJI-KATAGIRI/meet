@@ -395,6 +395,41 @@ src="https://www.facebook.com/tr?id=1762127734765949&ev=PageView&noscript=1"
         </div>
       </div>
 
+      <!-- 予定前後のバッファ(確保時間) -->
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--muted);white-space:nowrap">⏳ 予定前後のバッファ</span>
+          <select class="slot-select" id="booking-buffer" onchange="onBufferChange()">
+            <option value="0">なし</option>
+            <option value="15">前後15分</option>
+            <option value="30">前後30分</option>
+            <option value="45">前後45分</option>
+            <option value="60">前後60分</option>
+            <option value="custom">カスタム</option>
+          </select>
+          <div id="buffer-custom-wrap" style="display:none;align-items:center;gap:6px">
+            <input type="number" id="buffer-custom-min" min="0" max="180" value="30"
+              style="width:60px;border:1px solid var(--border);border-radius:8px;padding:6px 8px;font-size:13px;background:var(--bg2);color:var(--text)">
+            <span style="font-size:13px;color:var(--muted)">分</span>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px">既存の予定や予約の前後に、この時間ぶんの余白を空けて予約を受け付けます。</p>
+      </div>
+
+      <!-- 予約枠の間隔(開始時刻の刻み) -->
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--muted);white-space:nowrap">🕒 予約枠の間隔</span>
+          <select class="slot-select" id="booking-interval">
+            <option value="0">1コマと同じ</option>
+            <option value="15">15分ごと</option>
+            <option value="30">30分ごと</option>
+            <option value="60">60分ごと</option>
+          </select>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px">予約開始時刻の刻みです。「1コマと同じ」なら従来どおり。例：1コマ60分＋間隔30分なら、9:00・9:30・10:00…から60分の予約を受け付けます（重なる枠は自動で消えます）。</p>
+      </div>
+
       <button class="btn btn-primary" onclick="saveAvailability()" style="width:100%;padding:13px;font-size:14px;border-radius:10px;margin-top:16px">設定を保存する</button>
     </div>
   </div>
@@ -500,6 +535,11 @@ async function init() {
   document.getElementById('preview-link').href = `/b/${me.slug}`;
   document.getElementById('slot-duration').value = me.slot_duration || 30;
 
+  // 予約枠の間隔の読み込み（プリセット外なら「1コマと同じ」扱いに丸める）
+  const intervalSel = document.getElementById('booking-interval');
+  const intervalVal = me.slot_interval || 0;
+  intervalSel.value = ['0','15','30','60'].includes(String(intervalVal)) ? String(intervalVal) : '0';
+
   // 予約受付期間の読み込み
   const horizonDays = me.booking_horizon_days || 14;
   const presets = [14, 21, 28, 60, 90];
@@ -510,6 +550,18 @@ async function init() {
     horizonSel.value = 'custom';
     document.getElementById('horizon-custom-wrap').style.display = 'flex';
     document.getElementById('horizon-custom-days').value = horizonDays;
+  }
+
+  // バッファの読み込み
+  const bufMin = me.buffer_minutes || 0;
+  const bufPresets = [0, 15, 30, 45, 60];
+  const bufferSel = document.getElementById('booking-buffer');
+  if (bufPresets.includes(bufMin)) {
+    bufferSel.value = String(bufMin);
+  } else {
+    bufferSel.value = 'custom';
+    document.getElementById('buffer-custom-wrap').style.display = 'flex';
+    document.getElementById('buffer-custom-min').value = bufMin;
   }
 
   for (const a of availRes) activeAvail[a.day_of_week] = {start:a.start_time,end:a.end_time};
@@ -570,6 +622,11 @@ function onHorizonChange() {
   document.getElementById('horizon-custom-wrap').style.display = val === 'custom' ? 'flex' : 'none';
 }
 
+function onBufferChange() {
+  const val = document.getElementById('booking-buffer').value;
+  document.getElementById('buffer-custom-wrap').style.display = val === 'custom' ? 'flex' : 'none';
+}
+
 async function saveAvailability() {
   const availability = Object.entries(activeAvail).map(([dow,v])=>({day_of_week:parseInt(dow),start_time:v.start,end_time:v.end}));
   const slot_duration = parseInt(document.getElementById('slot-duration').value);
@@ -577,7 +634,12 @@ async function saveAvailability() {
   const booking_horizon_days = horizonSel === 'custom'
     ? parseInt(document.getElementById('horizon-custom-days').value) || 14
     : parseInt(horizonSel);
-  await fetch('/api/availability',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({availability,slot_duration,booking_horizon_days})});
+  const bufferSel = document.getElementById('booking-buffer').value;
+  const buffer_minutes = bufferSel === 'custom'
+    ? (parseInt(document.getElementById('buffer-custom-min').value) || 0)
+    : parseInt(bufferSel);
+  const slot_interval = parseInt(document.getElementById('booking-interval').value) || 0;
+  await fetch('/api/availability',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({availability,slot_duration,booking_horizon_days,buffer_minutes,slot_interval})});
   toast('✓ 設定を保存しました');
 }
 

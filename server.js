@@ -63,6 +63,9 @@ const authLimiter = rateLimit({
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
 // アップロード系は厳しく制限（ディスク枯渇・AI費用乱用防止）
 const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'アップロード回数が多すぎます' } });
+// 公開予約は厳しめに制限（メール踏み台・スパム・カレンダー連投の防止）。同一IPあたり1時間10回 + 1分3回のバースト制限。
+const bookLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: '予約のリクエストが多すぎます。しばらく時間をおいて再度お試しください。' } });
+const bookBurstLimiter = rateLimit({ windowMs: 60 * 1000, max: 3, standardHeaders: true, legacyHeaders: false, message: { error: '予約のリクエストが多すぎます。少し時間をおいて再度お試しください。' } });
 app.use('/auth/', authLimiter);
 app.use('/api/', apiLimiter);
 app.use('/api/admin/', authLimiter);
@@ -242,6 +245,8 @@ try { db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT'); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN status TEXT DEFAULT 'confirmed'"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_call_records ADD COLUMN source TEXT DEFAULT 'video'"); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN booking_horizon_days INTEGER DEFAULT 14"); } catch(e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN buffer_minutes INTEGER DEFAULT 0"); } catch(e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN slot_interval INTEGER DEFAULT 0"); } catch(e) {}
 try { db.exec("ALTER TABLE nm_facilities ADD COLUMN admin_notes TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT"); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN own_gains TEXT DEFAULT '{}'"); } catch(e) {}
@@ -519,7 +524,7 @@ function requireAuth(req, res, next) {
 const OWNER_EMAIL = process.env.OWNER_EMAIL || 'kenji.kys@gmail.com';
 
 app.get('/api/me', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT id, name, email, slug, slot_duration, ui_mode, registered_at, stripe_customer_id, plan, booking_horizon_days, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
+  const u = db.prepare('SELECT id, name, email, slug, slot_duration, slot_interval, ui_mode, registered_at, stripe_customer_id, plan, booking_horizon_days, buffer_minutes, CASE WHEN google_id IS NOT NULL THEN 1 ELSE 0 END as has_google FROM users WHERE id=?').get(req.session.userId);
   if (!u) return res.status(404).json({ error: 'not found' });
   const isOwner = u.email === OWNER_EMAIL;
   // オーナーのみ: セッションレベルのモードオーバーライドを適用
@@ -730,7 +735,7 @@ app.get('/api/availability', requireAuth, (req, res) => {
 });
 
 app.post('/api/availability', requireAuth, (req, res) => {
-  const { availability, slot_duration, booking_horizon_days } = req.body;
+  const { availability, slot_duration, booking_horizon_days, buffer_minutes, slot_interval } = req.body;
   const uid = req.session.userId;
   const avArr = Array.isArray(availability) ? availability.slice(0, 100) : [];
   db.prepare('DELETE FROM availability WHERE user_id=?').run(uid);
@@ -747,6 +752,11 @@ app.post('/api/availability', requireAuth, (req, res) => {
   if (!isNaN(sdVal) && sdVal >= 15 && sdVal <= 240) db.prepare('UPDATE users SET slot_duration=? WHERE id=?').run(sdVal, uid);
   const hdVal = parseInt(booking_horizon_days, 10);
   if (!isNaN(hdVal) && hdVal >= 1 && hdVal <= 365) db.prepare('UPDATE users SET booking_horizon_days=? WHERE id=?').run(hdVal, uid);
+  const bufVal = parseInt(buffer_minutes, 10);
+  if (!isNaN(bufVal) && bufVal >= 0 && bufVal <= 180) db.prepare('UPDATE users SET buffer_minutes=? WHERE id=?').run(bufVal, uid);
+  // 枠の間隔(0=ミーティング時間に従う)
+  const siVal = parseInt(slot_interval, 10);
+  if (!isNaN(siVal) && siVal >= 0 && siVal <= 240) db.prepare('UPDATE users SET slot_interval=? WHERE id=?').run(siVal, uid);
   res.json({ ok: true });
 });
 
@@ -798,8 +808,10 @@ https://meet.gaiaarts.org/b/${user.slug}
 });
 
 // ---- Public: slots ----
-function generateSlots(date, startTime, endTime, duration) {
+function generateSlots(date, startTime, endTime, duration, step) {
   const slots = [];
+  // step(枠の間隔)はミーティング時間と独立。未指定/0以下なら従来どおり duration 刻み。
+  const stride = (step && step > 0) ? step : duration;
   const [sh, sm] = startTime.split(':').map(Number);
   const [eh, em] = endTime.split(':').map(Number);
   let cur = sh * 60 + sm;
@@ -813,38 +825,37 @@ function generateSlots(date, startTime, endTime, duration) {
       end: `${date}T${pad(h2)}:${pad(m2)}:00+09:00`,
       label: `${pad(h1)}:${pad(m1)} 〜 ${pad(h2)}:${pad(m2)}`
     });
-    cur += duration;
+    cur += stride;
   }
   return slots;
 }
 
-app.get('/api/b/:slug/slots', async (req, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE slug=?').get(req.params.slug);
-  if (!user) return res.status(404).json({ error: 'not found' });
-
-  const horizonDays = user.booking_horizon_days || 14;
-  const date = req.query.date;
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'invalid date' });
+// 指定ユーザー・指定日(YYYY-MM-DD, JST)の「実際に予約可能な枠」を算出して返す共通関数。
+// 受付期間・曜日/時間帯・枠間隔・バッファ・既存予約/カレンダー予定・過去枠を全て考慮する。
+// slots API と book API の両方がこれを使い、サーバー側で唯一の真実とする。
+async function computeAvailableSlots(user, date) {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
 
   // 予約受付期間チェック
+  const horizonDays = user.booking_horizon_days || 14;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const targetDate = new Date(date + 'T00:00:00+09:00');
   const diffDays = Math.floor((targetDate - today) / (1000 * 60 * 60 * 24));
-  if (diffDays >= horizonDays) return res.json({ slots: [], hostName: user.name, horizonDays });
+  if (diffDays < 0 || diffDays >= horizonDays) return [];
 
   const dow = new Date(date + 'T12:00:00+09:00').getDay();
   const avail = db.prepare('SELECT * FROM availability WHERE user_id=? AND day_of_week=?').get(user.id, dow);
-  if (!avail) return res.json({ slots: [], hostName: user.name, horizonDays });
+  if (!avail) return [];
 
-  const allSlots = generateSlots(date, avail.start_time, avail.end_time, user.slot_duration || 30);
+  const allSlots = generateSlots(date, avail.start_time, avail.end_time, user.slot_duration || 30, user.slot_interval || 0);
 
-  // Filter already booked
-  const booked = db.prepare("SELECT start_time FROM bookings WHERE user_id=? AND start_time LIKE ? AND (cancelled IS NULL OR cancelled=0)").all(user.id, date + '%');
-  const bookedTimes = new Set(booked.map(b => b.start_time));
+  // バッファ(前後の確保時間)。前後共通の1値、分単位。
+  const bufMs = (user.buffer_minutes || 0) * 60000;
 
-  // Filter past times
-  const now = new Date();
-  let filtered = allSlots.filter(s => new Date(s.start) > now && !bookedTimes.has(s.start));
+  // busy区間を収集: ① 既存予約(DB) ② Googleカレンダーの予定
+  // 既存予約は終了時刻まで含めて区間化（新規予約の周りにもバッファを効かせるため）
+  const booked = db.prepare("SELECT start_time, end_time FROM bookings WHERE user_id=? AND start_time LIKE ? AND (cancelled IS NULL OR cancelled=0)").all(user.id, date + '%');
+  const busyIntervals = booked.map(b => ({ start: new Date(b.start_time).getTime(), end: new Date(b.end_time).getTime() }));
 
   // Check Google Calendar busy times
   try {
@@ -856,17 +867,32 @@ app.get('/api/b/:slug/slots', async (req, res) => {
       requestBody: { timeMin: tMin, timeMax: tMax, timeZone: 'Asia/Tokyo', items: [{ id: user.email }] }
     });
     const busy = (fb.data.calendars[user.email] || fb.data.calendars.primary || {}).busy || [];
-    filtered = filtered.filter(s => {
-      const ss = new Date(s.start).getTime(), se = new Date(s.end).getTime();
-      return !busy.some(b => ss < new Date(b.end).getTime() && se > new Date(b.start).getTime());
-    });
+    for (const b of busy) busyIntervals.push({ start: new Date(b.start).getTime(), end: new Date(b.end).getTime() });
   } catch (e) { console.error('freebusy error:', e.message); }
 
-  res.json({ slots: filtered, hostName: user.name, horizonDays });
+  // 過去枠を除外しつつ、各枠の前後にバッファ分の余白が無ければ除外
+  const now = new Date();
+  return allSlots.filter(s => {
+    if (new Date(s.start) <= now) return false;
+    const ss = new Date(s.start).getTime(), se = new Date(s.end).getTime();
+    return !busyIntervals.some(b => (ss - bufMs) < b.end && (se + bufMs) > b.start);
+  });
+}
+
+app.get('/api/b/:slug/slots', async (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE slug=?').get(req.params.slug);
+  if (!user) return res.status(404).json({ error: 'not found' });
+
+  const date = req.query.date;
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'invalid date' });
+
+  const horizonDays = user.booking_horizon_days || 14;
+  const slots = await computeAvailableSlots(user, date);
+  res.json({ slots, hostName: user.name, horizonDays });
 });
 
 // ---- Public: book ----
-app.post('/api/b/:slug/book', async (req, res) => {
+app.post('/api/b/:slug/book', bookBurstLimiter, bookLimiter, async (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE slug=?').get(req.params.slug);
   if (!user) return res.status(404).json({ error: 'not found' });
 
@@ -880,6 +906,13 @@ app.post('/api/b/:slug/book', async (req, res) => {
     return res.status(400).json({ error: '日時が正しくありません' });
   if (db.prepare('SELECT id FROM bookings WHERE user_id=? AND start_time=? AND (cancelled IS NULL OR cancelled=0)').get(user.id, start_time))
     return res.status(409).json({ error: 'この時間はすでに予約されています' });
+
+  // サーバー側検証: 要求された枠が、その時点で実際に予約可能な枠と一致するか再確認する。
+  // これにより 受付期間・曜日/時間帯・枠間隔・バッファ・既存予定 を回避した不正予約を防ぐ。
+  const bookDate = String(start_time).slice(0, 10);
+  const available = await computeAvailableSlots(user, bookDate);
+  if (!available.some(s => s.start === start_time && s.end === end_time))
+    return res.status(409).json({ error: 'この時間は予約を受け付けていません。最新の空き状況をご確認ください。' });
 
   const meetRoom = crypto.randomBytes(4).toString('hex');
   const meetUrl = `https://meet.gaiaarts.org/?room=${meetRoom}&system=bni&bu=${encodeURIComponent(user.name||'')}&bn=${encodeURIComponent(cleanName||'')}`;
