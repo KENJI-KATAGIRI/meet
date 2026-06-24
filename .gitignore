@@ -6,3 +6,5 @@ service-account.json
 public/index.html.bak*
 *.db
 backups/
+*.bak
+*.bak_*
